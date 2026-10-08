@@ -6,6 +6,14 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.telepix.BuildConfig
+import com.telepix.data.backup.BackupCoordinator
+import com.telepix.data.backup.BackupRepository
+import com.telepix.data.backup.BackupStager
+import com.telepix.data.backup.DefaultBackupCoordinator
+import com.telepix.data.backup.DefaultBackupRepository
+import com.telepix.data.backup.work.BackupWorkScheduler
+import com.telepix.data.backup.work.BackupWorkerDependencies
+import com.telepix.data.backup.work.WorkManagerBackupScheduler
 import com.telepix.data.cloud.CloudDataSource
 import com.telepix.data.cloud.CloudRepository
 import com.telepix.data.cloud.TdLibCloudDataSource
@@ -49,6 +57,9 @@ interface AppContainer {
     val cloudRepository: CloudRepository
     val localMediaRepository: LocalMediaRepository
     val mediaChangeWatcher: MediaChangeWatcher
+    val backupRepository: BackupRepository
+    val backupCoordinator: BackupCoordinator
+    val backupWorkScheduler: BackupWorkScheduler
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -64,11 +75,14 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     private val database: TelepixDatabase by lazy {
-        Room.databaseBuilder(appContext, TelepixDatabase::class.java, TelepixDatabase.NAME).build()
+        Room.databaseBuilder(appContext, TelepixDatabase::class.java, TelepixDatabase.NAME)
+            .addMigrations(TelepixDatabase.MIGRATION_1_2)
+            .build()
     }
 
     private val cloudDestinationDao: CloudDestinationDao by lazy { database.cloudDestinationDao() }
     private val cloudManifestDao: CloudMediaManifestDao by lazy { database.cloudMediaManifestDao() }
+    private val backupQueueDao: com.telepix.data.backup.db.BackupQueueDao by lazy { database.backupQueueDao() }
 
     // One shared TDLib client for both authentication and cloud.
     private val tdLibClientGateway: TdLibClientGateway by lazy { TdLibClientGatewayImpl() }
@@ -105,11 +119,42 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
 
+    private val mediaLoader: MediaStoreMediaLoader by lazy { MediaStoreMediaLoader(appContext) }
+
     override val localMediaRepository: LocalMediaRepository by lazy {
-        LocalMediaRepositoryImpl(MediaStoreMediaLoader(appContext))
+        LocalMediaRepositoryImpl(mediaLoader)
     }
 
     override val mediaChangeWatcher: MediaChangeWatcher by lazy {
         AndroidMediaChangeWatcher(appContext)
+    }
+
+    private val backupStager: BackupStager by lazy {
+        val staging = File(appContext.cacheDir, "telepix_backup_staging").apply { mkdirs() }
+        BackupStager(appContext.contentResolver, staging)
+    }
+
+    override val backupRepository: BackupRepository by lazy {
+        DefaultBackupRepository(
+            dao = backupQueueDao,
+            cloudRepository = cloudRepository,
+            authState = telegramSessionManager.state,
+            stager = backupStager,
+        )
+    }
+
+    override val backupWorkScheduler: BackupWorkScheduler by lazy {
+        // The worker is created by WorkManager, not here, so hand it the repository up front.
+        BackupWorkerDependencies.repository = backupRepository
+        WorkManagerBackupScheduler(appContext)
+    }
+
+    override val backupCoordinator: BackupCoordinator by lazy {
+        DefaultBackupCoordinator(
+            repository = backupRepository,
+            scheduler = backupWorkScheduler,
+            onboardingRepository = onboardingRepository,
+            pageLoader = mediaLoader,
+        )
     }
 }

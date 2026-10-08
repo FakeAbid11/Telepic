@@ -110,7 +110,11 @@ dependencies {
     implementation(libs.tdlib.android)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.work.runtime.ktx)
     ksp(libs.androidx.room.compiler)
+    // Compile Room in the test sources too, so the Phase 6 migration test can build a real
+    // version-1 database (TelepixDatabaseV1) and verify the explicit 1 -> 2 migration.
+    kspTest(libs.androidx.room.compiler)
 
     debugImplementation(libs.androidx.ui.tooling)
 
@@ -119,6 +123,7 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.androidx.work.testing)
     testImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

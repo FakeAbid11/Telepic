@@ -59,9 +59,12 @@ class TelegramCloudRepositoryTest {
         var preview: CloudPreview? = null,
         var download: LocalDownloadedMedia? = null,
         var searchError: Throwable? = null,
+        var uploadResult: com.telepix.domain.cloud.CloudUploadResult? = null,
+        var uploadError: Throwable? = null,
     ) : CloudDataSource {
         var searchCalls = 0
         var createCalls = 0
+        var uploadCalls = 0
         override suspend fun searchDestinationCandidates(): List<ChatCandidate> {
             searchCalls++
             searchError?.let { throw it }
@@ -76,6 +79,16 @@ class TelegramCloudRepositoryTest {
         override suspend fun loadNewestMedia(chatId: Long, limit: Int) = media
         override suspend fun downloadPreview(media: CloudMedia) = preview
         override suspend fun downloadOriginal(media: CloudMedia) = download
+
+        override suspend fun upload(
+            chatId: Long,
+            request: com.telepix.domain.cloud.CloudUploadRequest,
+            onProgress: (com.telepix.domain.cloud.CloudUploadProgress) -> Unit,
+        ): com.telepix.domain.cloud.CloudUploadResult {
+            uploadCalls++
+            uploadError?.let { throw it }
+            return requireNotNull(uploadResult) { "FakeDataSource must set uploadResult or uploadError" }
+        }
     }
 
     private fun repo(source: CloudDataSource, auth: MutableStateFlow<TelegramAuthState> = authorized) =
@@ -193,5 +206,47 @@ class TelegramCloudRepositoryTest {
         r.prepare()
         val item = r.media.first().first()
         assertNull(r.downloadOriginal(item))
+    }
+
+    @Test
+    fun `successful upload persists the remote identity in the manifest`() = runBlocking {
+        val source = FakeDataSource(
+            candidates = listOf(candidate()),
+            uploadResult = com.telepix.domain.cloud.CloudUploadResult(
+                chatId = 100L,
+                messageId = 999L,
+                telegramFileId = 5,
+                mediaType = CloudMediaType.IMAGE,
+            ),
+        )
+        val r = repo(source)
+        r.prepare()
+        val request = com.telepix.domain.cloud.CloudUploadRequest(
+            stagedPath = "/tmp/x",
+            fileName = "a.jpg",
+            mimeType = "image/jpeg",
+            mediaType = CloudMediaType.IMAGE,
+            sizeBytes = 10L,
+            width = null,
+            height = null,
+            durationMs = null,
+            dateEpochSec = 1_700_000_000L,
+        )
+        val result = r.uploadMedia(request)
+        assertEquals(999L, result?.messageId)
+        // The uploaded item is now in the manifest under its stable remote identity.
+        val manifest = r.media.first().first { it.messageId == 999L }
+        assertEquals(100L, manifest.chatId)
+        assertTrue(manifest.isDownloaded)
+    }
+
+    @Test
+    fun `upload with no destination returns null without fabricating success`() = runBlocking {
+        val auth = MutableStateFlow<TelegramAuthState>(TelegramAuthState.NotConnected)
+        val source = FakeDataSource(uploadResult = com.telepix.domain.cloud.CloudUploadResult(1, 1, null, CloudMediaType.IMAGE))
+        val r = repo(source, auth)
+        val request = com.telepix.domain.cloud.CloudUploadRequest("/x", null, null, CloudMediaType.IMAGE, null, null, null, null, null)
+        runCatching { r.uploadMedia(request) }
+        assertEquals(0, source.uploadCalls)
     }
 }

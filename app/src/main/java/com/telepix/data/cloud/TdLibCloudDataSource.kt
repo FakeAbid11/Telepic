@@ -3,6 +3,9 @@ package com.telepix.data.cloud
 import com.telepix.domain.cloud.ChatCandidate
 import com.telepix.domain.cloud.CloudMedia
 import com.telepix.domain.cloud.CloudPreview
+import com.telepix.domain.cloud.CloudUploadProgress
+import com.telepix.domain.cloud.CloudUploadRequest
+import com.telepix.domain.cloud.CloudUploadResult
 import com.telepix.domain.cloud.LocalDownloadedMedia
 import com.telepix.telegram.TelegramAuthState
 import java.io.File
@@ -23,6 +26,12 @@ import kotlinx.coroutines.flow.StateFlow
  * Everything downstream (validation, persistence, manifest, Cloud state machine, UI, repository
  * orchestration) is implemented and unit/UI-tested against fakes, so completing only the request
  * shapes above activates the live cloud with no further changes.
+ *
+ * Phase 6 adds the upload path. For the same reason it is deliberately **not** guessed: until the
+ * `sendMessage` + `InputFile` request shapes are finalized on a real device, [upload] throws an
+ * honest transient [CloudNetworkException] so the engine keeps items QUEUED rather than falsely
+ * marking them BACKED_UP. The repository/queue/WorkManager layers are built against the [CloudDataSource]
+ * seam and are fully tested with a fake that does succeed.
  */
 class TdLibCloudDataSource(
     private val filesDir: File,
@@ -58,5 +67,19 @@ class TdLibCloudDataSource(
         if (!isReady) throw CloudNetworkException("Not authenticated")
         // TODO(Phase 5 device bring-up): explicitly download the original into [filesDir].
         return null
+    }
+
+    override suspend fun upload(
+        chatId: Long,
+        request: CloudUploadRequest,
+        onProgress: (CloudUploadProgress) -> Unit,
+    ): CloudUploadResult {
+        if (!isReady) throw CloudNetworkException("Not authenticated")
+        // TODO(Phase 6 device bring-up): map [request] to a Telegram InputFile + sendMessage
+        // (Photo/Video/Animation vs Document for byte-preserving upload) against the bundled TdApi,
+        // await the sent Message, and return its real (chatId, messageId, fileId). Until then this
+        // is an honest, transient "not available": the upload never succeeds and the queue never
+        // becomes BACKED_UP — no fabricated remote identity.
+        throw CloudNetworkException("Telegram upload is not yet available on this build")
     }
 }

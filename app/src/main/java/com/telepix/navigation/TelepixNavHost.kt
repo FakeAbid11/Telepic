@@ -13,6 +13,8 @@ import androidx.navigation.navArgument
 import com.telepix.di.AppContainer
 import com.telepix.settings.ThemeMode
 import com.telepix.ui.screens.albums.AlbumsScreen
+import com.telepix.ui.screens.backup.BackupCenterScreen
+import com.telepix.ui.screens.backup.BackupViewModel
 import com.telepix.ui.screens.cloud.CloudScreen
 import com.telepix.ui.screens.cloud.CloudViewModel
 import com.telepix.ui.screens.map.MapScreen
@@ -76,7 +78,21 @@ fun TelepixNavHost(
             SettingsScreen(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
+                onOpenBackupCenter = { navController.navigate(BackupCenterRoute.ROUTE) },
             )
+        }
+        composable(BackupCenterRoute.ROUTE) {
+            val backupViewModel: BackupViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        BackupViewModel(
+                            coordinator = container.backupCoordinator,
+                            authState = container.telegramAuthController.state,
+                        )
+                    }
+                },
+            )
+            BackupCenterScreen(viewModel = backupViewModel)
         }
         composable(
             route = ViewerRoute.PATTERN,

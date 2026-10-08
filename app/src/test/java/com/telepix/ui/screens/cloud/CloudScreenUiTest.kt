@@ -45,6 +45,10 @@ class CloudScreenUiTest {
         override suspend fun ensureDestination(): TelepixCloudDestination? = null
         override suspend fun getPreview(media: CloudMedia): CloudPreview? = null
         override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? = null
+        override suspend fun uploadMedia(
+            request: com.telepix.domain.cloud.CloudUploadRequest,
+            onProgress: (com.telepix.domain.cloud.CloudUploadProgress) -> Unit,
+        ): com.telepix.domain.cloud.CloudUploadResult? = null
     }
 
     private fun item(id: Long, type: CloudMediaType, duration: Long? = null) = CloudMedia(

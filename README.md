@@ -19,11 +19,10 @@ Telepix organizes your local media into a fast, beautiful timeline and (in later
 | Navigation | Navigation for Compose |
 | Persistence | Jetpack DataStore (Preferences) |
 | Local media | Android MediaStore + Paging 3 |
-| Persistence (app data) | Room (cloud destination + media manifest) |
+| Persistence (app data) | Room (cloud destination, media manifest, backup queue) |
 | Image loading | Coil (thumbnail-first, video-frame decoding) |
 | Cloud backend | Telegram via **Java TDLib** (`org.drinkless.tdlib`), ARM-only |
-| Database | Room *(later phases)* |
-| Background work | WorkManager *(later phases)* |
+| Background work | **WorkManager** (network-constrained, foreground backup worker) |
 | Map | OpenStreetMap *(later phases)* |
 | Build system | **GitHub Actions only** |
 
@@ -175,9 +174,60 @@ Pending (requires an authenticated session on a real ARM device):
   generated `TdApi` surface must be finalized on-device; until then the cloud data source returns
   honest "not available" results and the UI shows a truthful setup/unavailable state (no faked cloud).
 
+### ✅ Phase 6 — Reliable Backup Engine *(architecture + queue + persistence + CI complete; live TDLib upload pending device bring-up)*
+
+Implemented and CI-verified against fakes:
+
+- **Persistent backup queue** in Room (`backup_queue`) — the source of truth for backup state. It
+  survives process death, app restart and reboot; the **unique `localMediaId`** (the MediaStore id,
+  never the filename) prevents duplicate active rows, so `enqueue(media)` repeated is idempotent.
+- **Explicit state machine** (`NOT_BACKED_UP · QUEUED · PREPARING · UPLOADING · BACKED_UP · FAILED ·
+  CANCELLED` plus non-terminal `WAITING_FOR_NETWORK` / `WAITING_FOR_AUTH`). The **core invariant** —
+  nothing reaches `BACKED_UP` except from `UPLOADING` — is encoded once in `BackupStateMachine` and
+  unit-tested. The only success path is: upload → Telegram confirms → **remote identity persisted →
+  THEN `BACKED_UP`** (the identity write is atomic with the state).
+- **Room migration 1 → 2**: the Phase 5 database (`cloud_destination`, `cloud_media_manifest`) is
+  preserved by an explicit, non-destructive migration; a real migration test builds a version-1
+  database and verifies Phase 5 rows survive and the queue becomes usable.
+- **Crash recovery**: on worker start, rows left mid-flight (`PREPARING` / `UPLOADING`) with no
+  persisted remote id return to `QUEUED`; a row that *does* carry a remote id is finalized — the
+  queue never assumes an upload failed just because the process died, and never claims success
+  without confirmation.
+- **Bounded retry**: transient failures (network / Telegram / TDLib) wait for network and consume a
+  retry (capped); permanent failures (missing/unsupported media, rejected upload) fail immediately
+  and can be retried by the user. `retryCount`, `lastError` and `updatedAt` are persisted.
+- **Cooperative cancellation** — a cancelled item never becomes `BACKED_UP` unless Telegram already
+  confirmed it; an in-flight item is left for recovery rather than lied about.
+- **Safe staging** — a MediaStore content URI is streamed (fixed-size buffer, never
+  `readBytes`) into app-private storage, used for the upload, and cleaned up in a `finally`; the
+  **original is never modified or deleted**.
+- **WorkManager orchestration**: `BackupWorkScheduler` → `BackupWorker` (a `CoroutineWorker`) with a
+  **network constraint** and an honest **foreground notification** ("Uploading n of m"). Offline just
+  leaves rows `QUEUED` and resumes on reconnect; the engine never depends on a screen staying open.
+- **Cloud upload contract** — the engine calls `CloudRepository.uploadMedia(request, onProgress)`
+  and knows **no TDLib details**; the real Telegram request shapes stay behind the data layer.
+- **Backup preference honored**: `BACKUP_ALL` incrementally discovers and enqueues eligible media;
+  `NOT_NOW` never auto-enqueues; `SELECT_FOLDER` is **not faked** as enforceable (folder selection
+  has no real implementation yet — the queue treats it as "nothing automatic" and the pipeline is
+  ready for a folder filter).
+- **Backup Center** foundation (reached contextually from Settings): status, pending / uploading /
+  completed / failed counts, and per-item retry / cancel — no upload polish, no full restore.
+- **Phase 7 ready**: the queue keeps nullable `contentHash` / timestamps and the manifest keeps the
+  reserved hash field, but **no SHA-256 recognition or dedup is performed** here.
+
+Pending (requires an authenticated session on a real ARM device) — **shared with the Phase 5 cloud
+data source**: the concrete TDLib cloud request shapes (`searchChatsOnServer`/`getChats`,
+`createNewSupergroupChat`, `getChatHistory`, `download`/`getFile`) **and the upload path**
+(`sendMessage` + the correct `InputFile` / Photo-vs-Document representation for byte-preserving
+quality) are written defensively against **TDLib 1.8.64**, whose generated `TdApi` surface must be
+finalized on-device. Until that bring-up `TdLibCloudDataSource.upload` throws an honest transient
+failure, so items stay `QUEUED`/`WAITING` and are **never falsely marked `BACKED_UP`**. Everything
+downstream is complete and tested with a fake that does succeed, so finalizing only the request
+shapes activates real backup.
+
 ### 🔜 Later phases
 
-Backup engine (queue, WorkManager, hashing, dedup) · Recognition & reinstall recovery · Polished Photos interactions · Albums · Viewer · Map/Restore · Settings & security hardening · Full integration.
+Recognition & reinstall recovery (SHA-256, dedup) · Polished Photos interactions · Albums · Viewer · Map/Restore · Settings & security hardening · Full integration.
 
 See [`PRD.md`](PRD.md) for the complete product specification and the 12-phase plan.
 

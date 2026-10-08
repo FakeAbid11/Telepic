@@ -179,4 +179,35 @@
     <!-- Viewer (placeholder navigation contract) -->
     <string name="viewer_title">Viewer</string>
     <string name="viewer_placeholder_description">The full-screen viewer arrives in a later phase. This media item\'s identifier was passed for navigation.</string>
+
+    <!-- ============================ Backup engine (Phase 6) ============================ -->
+    <string name="backup_notification_title">Telepix backup</string>
+    <string name="backup_notification_starting">Preparing your backup…</string>
+    <string name="backup_notification_progress">Uploading %1$d of %2$d</string>
+    <string name="backup_channel_name">Backup</string>
+
+    <string name="backup_center_title">Backup</string>
+    <string name="backup_center_status_ready">Backup is ready</string>
+    <string name="backup_center_status_waiting">Waiting for Telegram…</string>
+    <string name="backup_center_status_offline">Waiting for a connection…</string>
+    <string name="backup_center_empty_title">Nothing to back up yet</string>
+    <string name="backup_center_empty_body">Media you add to the backup queue will appear here. Backed-up photos are stored in your Telepix Backup channel.</string>
+    <string name="backup_stat_queued">Queued</string>
+    <string name="backup_stat_uploading">Uploading</string>
+    <string name="backup_stat_completed">Completed</string>
+    <string name="backup_stat_failed">Failed</string>
+    <string name="backup_action_retry">Retry</string>
+    <string name="backup_action_cancel">Cancel</string>
+    <string name="backup_action_start">Start backup</string>
+    <string name="backup_queue_state_queued">Queued</string>
+    <string name="backup_queue_state_preparing">Preparing</string>
+    <string name="backup_queue_state_uploading">Uploading</string>
+    <string name="backup_queue_state_backed_up">Backed up</string>
+    <string name="backup_queue_state_failed">Failed</string>
+    <string name="backup_queue_state_cancelled">Cancelled</string>
+    <string name="backup_queue_state_waiting_network">Waiting for network</string>
+    <string name="backup_queue_state_waiting_auth">Waiting for Telegram sign-in</string>
+    <string name="backup_start_backup">Start backup</string>
+    <string name="backup_settings_entry">Backup Center</string>
+    <string name="backup_settings_entry_summary">View the backup queue, progress and failures</string>
 </resources>

@@ -10,6 +10,9 @@ import com.telepix.domain.cloud.ChatValidator
 import com.telepix.domain.cloud.CloudMedia
 import com.telepix.domain.cloud.CloudPreview
 import com.telepix.domain.cloud.CloudStatus
+import com.telepix.domain.cloud.CloudUploadProgress
+import com.telepix.domain.cloud.CloudUploadRequest
+import com.telepix.domain.cloud.CloudUploadResult
 import com.telepix.domain.cloud.DestinationVerdict
 import com.telepix.domain.cloud.LocalDownloadedMedia
 import com.telepix.domain.cloud.TelepixCloudDestination
@@ -31,6 +34,12 @@ class CloudNetworkException(message: String = "Telegram unavailable") : IOExcept
 
 /** Thrown when the destination exists but is not a valid Telepix destination. */
 class CloudDestinationInvalidException(val reason: String) : Exception(reason)
+
+/**
+ * Thrown by a [CloudDataSource] when Telegram permanently rejects an upload (unsupported media,
+ * rejected file, invalid destination). Unlike [CloudNetworkException] this is not worth retrying.
+ */
+class CloudUploadRejectedException(message: String) : Exception(message)
 
 /**
  * [CloudRepository] over an injectable [CloudDataSource] + Room persistence + the Phase 4
@@ -145,6 +154,45 @@ class TelegramCloudRepository(
                 null
             }
         }
+
+    /**
+     * Upload a staged file to the validated destination. Guards on authorization + a valid
+     * destination, delegates to the data source, and — only after Telegram confirms success with a
+     * remote identity — records the item in the cloud manifest. Transient ([CloudNetworkException])
+     * and permanent ([CloudUploadRejectedException]) errors propagate so the engine can decide
+     * retry vs fail; nothing here fabricates success.
+     */
+    override suspend fun uploadMedia(
+        request: CloudUploadRequest,
+        onProgress: (CloudUploadProgress) -> Unit,
+    ): CloudUploadResult? = withContext(dispatcher) {
+        if (!isAuthorized()) {
+            throw CloudNetworkException("Not authenticated")
+        }
+        mutex.withLock {
+            val destination = currentDestination() ?: throw CloudDestinationInvalidException("No Telepix Backup destination")
+            val result = dataSource.upload(destination.chatId, request, onProgress)
+            // Remote confirmation arrived: record it in the manifest under its stable identity.
+            manifestDao.upsertAll(listOf(fromUpload(request, result).toEntity(clock())))
+            result
+        }
+    }
+
+    private fun fromUpload(request: CloudUploadRequest, result: CloudUploadResult): CloudMedia = CloudMedia(
+        messageId = result.messageId,
+        chatId = result.chatId,
+        mediaType = result.mediaType,
+        mimeType = request.mimeType,
+        fileName = request.fileName,
+        sizeBytes = request.sizeBytes,
+        width = request.width,
+        height = request.height,
+        durationMs = request.durationMs,
+        dateEpochSec = request.dateEpochSec,
+        previewFileId = null,
+        originalFileId = result.telegramFileId,
+        isDownloaded = true,
+    )
 
     private suspend fun currentDestination(): TelepixCloudDestination? {
         val entity = destinationDao.find(PROVIDER) ?: return null

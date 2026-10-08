@@ -47,6 +47,7 @@ fun SettingsScreen(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenBackupCenter: () -> Unit = {},
 ) {
     val spacing = TelepixTokens.spacing
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -69,9 +70,10 @@ fun SettingsScreen(
 
             SettingsSection(title = stringResource(R.string.settings_section_backup)) {
                 SettingsRow(
-                    title = stringResource(R.string.settings_backup_preferences),
-                    summary = stringResource(R.string.settings_backup_preferences_summary),
-                    enabled = false,
+                    title = stringResource(R.string.backup_settings_entry),
+                    summary = stringResource(R.string.backup_settings_entry_summary),
+                    enabled = true,
+                    onClick = onOpenBackupCenter,
                 )
             }
 
