@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -36,13 +37,14 @@ class OnboardingRepositoryImplTest {
 
     @Test
     fun `completion persists and a returning user skips onboarding`() = runTest {
-        val repository = newRepository("completed")
-        repository.setCompleted(true)
-        // A new repository over the same store simulates a process/app restart.
-        val reopened = OnboardingRepositoryImpl(
-            PreferenceDataStoreFactory.create { File(tempFolder.root, "completed.preferences_pb") },
-        )
-        assertEquals(true, reopened.isCompleted.first())
+        // One DataStore instance for the file; a second repository over it simulates a
+        // returning user / app restart reading the persisted completion.
+        val dataStore = PreferenceDataStoreFactory.create {
+            File(tempFolder.root, "completed.preferences_pb")
+        }
+        OnboardingRepositoryImpl(dataStore).setCompleted(true)
+        val reopened = OnboardingRepositoryImpl(dataStore)
+        assertTrue(reopened.isCompleted.first())
     }
 
     @Test
