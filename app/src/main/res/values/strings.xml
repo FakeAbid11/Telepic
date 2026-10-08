@@ -50,4 +50,74 @@
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="settings_theme_dialog_title">Choose theme</string>
+
+    <!-- ============================ Onboarding ============================ -->
+    <!-- Common / navigation -->
+    <string name="onboarding_continue">Continue</string>
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_progress">Step %1$d of %2$d</string>
+    <string name="onboarding_loading">Loading Telepix…</string>
+
+    <!-- Screen 1 — Welcome -->
+    <string name="onboarding_welcome_tagline">A modern personal photo and video library with Telegram-powered cloud backup.</string>
+    <string name="onboarding_welcome_illustration">Telepix: local photos backed up to the cloud</string>
+
+    <!-- Screen 2 — How Telepix Works -->
+    <string name="onboarding_how_title">How Telepix works</string>
+    <string name="onboarding_how_local_title">Local first</string>
+    <string name="onboarding_how_local_body">Your phone stays your primary photo library. Telepix organizes what is already on your device.</string>
+    <string name="onboarding_how_backup_title">You choose what backs up</string>
+    <string name="onboarding_how_backup_body">Telepix recognizes your media and queues backup only for what you select — nothing uploads before you decide.</string>
+    <string name="onboarding_how_cloud_title">Cloud on Telegram</string>
+    <string name="onboarding_how_cloud_body">Backed-up media is stored in your private Telegram channel, so you can browse it later without re-downloading originals.</string>
+
+    <!-- Screen 3 — Permissions -->
+    <string name="onboarding_permissions_title">Media permissions</string>
+    <string name="onboarding_permissions_body">Telepix needs access to your photos and videos to show your local library and back up the media you choose.</string>
+    <string name="onboarding_permissions_grant">Allow photo &amp; video access</string>
+    <string name="onboarding_permissions_try_again">Try again</string>
+    <string name="onboarding_permissions_open_settings">Open settings</string>
+    <string name="onboarding_permissions_state_granted">Full access granted</string>
+    <string name="onboarding_permissions_state_granted_body">Telepix can see your photos and videos.</string>
+    <string name="onboarding_permissions_state_partial">Limited access</string>
+    <string name="onboarding_permissions_state_partial_body">You chose specific photos. Telepix can see only those. You can change this anytime in settings.</string>
+    <string name="onboarding_permissions_state_denied">Access denied</string>
+    <string name="onboarding_permissions_state_denied_body">Without access, Telepix can\'t show your library. You can still continue and grant access later.</string>
+    <string name="onboarding_permissions_state_blocked">Access blocked</string>
+    <string name="onboarding_permissions_state_blocked_body">Android is blocking the request. Enable photo access in app settings, then continue.</string>
+
+    <!-- Screen 4 — Telegram Login -->
+    <string name="onboarding_telegram_title">Connect Telegram</string>
+    <string name="onboarding_telegram_body">Telepix uses Telegram as the cloud storage layer for your backed-up media, kept in a private channel only you control.</string>
+    <string name="onboarding_telegram_connect">Connect Telegram</string>
+    <string name="onboarding_telegram_not_connected">Not connected</string>
+    <string name="onboarding_telegram_not_connected_body">Telegram sign-in arrives in the Telegram integration phase. You can continue now and connect later from Settings — cloud backup stays off until then.</string>
+    <string name="onboarding_telegram_skip">Set up later</string>
+
+    <!-- Screen 5 — Backup Preferences -->
+    <string name="onboarding_backup_title">Choose your backup</string>
+    <string name="onboarding_backup_subtitle">Pick how Telepix should back up your media. You can change this later in Settings.</string>
+    <string name="onboarding_backup_all_title">Back up all photos</string>
+    <string name="onboarding_backup_all_body">Telepix can back up your photo library according to your backup settings.</string>
+    <string name="onboarding_backup_folder_title">Select a folder</string>
+    <string name="onboarding_backup_folder_body">Choose a specific source or folder for backup.</string>
+    <string name="onboarding_backup_folder_pending">Folder selection becomes available with the media library phase.</string>
+    <string name="onboarding_backup_not_now_title">Not now</string>
+    <string name="onboarding_backup_not_now_body">Continue without configuring backup. You can set it up anytime from Settings.</string>
+
+    <!-- Screen 6 — Ready -->
+    <string name="onboarding_ready_title">You\'re ready to use Telepix</string>
+    <string name="onboarding_ready_subtitle">Here\'s your setup. You can change any of this later.</string>
+    <string name="onboarding_ready_photo_access">Photo access</string>
+    <string name="onboarding_ready_telegram">Telegram</string>
+    <string name="onboarding_ready_backup">Backup</string>
+    <string name="onboarding_ready_value_full">Full access</string>
+    <string name="onboarding_ready_value_limited">Limited access</string>
+    <string name="onboarding_ready_value_not_granted">Not granted</string>
+    <string name="onboarding_ready_value_connected">Connected</string>
+    <string name="onboarding_ready_value_not_connected">Not connected</string>
+    <string name="onboarding_ready_value_backup_all">All photos</string>
+    <string name="onboarding_ready_value_backup_folder">Selected folder</string>
+    <string name="onboarding_ready_value_backup_none">Not configured</string>
+    <string name="onboarding_ready_start">Start using Telepix</string>
 </resources>
