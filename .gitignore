@@ -1,0 +1,22 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Built artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+app/build/
+build/
+
+# Secrets — never commit Telegram credentials
+telegram.properties
+secrets.properties

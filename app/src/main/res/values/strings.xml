@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Telepix</string>
+
+    <!-- Primary navigation -->
+    <string name="nav_photos">Photos</string>
+    <string name="nav_cloud">Cloud</string>
+    <string name="nav_albums">Albums</string>
+    <string name="nav_map">Map</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Photos -->
+    <string name="photos_title">Telepix</string>
+    <string name="photos_empty_title">Your photos will appear here</string>
+    <string name="photos_empty_description">This is your local media timeline. Telepix will organize your photos and videos here in a fast, beautiful grid — coming in a later phase.</string>
+
+    <!-- Cloud -->
+    <string name="cloud_title">Cloud</string>
+    <string name="cloud_empty_title">Telepix Cloud is not set up yet</string>
+    <string name="cloud_empty_description">Cloud will show the media you back up to your private Telepix Backup channel on Telegram. Browse previews without automatically downloading originals. Telegram connection arrives in a later phase.</string>
+
+    <!-- Albums -->
+    <string name="albums_title">Albums</string>
+    <string name="albums_empty_title">No albums yet</string>
+    <string name="albums_empty_description">System albums like Camera, Screenshots and Videos, plus your own custom albums, will be organized here in a later phase.</string>
+
+    <!-- Map -->
+    <string name="map_title">Map</string>
+    <string name="map_empty_title">Location view is coming</string>
+    <string name="map_empty_description">Photos with location information will be displayed on an interactive map. Mapping arrives in a later phase.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_account">Account</string>
+    <string name="settings_account_telegram">Telegram account</string>
+    <string name="settings_account_telegram_summary">Not connected — sign in arrives in a later phase</string>
+    <string name="settings_section_backup">Backup</string>
+    <string name="settings_backup_preferences">Backup preferences</string>
+    <string name="settings_backup_preferences_summary">Coming in a later phase</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_appearance_theme">Theme</string>
+    <string name="settings_section_storage">Storage</string>
+    <string name="settings_storage_cache">Cache and storage</string>
+    <string name="settings_storage_cache_summary">Coming in a later phase</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_about_version">Telepix version</string>
+
+    <!-- Theme options -->
+    <string name="theme_system">System default</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_theme_dialog_title">Choose theme</string>
+</resources>

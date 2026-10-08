@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Legacy (API 24-25) launcher icon: a full-bleed Telepix blue square with the white photo
+  glyph. Superseded by the adaptive icon in mipmap-anydpi-v26 on API 26+.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#2F6BF0"
+        android:pathData="M0,0 H108 V108 H0 Z" />
+
+    <!-- Sun -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M37,43 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 Z" />
+
+    <!-- Peaks -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,74 L46,50 L58,64 L66,54 L80,74 Z" />
+</vector>

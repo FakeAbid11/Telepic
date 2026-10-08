@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android full-backup rules (API <= 30).
+  Phase 1 stores no sensitive data. Later phases will exclude the Room database,
+  Telegram/TDLib session files and cached media from cloud backup.
+-->
+<full-backup-content>
+</full-backup-content>

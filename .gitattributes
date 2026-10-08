@@ -1,0 +1,11 @@
+# Normalize line endings. The Gradle wrapper script must stay LF so it runs on Linux CI.
+* text=auto eol=lf
+
+gradlew text eol=lf
+gradlew.bat text eol=crlf
+
+# Binary files — never touch line endings.
+*.jar binary
+*.png binary
+*.jpg binary
+*.webp binary

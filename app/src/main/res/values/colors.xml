@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Adaptive launcher icon background: Telepix blue. -->
+    <color name="ic_launcher_background">#2F6BF0</color>
+
+    <!-- Pre-Compose window backgrounds (day / night). -->
+    <color name="telepix_window_light">#FFFFFF</color>
+    <color name="telepix_window_dark">#0B0D10</color>
+</resources>

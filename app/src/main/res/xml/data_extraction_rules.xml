@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31) data extraction rules.
+  Phase 1 stores no sensitive data; later phases will exclude database, session and
+  cached media from cloud backup and device-to-device transfer.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+    </cloud-backup>
+    <device-transfer>
+    </device-transfer>
+</data-extraction-rules>
