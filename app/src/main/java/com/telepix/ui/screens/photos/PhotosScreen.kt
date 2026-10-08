@@ -171,8 +171,9 @@ private fun MediaRegion(
             }
         }
 
-        // Partial access honesty (§31): a subtle banner — never claims a full library.
-        if (permissionState == MediaPermissionState.Partial && hasContent) {
+        // Partial access honesty (§31): a subtle banner shown as soon as limited access is in
+        // effect — it never claims a full library, and appears whether or not items are loaded yet.
+        if (permissionState == MediaPermissionState.Partial) {
             PartialAccessBanner(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
