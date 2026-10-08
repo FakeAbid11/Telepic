@@ -3,6 +3,7 @@ package com.telepix.data.cloud
 import com.telepix.data.cloud.db.CloudDestinationDao
 import com.telepix.data.cloud.db.CloudDestinationEntity
 import com.telepix.data.cloud.db.CloudMediaManifestDao
+import com.telepix.data.cloud.CloudMapping.toDomain
 import com.telepix.data.cloud.CloudMapping.toEntity
 import com.telepix.domain.cloud.ChatCandidate
 import com.telepix.domain.cloud.ChatValidator

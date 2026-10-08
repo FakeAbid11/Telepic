@@ -91,9 +91,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     private val cloudDataSource: CloudDataSource by lazy {
         val downloads = File(appContext.noBackupFilesDir, "telepix_cloud").apply { mkdirs() }
         TdLibCloudDataSource(
-            gateway = tdLibClientGateway,
-            authState = telegramSessionManager.state,
             filesDir = downloads,
+            authState = telegramSessionManager.state,
         )
     }
 

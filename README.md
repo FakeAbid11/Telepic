@@ -19,6 +19,7 @@ Telepix organizes your local media into a fast, beautiful timeline and (in later
 | Navigation | Navigation for Compose |
 | Persistence | Jetpack DataStore (Preferences) |
 | Local media | Android MediaStore + Paging 3 |
+| Persistence (app data) | Room (cloud destination + media manifest) |
 | Image loading | Coil (thumbnail-first, video-frame decoding) |
 | Cloud backend | Telegram via **Java TDLib** (`org.drinkless.tdlib`), ARM-only |
 | Database | Room *(later phases)* |
@@ -150,9 +151,33 @@ restart the app (the session should persist), and test logout/re-login.
 - **Secure logging**: API hash, phone number, authentication code, password, and the encryption key
   are never logged
 
+### ✅ Phase 5 — Telegram Cloud *(architecture + UI + persistence complete; live cloud calls pending device bring-up)*
+
+Implemented and CI-verified:
+- **Room** introduced (KSP) with an explicit schema and **no destructive fallback**:
+  `cloud_destination` (single validated row per provider) and `cloud_media_manifest`
+  (stable identity `chatId + messageId`, optional reserved hash field for Phase 7)
+- Clean layering: **Cloud screen → `CloudViewModel` → `CloudRepository` → `CloudDataSource`
+  → TDLib**, reusing the **single** Phase 4 client/session/gateway (never a second Telegram client)
+- Domain models: `TelepixCloudDestination`, `CloudMedia` (IMAGE / VIDEO / GIF, GIF kept distinct),
+  `CloudPreview`, `LocalDownloadedMedia`; a rich `CloudStatus` (initializing / connecting /
+  refreshing / ready / empty / offline / not-authenticated / destination-missing / invalid / error)
+- `ChatValidator` enforces a **safe destination** (accessible channel the account can post to, with
+  the expected title) — never the title alone, so a same-name channel owned by someone else is rejected
+- Repository orchestration (discover → create-if-needed → validate → persist → refresh → manifest
+  upsert with de-dup → state), race-guarded, cancellable, on background dispatchers; **no uploads**
+- A functional **Cloud screen** (adaptive grid, video/GIF indicators, preview-on-demand) that
+  **never downloads originals to browse** and distinguishes empty from offline/error
+
+Pending (requires an authenticated session on a real ARM device):
+- The concrete TDLib cloud request shapes (`searchChatsOnServer`/`getChats`, `createNewSupergroupChat`,
+  `getChatHistory`, `download`/`getFile`) are written defensively against **TDLib 1.8.64**, whose
+  generated `TdApi` surface must be finalized on-device; until then the cloud data source returns
+  honest "not available" results and the UI shows a truthful setup/unavailable state (no faked cloud).
+
 ### 🔜 Later phases
 
-Telepix Cloud (backup channel + cloud browsing) · Backup engine · Recognition & deduplication · Polished Photos interactions · Albums/Viewer · Map/Restore · Settings & security hardening · Full integration.
+Backup engine (queue, WorkManager, hashing, dedup) · Recognition & reinstall recovery · Polished Photos interactions · Albums · Viewer · Map/Restore · Settings & security hardening · Full integration.
 
 See [`PRD.md`](PRD.md) for the complete product specification and the 12-phase plan.
 
