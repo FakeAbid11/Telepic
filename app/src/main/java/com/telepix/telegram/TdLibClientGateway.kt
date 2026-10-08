@@ -75,12 +75,8 @@ class TdLibClientGatewayImpl : TdLibClientGateway {
     }
 
     override fun close() {
-        val active = client ?: return
+        // The bundled org.drinkless.tdlib.Client exposes no instance close(); the native client's
+        // lifecycle is tied to the process/session. Drop the reference so no new requests are sent.
         client = null
-        try {
-            active.close()
-        } catch (_: Throwable) {
-            // Never let a native close failure propagate to the UI.
-        }
     }
 }

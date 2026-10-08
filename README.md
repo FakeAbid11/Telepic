@@ -20,7 +20,7 @@ Telepix organizes your local media into a fast, beautiful timeline and (in later
 | Persistence | Jetpack DataStore (Preferences) |
 | Local media | Android MediaStore + Paging 3 |
 | Image loading | Coil (thumbnail-first, video-frame decoding) |
-| Cloud backend | Telegram via TDLib *(later phases)* |
+| Cloud backend | Telegram via **Java TDLib** (`org.drinkless.tdlib`), ARM-only |
 | Database | Room *(later phases)* |
 | Background work | WorkManager *(later phases)* |
 | Map | OpenStreetMap *(later phases)* |
@@ -42,8 +42,9 @@ Every push to `main` and every pull request runs the [`Android CI`](.github/work
 6. Assembles a **debug APK**
 7. Uploads the APK (and test/lint reports) as workflow artifacts
 
-No Telegram credentials are required for Phases 1–2 — the actual Telegram backend is not
-implemented yet, so the build succeeds without any secrets.
+No Telegram credentials are required for Phases 1–3. From Phase 4 the Telegram (TDLib) backend
+needs **API credentials supplied as GitHub Actions Secrets** (see below); without them the debug
+build still compiles and runs (login is simply unavailable), so CI stays green.
 
 ### Downloading the debug APK
 
@@ -53,6 +54,25 @@ implemented yet, so the build succeeds without any secrets.
 4. Download **`telepix-debug-apk`** and install the APK on your device.
 
 You can also trigger a build manually via **Run workflow** (`workflow_dispatch`).
+
+### Telegram credentials (Phase 4+)
+
+To build a login-capable APK, configure **GitHub repository Secrets** (Settings → Secrets and
+variables → Actions):
+
+- `TELEGRAM_API_ID` — numeric, from your [Telegram developer account](https://my.telegram.org)
+- `TELEGRAM_API_HASH` — string
+
+The CI passes them to Gradle (masked), which injects them into `BuildConfig`. They are **never**
+committed, hardcoded, or logged. Without them, debug builds use a safe placeholder and Telegram
+login is simply unavailable — the rest of the app (and CI) still work.
+
+### Verifying Telegram login on a real device
+
+Real-device Telegram login must be done manually by the developer (an ARM Android device is
+required): install the debug APK, complete onboarding, then on the **Telegram Login** step enter your
+phone number, the Telegram code, and (if enabled) your 2FA password. Confirm the authorized state,
+restart the app (the session should persist), and test logout/re-login.
 
 ---
 
@@ -112,9 +132,27 @@ You can also trigger a build manually via **Run workflow** (`workflow_dispatch`)
 - Viewer **navigation contract** (passes only a stable media id); the full viewer is a later phase
 - No backup, hashing, Telegram, or cloud is triggered by viewing media
 
+### ✅ Phase 4 — Telegram / TDLib Integration *(complete: code + CI)*
+
+- **Java TDLib** bindings (`org.drinkless.tdlib.Client` / `TdApi`) via the `io.github.tdlib-android:core`
+  AAR — **no JSON client, no hand-written JNI shim**
+- **ARM-only** native libraries (`arm64-v8a`, `armeabi-v7a`) selected via `ndk.abiFilters`; the APK
+  excludes x86/x86_64. `minSdk` raised to **26** (required by the TDLib artifact)
+- A clean layer boundary: **UI → `TelegramAuthController` → `TelegramSessionManager` → `TdLibClientGateway` → TDLib**.
+  The UI never touches `Client` directly
+- Full authentication state machine mapping **every** TDLib authorization state to `TelegramAuthState`
+  (initializing → phone number → code → optional 2FA password → authorized; closing/closed; errors)
+- **Persistent, app-private TDLib database** (`noBackupFilesDir`) with a **Keystore-wrapped
+  encryption key** — login survives app restart and process death; never stored on shared storage
+- Real onboarding Telegram UI: phone / code / 2FA inputs, account identity on success, and
+  recoverable errors (invalid credentials, **flood wait**, network) — **never fakes a login**
+- **Non-blocking startup**: TDLib initializes without ever delaying or crashing the local Photos flow
+- **Secure logging**: API hash, phone number, authentication code, password, and the encryption key
+  are never logged
+
 ### 🔜 Later phases
 
-Telegram/TDLib · Telepix Cloud · Backup engine · Recognition & deduplication · Polished Photos interactions · Cloud/Albums/Viewer · Map/Restore · Settings & security hardening · Full integration.
+Telepix Cloud (backup channel + cloud browsing) · Backup engine · Recognition & deduplication · Polished Photos interactions · Albums/Viewer · Map/Restore · Settings & security hardening · Full integration.
 
 See [`PRD.md`](PRD.md) for the complete product specification and the 12-phase plan.
 
@@ -133,7 +171,7 @@ app/src/main/java/com/telepix/
 ├── onboarding/                  # BackupPreference, repository, ViewModel, startup routing
 ├── permissions/                 # MediaPermissionState + SDK-aware policy + controller
 ├── settings/                    # ThemeMode, repository, ViewModel (DataStore)
-├── telegram/                    # TelegramAuthState contract + controller (Phase 2 stub)
+├── telegram/                    # TDLib: controller, session manager, client gateway, key, states
 └── ui/
     ├── TelepixRoot.kt            # Startup routing: onboarding vs main app
     ├── TelepixApp.kt            # Scaffold + bottom navigation

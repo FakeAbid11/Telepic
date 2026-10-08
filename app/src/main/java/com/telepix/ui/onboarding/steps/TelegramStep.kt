@@ -150,7 +150,7 @@ private fun AuthContent(
                 },
             )
         }
-        TelegramAuthState.WaitingForOtherDeviceConfirmation ->
+        is TelegramAuthState.WaitingForOtherDeviceConfirmation ->
             StatusRow(stringResource(R.string.telegram_other_device), busy = true)
         TelegramAuthState.WaitingForRegistration ->
             StatusRow(stringResource(R.string.telegram_registration), busy = false)

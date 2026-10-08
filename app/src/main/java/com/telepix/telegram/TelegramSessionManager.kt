@@ -81,31 +81,27 @@ class TelegramSessionManager(
     }
 
     private suspend fun sendParameters() {
-        val request = TdApi.SetTdlibParameters().apply {
-            parameters = buildParameters()
-        }
+        val dir = File(appContext.noBackupFilesDir, "tdlib").apply { mkdirs() }
+        val databaseKey = keyProvider.getOrCreate()
+        val request = TdApi.SetTdlibParameters(
+            /* useTestDc = */ false,
+            /* databaseDirectory = */ dir.absolutePath,
+            /* filesDirectory = */ "${dir.absolutePath}/files",
+            /* databaseEncryptionKey = */ databaseKey,
+            /* useFileDatabase = */ true,
+            /* useChatInfoDatabase = */ true,
+            /* useMessageDatabase = */ true,
+            /* useSecretChats = */ false,
+            /* apiId = */ apiId,
+            /* apiHash = */ apiHash,
+            /* systemLanguageCode = */ Locale.getDefault().language,
+            /* deviceModel = */ Build.MODEL,
+            /* systemVersion = */ Build.VERSION.RELEASE,
+            /* applicationVersion = */ applicationVersion,
+        )
         when (val response = safeRequest(request)) {
             is TdApi.Error -> fail(TelegramError.classify(response.code, response.message))
             else -> Unit
-        }
-    }
-
-    private suspend fun buildParameters(): TdApi.TdlibParameters {
-        val dir = File(appContext.noBackupFilesDir, "tdlib").apply { mkdirs() }
-        val language = Locale.getDefault().language
-        return TdApi.TdlibParameters().apply {
-            useDatabase = true
-            useMessageDatabase = true
-            useSecretChats = false
-            this.apiId = apiId
-            apiHash = this@TelegramSessionManager.apiHash
-            systemLanguageCode = language
-            systemLanguage = Locale.getDefault().displayName
-            deviceModel = Build.MODEL
-            applicationVersion = this@TelegramSessionManager.applicationVersion
-            databaseDirectory = dir.absolutePath
-            filesDirectory = dir.absolutePath
-            databaseEncryptionKey = keyProvider.getOrCreate()
         }
     }
 
@@ -116,7 +112,7 @@ class TelegramSessionManager(
                     id = me.id,
                     firstName = me.firstName,
                     lastName = me.lastName,
-                    username = me.username,
+                    username = null,
                 )
                 publishMappedState()
             }

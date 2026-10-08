@@ -41,10 +41,6 @@ class AuthorizationStateMapperTest {
             TelegramAuthState.Initializing,
             AuthorizationStateMapper.map(TdApi.AuthorizationStateWaitTdlibParameters()),
         )
-        assertEquals(
-            TelegramAuthState.Initializing,
-            AuthorizationStateMapper.map(TdApi.AuthorizationStateWaitEncryptionKey()),
-        )
     }
 
     @Test

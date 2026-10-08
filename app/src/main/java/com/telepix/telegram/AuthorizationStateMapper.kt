@@ -17,26 +17,17 @@ object AuthorizationStateMapper {
         authorizedUser: TelegramUser? = null,
     ): TelegramAuthState = when (state) {
         null -> TelegramAuthState.NotConnected
-        is TdApi.AuthorizationStateWaitTdlibParameters,
-        is TdApi.AuthorizationStateWaitEncryptionKey,
-        is TdApi.AuthorizationStateWaitRegistration,
-        -> mappingForRegistrationOrInit(state)
+        is TdApi.AuthorizationStateWaitTdlibParameters -> TelegramAuthState.Initializing
         is TdApi.AuthorizationStateWaitPhoneNumber -> TelegramAuthState.WaitingForPhoneNumber
         is TdApi.AuthorizationStateWaitCode -> TelegramAuthState.WaitingForCode
         is TdApi.AuthorizationStateWaitPassword -> TelegramAuthState.WaitingForPassword
+        is TdApi.AuthorizationStateWaitRegistration -> TelegramAuthState.WaitingForRegistration
         is TdApi.AuthorizationStateWaitOtherDeviceConfirmation ->
             TelegramAuthState.WaitingForOtherDeviceConfirmation(state.link)
         is TdApi.AuthorizationStateReady ->
             authorizedUser?.let { TelegramAuthState.Authorized(it) } ?: TelegramAuthState.Initializing
         is TdApi.AuthorizationStateClosing -> TelegramAuthState.Closing
         is TdApi.AuthorizationStateClosed -> TelegramAuthState.Closed
-        else -> TelegramAuthState.Initializing
-    }
-
-    private fun mappingForRegistrationOrInit(
-        state: TdApi.AuthorizationState,
-    ): TelegramAuthState = when (state) {
-        is TdApi.AuthorizationStateWaitRegistration -> TelegramAuthState.WaitingForRegistration
         else -> TelegramAuthState.Initializing
     }
 }
