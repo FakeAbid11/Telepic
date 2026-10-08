@@ -1,7 +1,6 @@
 package com.telepix.data.media
 
 import android.net.Uri
-import androidx.paging.LoadResult
 import androidx.paging.PagingSource
 import com.telepix.domain.media.LocalMedia
 import com.telepix.domain.media.MediaType
@@ -16,7 +15,7 @@ import org.robolectric.annotation.Config
 
 /**
  * Verifies the paging source's day-header behavior against a fake [MediaPageLoader]: headers on
- * day change, no duplicate header across a page boundary, reset on refresh, and error passthrough.
+ * day change, no duplicate header across a page boundary, reset at the top, and error passthrough.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -47,21 +46,22 @@ class MediaPagingSourceTest {
             all.drop(offset).take(limit)
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private suspend fun PagingSource<Int, PhotosItem>.refresh0(size: Int): LoadResult.Page<Int, PhotosItem> {
+    private typealias Page = PagingSource.LoadResult.Page<Int, PhotosItem>
+
+    private suspend fun PagingSource<Int, PhotosItem>.refreshTop(size: Int): Page {
         val result = load(PagingSource.LoadParams.Refresh(0, size, false))
-        assertTrue("expected page, got $result", result is LoadResult.Page)
-        return result as LoadResult.Page<Int, PhotosItem>
+        assertTrue("expected page, got $result", result is Page)
+        return result as Page
     }
 
     @Test
     fun `inserts a header whenever the day changes`() = runTest {
-        val source = MediaPagingSource(FakeLoader(listOf(media(3, dayA), media(2, dayA), media(1, dayB))))
-        val page = source.refresh0(size = 10)
+        val source = MediaPagingSource(
+            FakeLoader(listOf(media(3, dayA), media(2, dayA), media(1, dayB))),
+        )
+        val page = source.refreshTop(size = 10)
 
-        val kinds = page.data.map { it is PhotosItem.Day }
-        assertEquals(listOf(true, false, false, true, false), kinds)
-        // End of library: fewer items than requested, so no next key.
+        assertEquals(listOf(true, false, false, true, false), page.data.map { it is PhotosItem.Day })
         assertEquals(null, page.nextKey)
         assertEquals(null, page.prevKey)
     }
@@ -71,23 +71,19 @@ class MediaPagingSourceTest {
         val all = listOf(media(5, dayA), media(4, dayA), media(3, dayA), media(2, dayB))
         val source = MediaPagingSource(FakeLoader(all))
 
-        val first = source.refresh0(size = 2)
+        val first = source.refreshTop(size = 2)
         assertEquals(listOf(true, false, false), first.data.map { it is PhotosItem.Day })
         assertEquals(2, first.nextKey)
 
-        val appended = source.load(
-            PagingSource.LoadParams.Append(2, 2, false),
-        ) as LoadResult.Page<Int, PhotosItem>
-        // Same day continues (no new header), then a new day gets one.
+        val appended = source.load(PagingSource.LoadParams.Append(2, 2, false)) as Page
         assertEquals(listOf(false, true, false), appended.data.map { it is PhotosItem.Day })
     }
 
     @Test
-    fun `refresh resets header state so the top day header reappears`() = runTest {
+    fun `refresh at the top resets header state`() = runTest {
         val source = MediaPagingSource(FakeLoader(listOf(media(1, dayC))))
-        assertEquals(true, source.refresh0(size = 5).data.first() is PhotosItem.Day)
-        // A second refresh (invalidation) must still begin with a header for the only item.
-        assertEquals(true, source.refresh0(size = 5).data.first() is PhotosItem.Day)
+        assertTrue(source.refreshTop(size = 5).data.first() is PhotosItem.Day)
+        assertTrue(source.refreshTop(size = 5).data.first() is PhotosItem.Day)
     }
 
     @Test
@@ -99,6 +95,6 @@ class MediaPagingSourceTest {
         val result = MediaPagingSource(failing).load(
             PagingSource.LoadParams.Refresh(0, 10, false),
         )
-        assertTrue(result is LoadResult.Error)
+        assertTrue(result is PagingSource.LoadResult.Error)
     }
 }
