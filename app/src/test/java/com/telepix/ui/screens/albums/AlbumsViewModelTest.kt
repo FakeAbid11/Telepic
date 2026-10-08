@@ -9,7 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -17,7 +17,6 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 
 /** Album loading states: ready, genuinely empty, and error distinct from empty. */
@@ -34,11 +33,6 @@ class AlbumsViewModelTest {
         override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
     }
 
-    @Before
-    fun setUp() {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
-    }
-
     @After
     fun tearDown() {
         Dispatchers.resetMain()
@@ -46,6 +40,7 @@ class AlbumsViewModelTest {
 
     @Test
     fun `loads albums into the ready state`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val vm = AlbumsViewModel(FakeAlbums { listOf(album(1), album(2)) })
         runCurrent()
         val status = vm.status.value
@@ -55,6 +50,7 @@ class AlbumsViewModelTest {
 
     @Test
     fun `empty library is the empty state`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val vm = AlbumsViewModel(FakeAlbums { emptyList() })
         runCurrent()
         assertEquals(AlbumsStatus.Empty, vm.status.value)
@@ -62,6 +58,7 @@ class AlbumsViewModelTest {
 
     @Test
     fun `a provider failure is the error state, not empty`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val vm = AlbumsViewModel(FakeAlbums { throw IllegalStateException("boom") })
         runCurrent()
         assertEquals(AlbumsStatus.Error, vm.status.value)
