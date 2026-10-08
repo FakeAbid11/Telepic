@@ -18,6 +18,17 @@ interface BackupQueueDao {
     @Query("SELECT * FROM backup_queue ORDER BY createdAt ASC")
     fun observeAll(): Flow<List<BackupQueueEntity>>
 
+    /** id+state projection for the Photos backup-status map (batched, not per tile). */
+    @Query("SELECT localMediaId, state FROM backup_queue")
+    fun observeStatusRows(): Flow<List<BackupStatusRow>>
+
+    /**
+     * A lightweight projection (id + state only) for the Photos backup-status map — avoids pulling
+     * full rows (paths, metadata) just to color tiles. Room maps this POJO by column name.
+     */
+    @Query("SELECT localMediaId, state FROM backup_queue")
+    fun observeStatusRows(): Flow<List<BackupStatusRow>>
+
     /** Insert only when the same local media is not already queued; returns -1 when ignored. */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnore(entity: BackupQueueEntity): Long

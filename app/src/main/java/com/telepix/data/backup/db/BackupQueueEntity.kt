@@ -49,3 +49,12 @@ data class BackupQueueEntity(
     val contentSizeBytes: Long? = null,
     val hashedAt: Long? = null,
 )
+
+/**
+ * A lightweight id+state projection of a queue row. Used to feed the Photos backup-status map
+ * without loading full rows (paths, metadata) onto the UI — one batched query, not one per tile.
+ */
+data class BackupStatusRow(
+    val localMediaId: String,
+    val state: String,
+)

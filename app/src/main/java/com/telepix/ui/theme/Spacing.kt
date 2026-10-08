@@ -30,6 +30,8 @@ data class TelepixSpacing(
     val gridGutter: Dp = 2.dp,
     /** Corner radius applied to media grid cells. */
     val gridItemRadius: Dp = 10.dp,
+    /** Reserved right-edge padding so the date rail never covers grid media. */
+    val railGutter: Dp = 56.dp,
 )
 
 val LocalSpacing = staticCompositionLocalOf { TelepixSpacing() }

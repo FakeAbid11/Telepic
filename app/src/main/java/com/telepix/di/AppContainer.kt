@@ -10,9 +10,11 @@ import com.telepix.data.backup.BackupCoordinator
 import com.telepix.data.backup.BackupRecognitionRepository
 import com.telepix.data.backup.BackupRepository
 import com.telepix.data.backup.BackupStager
+import com.telepix.data.backup.BackupStatusRepository
 import com.telepix.data.backup.DefaultBackupCoordinator
 import com.telepix.data.backup.DefaultBackupRecognitionRepository
 import com.telepix.data.backup.DefaultBackupRepository
+import com.telepix.data.backup.DefaultBackupStatusRepository
 import com.telepix.data.backup.hash.AndroidContentHasher
 import com.telepix.data.backup.hash.ContentHasher
 import com.telepix.data.backup.work.BackupWorkScheduler
@@ -62,6 +64,7 @@ interface AppContainer {
     val localMediaRepository: LocalMediaRepository
     val mediaChangeWatcher: MediaChangeWatcher
     val backupRepository: BackupRepository
+    val backupStatusRepository: BackupStatusRepository
     val backupCoordinator: BackupCoordinator
     val backupWorkScheduler: BackupWorkScheduler
 }
@@ -155,6 +158,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             authState = telegramSessionManager.state,
             stager = backupStager,
         )
+    }
+
+    override val backupStatusRepository: BackupStatusRepository by lazy {
+        DefaultBackupStatusRepository(backupQueueDao)
     }
 
     override val backupWorkScheduler: BackupWorkScheduler by lazy {

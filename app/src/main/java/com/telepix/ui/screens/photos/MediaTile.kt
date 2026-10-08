@@ -9,9 +9,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -28,6 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.telepix.R
+import com.telepix.domain.backup.MediaBackupVisualState
 import com.telepix.domain.media.LocalMedia
 import com.telepix.domain.media.MediaDay
 import com.telepix.domain.media.MediaType
@@ -35,18 +42,21 @@ import com.telepix.ui.theme.TelepixTokens
 import java.util.Locale
 
 /**
- * A single media cell. Renders a thumbnail-first image via Coil (never the full original),
- * overlays a video play + duration or a GIF badge, and exposes a meaningful accessibility label.
+ * A single media cell (Phase 8): a square, center-cropped, thumbnail-first Coil image (never a full
+ * original), a video play + duration or a GIF badge, and a compact backup indicator derived from the
+ * repository-provided [backupState]. The tile reads its status from the passed-in snapshot — it runs
+ * no database query, hashing or network call itself, and never infers backup success on its own.
  */
 @Composable
 fun MediaTile(
     media: LocalMedia,
+    backupState: MediaBackupVisualState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = TelepixTokens.spacing
     val context = LocalContext.current
-    val label = mediaAccessibilityLabel(context, media)
+    val label = mediaAccessibilityLabel(context, media, backupState)
 
     Box(
         modifier = modifier
@@ -72,11 +82,18 @@ fun MediaTile(
             )
             MediaType.GIF -> GifOverlay(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
+                    .align(Alignment.BottomStart)
                     .padding(spacing.xs),
             )
             MediaType.PHOTO -> Unit
         }
+
+        BackupBadge(
+            state = backupState,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(spacing.xs),
+        )
     }
 }
 
@@ -117,20 +134,72 @@ private fun GifOverlay(modifier: Modifier = Modifier) {
     )
 }
 
-private fun mediaAccessibilityLabel(context: Context, media: LocalMedia): String {
+/**
+ * A visually-quiet backup indicator. Only `QUEUED`, `UPLOADING`, `BACKED_UP` and `FAILED` are shown;
+ * `NONE`/`CANCELLED` render nothing so the grid stays clean and media-first. Progress is genuinely
+ * indeterminate when unavailable — no fabricated percentages.
+ */
+@Composable
+private fun BackupBadge(state: MediaBackupVisualState, modifier: Modifier = Modifier) {
+    if (state == MediaBackupVisualState.NONE) return
+    val scrim = Color(0x99000000)
+    Box(
+        modifier = modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(scrim),
+        contentAlignment = Alignment.Center,
+    ) {
+        when (state) {
+            MediaBackupVisualState.UPLOADING -> CircularProgressIndicator(
+                strokeWidth = 2.dp,
+                color = Color.White,
+                modifier = Modifier.size(14.dp),
+            )
+            else -> {
+                val (icon, tint) = when (state) {
+                    MediaBackupVisualState.BACKED_UP -> Icons.Outlined.CloudDone to Color.White
+                    MediaBackupVisualState.FAILED -> Icons.Outlined.CloudOff to MaterialTheme.colorScheme.error
+                    MediaBackupVisualState.QUEUED -> Icons.Outlined.CloudUpload to Color.White
+                    else -> Icons.Outlined.CloudUpload to Color.White
+                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null, // the tile's merged content description already states it
+                    tint = tint,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun mediaAccessibilityLabel(
+    context: Context,
+    media: LocalMedia,
+    backupState: MediaBackupVisualState,
+): String {
     val typeRes = when (media.type) {
         MediaType.PHOTO -> R.string.media_type_photo
         MediaType.VIDEO -> R.string.media_type_video
         MediaType.GIF -> R.string.media_type_gif
     }
-    val type = context.getString(typeRes)
-    val date = MediaDay.label(media.dateMillis)
-    val duration = formatDuration(media.durationMillis)
-    return if (media.type == MediaType.VIDEO && duration != null) {
-        "$type, $date, $duration"
-    } else {
-        "$type, $date"
+    val parts = mutableListOf(context.getString(typeRes), MediaDay.label(media.dateMillis))
+    if (media.type == MediaType.VIDEO) {
+        formatDuration(media.durationMillis)?.let { parts += it }
     }
+    if (backupState != MediaBackupVisualState.NONE) {
+        parts += context.getString(backupState.descriptionRes())
+    }
+    return parts.joinToString(", ")
+}
+
+private fun MediaBackupVisualState.descriptionRes(): Int = when (this) {
+    MediaBackupVisualState.BACKED_UP -> R.string.backup_state_backed_up
+    MediaBackupVisualState.UPLOADING -> R.string.backup_state_uploading
+    MediaBackupVisualState.QUEUED -> R.string.backup_state_queued
+    MediaBackupVisualState.FAILED -> R.string.backup_state_failed
+    MediaBackupVisualState.NONE -> R.string.backup_state_none
 }
 
 private fun formatDuration(millis: Long?): String? {
@@ -140,8 +209,8 @@ private fun formatDuration(millis: Long?): String? {
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
     return if (hours > 0) {
-        String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+        String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
     } else {
-        String.format(Locale.US, "%d:%02d", minutes, seconds)
+        String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
     }
 }

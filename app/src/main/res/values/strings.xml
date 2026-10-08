@@ -210,4 +210,23 @@
     <string name="backup_start_backup">Start backup</string>
     <string name="backup_settings_entry">Backup Center</string>
     <string name="backup_settings_entry_summary">View the backup queue, progress and failures</string>
+
+    <!-- ============================ Photos UI (Phase 8) ============================ -->
+    <string name="photos_settings">Settings</string>
+    <string name="photos_partial_access_banner">Showing only the photos and videos you selected. You can grant full access in Settings.</string>
+    <string name="photos_open_backup_center">Backup</string>
+    <string name="photos_loading_more">Loading more photos…</string>
+    <string name="photos_load_more_error">Couldn\'t load more</string>
+    <string name="photos_refresh_failed">Couldn\'t refresh. Showing what\'s already loaded.</string>
+
+    <!-- Relative day headers (localized; absolute dates use the device locale) -->
+    <string name="date_today">Today</string>
+    <string name="date_yesterday">Yesterday</string>
+
+    <!-- Backup status indicators (content descriptions + labels) -->
+    <string name="backup_state_none">Not backed up</string>
+    <string name="backup_state_queued">Upload pending</string>
+    <string name="backup_state_uploading">Uploading</string>
+    <string name="backup_state_backed_up">Backed up</string>
+    <string name="backup_state_failed">Backup failed</string>
 </resources>

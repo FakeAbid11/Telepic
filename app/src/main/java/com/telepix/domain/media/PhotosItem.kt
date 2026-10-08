@@ -9,7 +9,7 @@ package com.telepix.domain.media
 sealed interface PhotosItem {
     val key: String
 
-    data class Day(val dayKey: String, val label: String) : PhotosItem {
+    data class Day(val dayKey: String, val epochDay: Long, val label: String) : PhotosItem {
         override val key: String = "day_$dayKey"
     }
 

@@ -1,15 +1,19 @@
 package com.telepix.ui.screens.photos
 
 import androidx.paging.PagingData
+import com.telepix.data.backup.BackupStatusRepository
 import com.telepix.data.media.LocalMediaRepository
 import com.telepix.data.media.MediaChangeWatcher
+import com.telepix.domain.backup.MediaBackupVisualState
 import com.telepix.domain.media.PhotosItem
 import com.telepix.permissions.MediaPermissionState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -92,4 +96,27 @@ class PhotosViewModelTest {
             .invoke(viewModel)
         assertTrue(watcher.stopped)
     }
-}
+
+    @Test
+    fun `exposes backup status keyed by the numeric media id`() = runTest {
+        val statusRepository = object : BackupStatusRepository {
+            override val visualStates: Flow<Map<String, MediaBackupVisualState>> =
+                flowOf(mapOf("7" to MediaBackupVisualState.BACKED_UP, "not-a-number" to MediaBackupVisualState.QUEUED))
+        }
+        val viewModel = PhotosViewModel(FakeRepository(), FakeWatcher(), statusRepository)
+        // WhileSubscribed state needs a subscriber to begin; collect in the test scope.
+        val job = launch { viewModel.backupStates.collect { } }
+        runCurrent()
+        // Non-numeric keys are dropped; the id stays the Long navigation identity.
+        assertEquals(mapOf(7L to MediaBackupVisualState.BACKED_UP), viewModel.backupStates.value)
+        job.cancel()
+    }
+
+    @Test
+    fun `backup status is empty when no repository is wired (offline / no queue)`() = runTest {
+        val viewModel = PhotosViewModel(FakeRepository(), FakeWatcher())
+        val job = launch { viewModel.backupStates.collect { } }
+        runCurrent()
+        assertEquals(emptyMap<Long, MediaBackupVisualState>(), viewModel.backupStates.value)
+        job.cancel()
+    }

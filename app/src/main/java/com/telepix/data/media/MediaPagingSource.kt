@@ -37,7 +37,11 @@ class MediaPagingSource(
             for (item in media) {
                 val dayKey = MediaDay.dayKey(item.dateMillis)
                 if (dayKey != lastDayKey) {
-                    items += PhotosItem.Day(dayKey, MediaDay.label(item.dateMillis))
+                    items += PhotosItem.Day(
+                        dayKey = dayKey,
+                        epochDay = MediaDay.epochDay(item.dateMillis),
+                        label = MediaDay.label(item.dateMillis),
+                    )
                     lastDayKey = dayKey
                 }
                 items += PhotosItem.Media(item)

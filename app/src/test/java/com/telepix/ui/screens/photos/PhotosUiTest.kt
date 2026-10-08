@@ -4,17 +4,23 @@ import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.telepix.data.backup.BackupStatusRepository
 import com.telepix.data.media.LocalMediaRepository
 import com.telepix.data.media.LocalMediaRepositoryImpl
 import com.telepix.data.media.MediaChangeWatcher
 import com.telepix.data.media.MediaPageLoader
+import com.telepix.domain.backup.MediaBackupVisualState
 import com.telepix.domain.media.LocalMedia
 import com.telepix.domain.media.MediaDay
 import com.telepix.domain.media.MediaType
 import com.telepix.permissions.MediaPermissionState
 import com.telepix.ui.theme.TelepixTheme
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -55,6 +61,10 @@ class PhotosUiTest {
         override fun stop() = Unit
     }
 
+    private class FakeStatus(private val states: Map<String, MediaBackupVisualState>) : BackupStatusRepository {
+        override val visualStates: Flow<Map<String, MediaBackupVisualState>> = flowOf(states)
+    }
+
     private fun media(
         id: Long,
         dateMillis: Long,
@@ -83,12 +93,17 @@ class PhotosUiTest {
         )
     }
 
-    private fun photosScreen(viewModel: PhotosViewModel, permission: MediaPermissionState) {
+    private fun photosScreen(
+        viewModel: PhotosViewModel,
+        permission: MediaPermissionState,
+        onOpenSettings: () -> Unit = {},
+    ) {
         composeRule.setContent {
             TelepixTheme(darkTheme = true) {
                 PhotosScreen(
                     viewModel = viewModel,
                     onMediaSelected = {},
+                    onOpenSettings = onOpenSettings,
                     permissionStateOverride = permission,
                 )
             }
@@ -142,5 +157,63 @@ class PhotosUiTest {
             composeRule.onAllNodesWithText(MediaDay.label(dayA)).fetchSemanticsNodes().isNotEmpty(),
         )
         assertTrue(composeRule.onAllNodesWithText("GIF").fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test
+    fun `top bar shows the Photos title and a settings action that navigates`() {
+        var opened = false
+        val repository = LocalMediaRepositoryImpl(ListMediaLoader(emptyList()))
+        photosScreen(PhotosViewModel(repository, NoopWatcher), MediaPermissionState.Granted, onOpenSettings = { opened = true })
+
+        composeRule.onNodeWithText("Telepix").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Settings").performClick()
+        assertTrue(opened)
+    }
+
+    @Test
+    fun `partial access shows a banner and never claims a full library`() {
+        val items = listOf(media(1, 1_700_000_000_000L, MediaType.PHOTO))
+        val repository = LocalMediaRepositoryImpl(ListMediaLoader(items))
+        photosScreen(PhotosViewModel(repository, NoopWatcher), MediaPermissionState.Partial)
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("Showing only the photos and videos you selected")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
+    fun `a backed-up item shows an accessible backup indicator`() {
+        val items = listOf(media(5, 1_700_000_000_000L, MediaType.PHOTO))
+        val repository = LocalMediaRepositoryImpl(ListMediaLoader(items))
+        val status = FakeStatus(mapOf("5" to MediaBackupVisualState.BACKED_UP))
+        photosScreen(PhotosViewModel(repository, NoopWatcher, status), MediaPermissionState.Granted)
+
+        // The badge is described on the tile's merged content description, not as raw text.
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription("Backed up", substring = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
+    fun `tapping a tile invokes the viewer navigation callback`() {
+        var tapped: Long? = null
+        val items = listOf(media(42, 1_700_000_000_000L, MediaType.PHOTO))
+        val repository = LocalMediaRepositoryImpl(ListMediaLoader(items))
+        composeRule.setContent {
+            TelepixTheme(darkTheme = true) {
+                PhotosScreen(
+                    viewModel = PhotosViewModel(repository, NoopWatcher),
+                    onMediaSelected = { tapped = it.id },
+                    permissionStateOverride = MediaPermissionState.Granted,
+                )
+            }
+        }
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription("Photo", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onAllNodesWithContentDescription("Photo", substring = true)[0].performClick()
+        assertTrue(tapped == 42L)
     }
 }
