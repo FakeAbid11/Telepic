@@ -2,7 +2,9 @@ package com.telepix.ui.screens.cloud
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.telepix.data.cloud.CloudRepository
 import com.telepix.domain.cloud.CloudMedia
 import com.telepix.domain.cloud.CloudMediaType
@@ -66,10 +68,10 @@ class CloudScreenUiTest {
         originalFileId = null,
     )
 
-    private fun render(repo: CloudRepository) {
+    private fun render(repo: CloudRepository, onOpen: (CloudMedia) -> Unit = {}) {
         composeRule.setContent {
             TelepixTheme(darkTheme = true) {
-                CloudScreen(viewModel = CloudViewModel(repo))
+                CloudScreen(viewModel = CloudViewModel(repo), onOpenMedia = onOpen)
             }
         }
     }
@@ -116,5 +118,17 @@ class CloudScreenUiTest {
         render(FakeCloudRepository(CloudStatus.Failed("boom"), "Telepix Backup", emptyList()))
         composeRule.onNodeWithText("Couldn't load your cloud").assertIsDisplayed()
         composeRule.onNodeWithText("Try again").assertIsDisplayed()
+    }
+
+    @Test
+    fun `tapping a cloud tile opens it by its remote identity`() {
+        var opened: CloudMedia? = null
+        render(
+            FakeCloudRepository(CloudStatus.Ready, "Telepix Backup", listOf(item(7, CloudMediaType.IMAGE))),
+            onOpen = { opened = it },
+        )
+        composeRule.onNodeWithContentDescription("Cloud photo").performClick()
+        org.junit.Assert.assertEquals(100L, opened?.chatId)
+        org.junit.Assert.assertEquals(7L, opened?.messageId)
     }
 }

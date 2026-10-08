@@ -28,9 +28,13 @@ import com.telepix.data.cloud.db.CloudMediaManifestDao
 import com.telepix.data.cloud.db.CloudDestinationDao
 import com.telepix.data.cloud.db.TelepixDatabase
 import com.telepix.data.media.AndroidMediaChangeWatcher
+import com.telepix.data.media.AlbumRepository
+import com.telepix.data.media.LocalMediaLookup
 import com.telepix.data.media.LocalMediaRepository
 import com.telepix.data.media.LocalMediaRepositoryImpl
 import com.telepix.data.media.MediaChangeWatcher
+import com.telepix.data.media.MediaStoreAlbumRepository
+import com.telepix.data.media.MediaStoreLocalLookup
 import com.telepix.data.media.MediaStoreMediaLoader
 import com.telepix.onboarding.OnboardingRepository
 import com.telepix.onboarding.OnboardingRepositoryImpl
@@ -62,6 +66,8 @@ interface AppContainer {
     val telegramAuthController: TelegramAuthController
     val cloudRepository: CloudRepository
     val localMediaRepository: LocalMediaRepository
+    val localMediaLookup: LocalMediaLookup
+    val albumRepository: AlbumRepository
     val mediaChangeWatcher: MediaChangeWatcher
     val backupRepository: BackupRepository
     val backupStatusRepository: BackupStatusRepository
@@ -131,6 +137,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val localMediaRepository: LocalMediaRepository by lazy {
         LocalMediaRepositoryImpl(mediaLoader)
     }
+
+    override val localMediaLookup: LocalMediaLookup by lazy { MediaStoreLocalLookup(appContext) }
+
+    override val albumRepository: AlbumRepository by lazy { MediaStoreAlbumRepository(appContext) }
 
     override val mediaChangeWatcher: MediaChangeWatcher by lazy {
         AndroidMediaChangeWatcher(appContext)

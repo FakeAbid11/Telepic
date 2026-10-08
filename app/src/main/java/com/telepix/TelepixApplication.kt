@@ -1,10 +1,13 @@
 package com.telepix
 
 import android.app.Application
+import android.os.Build
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.decode.ImageDecoderDecoder
 import coil.decode.VideoFrameDecoder
+import coil.decode.GifDecoder
 import com.telepix.data.backup.work.TelepixWorkerFactory
 import com.telepix.di.AppContainer
 import com.telepix.di.DefaultAppContainer

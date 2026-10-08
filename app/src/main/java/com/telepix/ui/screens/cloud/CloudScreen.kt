@@ -37,6 +37,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -55,10 +57,11 @@ import com.telepix.ui.theme.TelepixTokens
 import java.io.File
 import java.util.Locale
 
-/** Real Telegram cloud screen (Phase 5). Browsing is preview-only; originals are never bulk-downloaded. */
+/** Real Telegram cloud screen (Phase 5). Browsing is preview-only; tapping opens the shared Viewer. */
 @Composable
 fun CloudScreen(
     viewModel: CloudViewModel,
+    onOpenMedia: (CloudMedia) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -92,7 +95,7 @@ fun CloudScreen(
                     uiState = uiState,
                     previews = previews,
                     onLoadPreview = viewModel::loadPreview,
-                    onOpen = viewModel::downloadOriginal,
+                    onOpen = onOpenMedia,
                     onRetry = viewModel::refresh,
                 )
             }
@@ -209,6 +212,13 @@ private fun CloudTile(
     onClick: () -> Unit,
 ) {
     val spacing = TelepixTokens.spacing
+    val tileLabel = stringResource(
+        when (media.mediaType) {
+            CloudMediaType.VIDEO -> R.string.cloud_media_video
+            CloudMediaType.GIF -> R.string.cloud_media_gif
+            CloudMediaType.IMAGE -> R.string.cloud_media_image
+        },
+    )
     LaunchedEffect(media.messageId, previewPath) {
         if (previewPath == null) onLoadPreview()
     }
@@ -217,6 +227,7 @@ private fun CloudTile(
             .aspectRatio(1f)
             .clip(RoundedCornerShape(spacing.gridItemRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant)
+            .semantics { contentDescription = tileLabel }
             .clickable(onClick = onClick),
     ) {
         if (previewPath != null) {

@@ -5,15 +5,18 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.telepix.di.AppContainer
 import com.telepix.settings.ThemeMode
+import com.telepix.ui.screens.albums.AlbumContentsScreen
+import com.telepix.ui.screens.albums.AlbumContentsViewModel
 import com.telepix.ui.screens.albums.AlbumsScreen
+import com.telepix.ui.screens.albums.AlbumsViewModel
 import com.telepix.ui.screens.backup.BackupCenterScreen
 import com.telepix.ui.screens.backup.BackupViewModel
 import com.telepix.ui.screens.cloud.CloudScreen
@@ -23,12 +26,15 @@ import com.telepix.ui.screens.photos.PhotosScreen
 import com.telepix.ui.screens.photos.PhotosViewModel
 import com.telepix.ui.screens.settings.SettingsScreen
 import com.telepix.ui.screens.viewer.ViewerScreen
+import com.telepix.ui.screens.viewer.ViewerViewModel
 
 /**
- * Hosts the five primary destinations plus the viewer navigation contract.
+ * Hosts the five primary destinations plus the contextual Viewer, Album contents and Backup Center.
  *
- * Photos is now the real local library (Phase 3); the other destinations remain Phase 1
- * foundation screens. Tapping a media tile navigates to the viewer with only its stable id.
+ * Media identity is carried through navigation as a typed [MediaSource]: Photos and Album contents
+ * open local items by MediaStore id, Cloud opens remote items by (chatId, messageId), and the two
+ * never share an untyped id. The Viewer is pushed onto whichever screen opened it, so system Back
+ * returns to the originating context.
  */
 @Composable
 fun TelepixNavHost(
@@ -57,22 +63,60 @@ fun TelepixNavHost(
             )
             PhotosScreen(
                 viewModel = photosViewModel,
-                onMediaSelected = { media ->
-                    navController.navigate(ViewerRoute.create(media.id))
-                },
+                onMediaSelected = { media -> navController.navigate(ViewerRoute.local(media.id)) },
                 onOpenSettings = { navController.navigateToTopLevel(TelepixDestination.Settings) },
             )
         }
         composable(TelepixDestination.Cloud.route) {
             val cloudViewModel: CloudViewModel = viewModel(
-                factory = viewModelFactory {
-                    initializer { CloudViewModel(container.cloudRepository) }
-                },
+                factory = viewModelFactory { initializer { CloudViewModel(container.cloudRepository) } },
             )
-            CloudScreen(viewModel = cloudViewModel)
+            CloudScreen(
+                viewModel = cloudViewModel,
+                onOpenMedia = { media -> navController.navigate(ViewerRoute.cloud(media.chatId, media.messageId)) },
+            )
         }
         composable(TelepixDestination.Albums.route) {
-            AlbumsScreen()
+            val albumsViewModel: AlbumsViewModel = viewModel(
+                factory = viewModelFactory { initializer { AlbumsViewModel(container.albumRepository) } },
+            )
+            AlbumsScreen(
+                viewModel = albumsViewModel,
+                onOpenAlbum = { album -> navController.navigate(AlbumRoute.create(album.bucketId, album.title)) },
+            )
+        }
+        composable(
+            route = AlbumRoute.PATTERN,
+            arguments = listOf(
+                navArgument(AlbumRoute.ARG_BUCKET_ID) { type = NavType.LongType },
+                navArgument(AlbumRoute.ARG_TITLE) { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val bucketId = backStackEntry.arguments?.getLong(AlbumRoute.ARG_BUCKET_ID) ?: return@composable
+            val title = backStackEntry.arguments?.getString(AlbumRoute.ARG_TITLE).orEmpty()
+            val contentsViewModel: AlbumContentsViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        AlbumContentsViewModel(
+                            album = com.telepix.domain.media.Album(
+                                bucketId = bucketId,
+                                title = title,
+                                coverUri = android.net.Uri.EMPTY,
+                                coverIsVideo = false,
+                                count = 0,
+                                latestMillis = 0L,
+                            ),
+                            albumRepository = container.albumRepository,
+                            backupStatusRepository = container.backupStatusRepository,
+                        )
+                    }
+                },
+            )
+            AlbumContentsScreen(
+                viewModel = contentsViewModel,
+                onBack = { navController.popBackStack() },
+                onMediaSelected = { media -> navController.navigate(ViewerRoute.local(media.id)) },
+            )
         }
         composable(TelepixDestination.Map.route) {
             MapScreen()
@@ -98,14 +142,44 @@ fun TelepixNavHost(
             BackupCenterScreen(viewModel = backupViewModel)
         }
         composable(
-            route = ViewerRoute.PATTERN,
+            route = ViewerRoute.LOCAL,
             arguments = listOf(navArgument(ViewerRoute.ARG_MEDIA_ID) { type = NavType.LongType }),
         ) { backStackEntry ->
             val mediaId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_MEDIA_ID) ?: 0L
-            ViewerScreen(
-                mediaId = mediaId,
-                onBack = { navController.popBackStack() },
+            val viewerViewModel: ViewerViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        ViewerViewModel(
+                            initialSource = MediaSource.Local(mediaId),
+                            localLookup = container.localMediaLookup,
+                            cloudRepository = container.cloudRepository,
+                        )
+                    }
+                },
             )
+            ViewerScreen(viewModel = viewerViewModel, onBack = { navController.popBackStack() })
+        }
+        composable(
+            route = ViewerRoute.CLOUD,
+            arguments = listOf(
+                navArgument(ViewerRoute.ARG_CHAT_ID) { type = NavType.LongType },
+                navArgument(ViewerRoute.ARG_MESSAGE_ID) { type = NavType.LongType },
+            ),
+        ) { backStackEntry ->
+            val chatId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_CHAT_ID) ?: return@composable
+            val messageId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_MESSAGE_ID) ?: return@composable
+            val viewerViewModel: ViewerViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        ViewerViewModel(
+                            initialSource = MediaSource.Cloud(chatId, messageId),
+                            localLookup = container.localMediaLookup,
+                            cloudRepository = container.cloudRepository,
+                        )
+                    }
+                },
+            )
+            ViewerScreen(viewModel = viewerViewModel, onBack = { navController.popBackStack() })
         }
     }
 }

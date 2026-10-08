@@ -35,11 +35,12 @@
     <string name="cloud_gif_badge">GIF</string>
     <string name="cloud_media_image">Cloud photo</string>
     <string name="cloud_media_video">Cloud video</string>
+    <string name="cloud_media_gif">Cloud GIF</string>
 
     <!-- Albums -->
     <string name="albums_title">Albums</string>
     <string name="albums_empty_title">No albums yet</string>
-    <string name="albums_empty_description">System albums like Camera, Screenshots and Videos, plus your own custom albums, will be organized here in a later phase.</string>
+    <string name="albums_empty_description">Albums are grouped from the folders that hold your photos and videos. New albums appear as your library gains media.</string>
 
     <!-- Map -->
     <string name="map_title">Map</string>
@@ -229,4 +230,26 @@
     <string name="backup_state_uploading">Uploading</string>
     <string name="backup_state_backed_up">Backed up</string>
     <string name="backup_state_failed">Backup failed</string>
+
+    <!-- ============================ Albums (Phase 9) ============================ -->
+    <string name="albums_permission_title">See your albums</string>
+    <string name="albums_permission_description">Telepix needs photo &amp; video access to group your library into albums.</string>
+    <string name="albums_error_title">Couldn\'t load your albums</string>
+    <string name="albums_error_description">Something went wrong while reading your library. Please try again.</string>
+    <string name="albums_item_count">%1$d items</string>
+    <string name="albums_open_album">Open album %1$s</string>
+    <string name="albums_back">Back to albums</string>
+
+    <!-- ============================ Viewer (Phase 9) ============================ -->
+    <string name="viewer_back">Back</string>
+    <string name="viewer_previous">Previous item</string>
+    <string name="viewer_next">Next item</string>
+    <string name="viewer_missing">This media is no longer available</string>
+    <string name="viewer_content_description">Media viewer image</string>
+    <string name="viewer_playback_error">Playback error</string>
+    <string name="viewer_source_local">On this device</string>
+    <string name="viewer_source_cloud">Telegram cloud</string>
+    <string name="viewer_download">Download</string>
+    <string name="viewer_download_required">Download the original to view it in full quality.</string>
+    <string name="viewer_download_unavailable">The original can\'t be downloaded on this build yet.</string>
 </resources>
