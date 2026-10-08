@@ -56,8 +56,9 @@ class AlbumsUiTest {
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithContentDescription("Open album Camera").fetchSemanticsNodes().isNotEmpty()
         }
-        // The card merges its children for accessibility, so its texts live in the unmerged tree.
-        composeRule.onNodeWithText("Camera").assertIsDisplayed()
+        // The card merges its children into one accessibility node, so its texts are only in the unmerged tree.
+        composeRule.onNodeWithText("Camera", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Screenshots", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText("4 items", useUnmergedTree = true).assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("Open album Camera").performClick()

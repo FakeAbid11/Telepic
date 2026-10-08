@@ -9,8 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -45,7 +45,7 @@ class AlbumsViewModelTest {
     @Test
     fun `loads albums into the ready state`() = runTest {
         val vm = AlbumsViewModel(FakeAlbums { listOf(album(1), album(2)) })
-        runCurrent()
+        advanceUntilIdle()
         val status = vm.status.value
         assertTrue(status is AlbumsStatus.Ready)
         assertEquals(2, (status as AlbumsStatus.Ready).albums.size)
@@ -54,14 +54,14 @@ class AlbumsViewModelTest {
     @Test
     fun `empty library is the empty state`() = runTest {
         val vm = AlbumsViewModel(FakeAlbums { emptyList() })
-        runCurrent()
+        advanceUntilIdle()
         assertEquals(AlbumsStatus.Empty, vm.status.value)
     }
 
     @Test
     fun `a provider failure is the error state, not empty`() = runTest {
         val vm = AlbumsViewModel(FakeAlbums { throw IllegalStateException("boom") })
-        runCurrent()
+        advanceUntilIdle()
         assertEquals(AlbumsStatus.Error, vm.status.value)
     }
 }

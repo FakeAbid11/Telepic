@@ -122,9 +122,9 @@ private fun AlbumCard(album: Album, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(spacing.gridItemRadius))
-            .clickable(onClick = onClick)
             .padding(bottom = spacing.sm)
-            .semantics { contentDescription = openLabel },
+            .semantics(mergeDescendants = true) { contentDescription = openLabel }
+            .clickable(onClick = onClick),
     ) {
         Box(
             modifier = Modifier
