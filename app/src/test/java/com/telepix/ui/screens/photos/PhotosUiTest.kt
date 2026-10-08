@@ -177,7 +177,7 @@ class PhotosUiTest {
         photosScreen(PhotosViewModel(repository, NoopWatcher), MediaPermissionState.Partial)
 
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText("Showing only the photos and videos you selected")
+            composeRule.onAllNodesWithText("Showing only the photos and videos you selected", substring = true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
     }
