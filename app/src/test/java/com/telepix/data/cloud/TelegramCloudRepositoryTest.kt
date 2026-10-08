@@ -12,7 +12,6 @@ import com.telepix.domain.cloud.CloudStatus
 import com.telepix.domain.cloud.LocalDownloadedMedia
 import com.telepix.telegram.TelegramAuthState
 import com.telepix.telegram.TelegramUser
-import java.util.concurrent.Executor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -38,14 +37,11 @@ class TelegramCloudRepositoryTest {
 
     private lateinit var db: TelepixDatabase
 
-    private val direct: Executor = Executor { it.run() }
-
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, TelepixDatabase::class.java)
-            .setQueryExecutor(direct)
-            .setTransactionExecutor(direct)
+            .allowMainThreadQueries()
             .build()
     }
 
