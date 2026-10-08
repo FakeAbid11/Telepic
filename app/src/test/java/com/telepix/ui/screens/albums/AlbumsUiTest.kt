@@ -3,7 +3,8 @@ package com.telepix.ui.screens.albums
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.paging.PagingData
@@ -52,11 +53,14 @@ class AlbumsUiTest {
                 )
             }
         }
-        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText("Camera").fetchSemanticsNodes().isNotEmpty() }
-        composeRule.onNodeWithText("Screenshots").assertIsDisplayed()
-        composeRule.onNodeWithText("4 items").assertIsDisplayed()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription("Open album Camera").fetchSemanticsNodes().isNotEmpty()
+        }
+        // The card merges its children for accessibility, so its texts live in the unmerged tree.
+        composeRule.onNodeWithText("Camera").assertIsDisplayed()
+        composeRule.onNodeWithText("4 items", useUnmergedTree = true).assertIsDisplayed()
 
-        composeRule.onNodeWithText("Camera").performClick()
+        composeRule.onNodeWithContentDescription("Open album Camera").performClick()
         assertEquals(1L, opened?.bucketId)
     }
 

@@ -5,12 +5,18 @@ import androidx.paging.PagingData
 import com.telepix.data.media.AlbumRepository
 import com.telepix.domain.media.Album
 import com.telepix.domain.media.PhotosItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /** Album loading states: ready, genuinely empty, and error distinct from empty. */
@@ -24,6 +30,16 @@ class AlbumsViewModelTest {
     private class FakeAlbums(private val result: suspend () -> List<Album>) : AlbumRepository {
         override suspend fun albums(): List<Album> = result()
         override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+    }
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(StandardTestDispatcher())
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
     }
 
     @Test
