@@ -120,3 +120,4 @@ class PhotosViewModelTest {
         assertEquals(emptyMap<Long, MediaBackupVisualState>(), viewModel.backupStates.value)
         job.cancel()
     }
+}
