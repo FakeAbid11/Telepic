@@ -1,5 +1,6 @@
 package com.telepix.data.backup
 
+import com.telepix.data.backup.BackupMapping.toRecognizedQueueEntity
 import com.telepix.data.backup.db.BackupQueueDao
 import com.telepix.data.backup.db.BackupQueueEntity
 import com.telepix.data.backup.hash.ContentHasher
@@ -114,15 +115,16 @@ class DefaultBackupRecognitionRepository(
         return contentSizeBytes == media.sizeBytes && modifiedTimeSeconds == media.dateMillis / 1000L && hash.isNotEmpty()
     }
 
-    override suspend fun markRecognized(media: LocalMedia, remote: RemoteMediaIdentity, hash: String, sizeBytes: Long) =
+    override suspend fun markRecognized(media: LocalMedia, remote: RemoteMediaIdentity, hash: String, sizeBytes: Long) {
         withContext(dispatcher) {
             val existing = queueDao.findByLocalId(media.id.toString())
             val now = clock()
             if (existing == null) {
                 queueDao.insertIgnore(media.toRecognizedQueueEntity(remote, hash, sizeBytes, now))
             } else {
-                queueDao.markBackedUp(existing.id, remote.chatId, remote.messageId, telegramFileId = null, now = now)
+                queueDao.markBackedUp(existing.id, remote.chatId, remote.messageId, null, now)
                 queueDao.persistHash(existing.id, hash, sizeBytes, now, now)
             }
         }
+    }
 }
