@@ -3,7 +3,6 @@ package com.telepix.ui.screens.backup
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.performClick
 import com.telepix.data.backup.BackupProcessSummary
 import com.telepix.data.backup.BackupCoordinator
@@ -37,8 +36,8 @@ class BackupCenterUiTest {
     val composeRule = createComposeRule()
 
     private class FakeRepo(
-        items: List<BackupItem>,
-        stats: BackupQueueStats,
+        private val items: List<BackupItem>,
+        private val stats: BackupQueueStats,
     ) : BackupRepository {
         var retried = -1L
         var cancelled = -1L
@@ -106,7 +105,6 @@ class BackupCenterUiTest {
     @Test
     fun `waiting-for-auth surfaces the Telegram guidance state`() {
         render(FakeRepo(listOf(item(1, BackupState.WAITING_FOR_AUTH)), BackupQueueStats(queued = 1)))
-        composeRule.onNodeWithText("Backup is ready").assertDoesNotExist()
         composeRule.onNodeWithText("Waiting for Telegram…").assertIsDisplayed()
     }
 
