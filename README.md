@@ -21,6 +21,7 @@ Telepix organizes your local media into a fast, beautiful timeline and (in later
 | Local media | Android MediaStore + Paging 3 |
 | Persistence (app data) | Room (cloud destination, media manifest, backup queue) |
 | Image loading | Coil (thumbnail-first, video-frame decoding) |
+| Recognition / dedup | Streaming SHA-256 content identity (no third-party hashing lib) |
 | Cloud backend | Telegram via **Java TDLib** (`org.drinkless.tdlib`), ARM-only |
 | Background work | **WorkManager** (network-constrained, foreground backup worker) |
 | Map | OpenStreetMap *(later phases)* |
@@ -269,9 +270,49 @@ recognition engine, hashing, cache invalidation, duplicate protection, concurren
 queries are all CI-tested with fakes**; a device test of real Telegram duplicate prevention is
 reported as NOT TESTED.
 
+### ✅ Phase 8 — Photos UI, Timeline, Date Rail & Backup Status *(complete; local-first presentation only)*
+
+Implemented and CI-verified (Robolectric + JVM), with all Phase 1–7 tests still green:
+
+- **Top app bar** with the Photos title and a **Settings** action that navigates to the existing
+  Settings destination (single-top, identical to tapping the Settings tab). No Search added.
+- **Adaptive, thumbnail-first grid** (`LazyVerticalGrid`, `GridCells.Adaptive`) over the Phase 3
+  Paging 3 stream with **stable keys**, square center-cropped cells and no full-resolution decode.
+- **Localized relative day headers** — Today / Yesterday / weekday / "October 8" / full date via
+  `java.time` + the device locale; grouping identity is a stable ISO **day key** (never the display
+  text) resolved in the **device time zone** so a photo doesn't shift days. No English-only hardcode.
+- **Right-side date rail** built from the *loaded* day headers only — it grows with paging and never
+  force-loads the library — with the active day emphasized and tap-to-scroll to the loaded group.
+- **Backup indicators from the repository, never inferred by the UI** — `BackupStatusRepository`
+  maps the Room queue into one batched `Map<mediaId, MediaBackupVisualState>` snapshot; tiles read
+  `states[id] ?: NONE`. `BACKED_UP` reflects only confirmed remote success (§86). States shown:
+  QUEUED / UPLOADING (genuinely indeterminate — no fabricated percentages) / BACKED_UP / FAILED; NONE
+  renders nothing to keep the grid media-first.
+- **No per-tile cost** — a tile runs **no Room query, no hashing, no network call**; status comes
+  from the shared snapshot map. The content hash stays a recognition-only identity and is **never**
+  the UI/navigation key (MediaStore id remains it).
+- **Paging UX** — lightweight skeleton on first load, a small end-of-list spinner when appending, an
+  inline retry on append failure, and a refresh failure that **keeps loaded photos** with a retry
+  affordance (never a full-screen empty error).
+- **Pull-to-refresh** wired to the repository's MediaStore invalidation only — refreshing Photos does
+  **not** trigger a remote Telegram sync.
+- **Permission honesty** — full / **partial** / denied / permanently-denied states stay distinct; a
+  subtle partial-access banner states the library is limited to the selected media. MediaStore change
+  observation (Phase 3) is preserved; local deletion never touches the Telegram cloud copy.
+- **Theming** — dark (default), light and system all render through the existing Material 3 design
+  tokens; new spacing tokens (`railGutter`, `railWidth`) added rather than scattered dp values.
+- **Accessibility** — meaningful merged content descriptions on tiles (type + localized date +
+  duration + backup state), a labeled Settings action, a labeled date rail, and a rail touch column at
+  Material's target width.
+
+Known boundary: the **full Viewer, Media Details, Albums, Map, Favorites/Archive/Trash and Search are
+not implemented** (later phases) — the grid navigates to the existing viewer placeholder contract.
+Device testing and the real-Telegram backup-indicator path remain NOT PERFORMED / NOT TESTED (live
+upload is still device-gated); indicators were verified with repository states, not real uploads.
+
 ### 🔜 Later phases
 
-Polished Photos interactions · Albums · Viewer · Map/Restore · Settings & security hardening · Full integration.
+Albums · Full Viewer · Map/Restore · Media management · Settings & security hardening · Full integration.
 
 See [`PRD.md`](PRD.md) for the complete product specification and the 12-phase plan.
 
@@ -304,7 +345,7 @@ app/src/main/java/com/telepix/
     ├── theme/                   # Design system: Color, Type, Shape, Spacing, Theme
     ├── components/              # Reusable Empty/Loading/Error/Header components
     ├── onboarding/              # OnboardingScreen, steps, and reusable onboarding components
-    └── screens/                 # photos (real library), cloud, albums, map, settings, viewer
+    └── screens/                 # photos (timeline, adaptive grid, date rail, backup badges), cloud, albums, map, settings, viewer, backup center
 ```
 
 ---
