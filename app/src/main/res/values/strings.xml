@@ -16,8 +16,6 @@
 
     <!-- Cloud -->
     <string name="cloud_title">Cloud</string>
-    <string name="cloud_empty_title">Telepix Cloud is not set up yet</string>
-    <string name="cloud_empty_description">Cloud will show the media you back up to your private Telepix Backup channel on Telegram. Browse previews without automatically downloading originals. Telegram connection arrives in a later phase.</string>
 
     <!-- Cloud — real Telegram cloud (Phase 5) -->
     <string name="cloud_refresh">Refresh</string>
