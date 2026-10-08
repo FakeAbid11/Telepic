@@ -19,6 +19,7 @@ import com.telepix.navigation.TelepixDestination
 import com.telepix.navigation.TelepixNavHost
 import com.telepix.navigation.icon
 import com.telepix.navigation.selectedIcon
+import com.telepix.di.AppContainer
 import com.telepix.settings.ThemeMode
 
 /**
@@ -29,6 +30,7 @@ import com.telepix.settings.ThemeMode
 fun TelepixApp(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    container: AppContainer,
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
 ) {
@@ -58,6 +60,7 @@ fun TelepixApp(
     ) { innerPadding ->
         TelepixNavHost(
             navController = navController,
+            container = container,
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
             modifier = Modifier

@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
                 themeViewModel = themeViewModel,
                 onboardingViewModel = onboardingViewModel,
                 telegramController = container.telegramAuthController,
+                container = container,
             )
         }
     }

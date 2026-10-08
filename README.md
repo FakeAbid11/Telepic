@@ -18,6 +18,8 @@ Telepix organizes your local media into a fast, beautiful timeline and (in later
 | Async | Kotlin Coroutines + Flow / StateFlow |
 | Navigation | Navigation for Compose |
 | Persistence | Jetpack DataStore (Preferences) |
+| Local media | Android MediaStore + Paging 3 |
+| Image loading | Coil (thumbnail-first, video-frame decoding) |
 | Cloud backend | Telegram via TDLib *(later phases)* |
 | Database | Room *(later phases)* |
 | Background work | WorkManager *(later phases)* |
@@ -88,9 +90,31 @@ You can also trigger a build manually via **Run workflow** (`workflow_dispatch`)
 - Reusable onboarding components (scaffold, progress, illustration, choice card) and Compose UI
   tests (Robolectric) plus JVM unit tests for persistence, routing, and permission logic
 
+### ✅ Phase 3 — Local Media Library *(complete)*
+
+- **Real local library from MediaStore** — photos, videos, and GIFs are read from
+  `MediaStore.Files` as a single, newest-first, paged stream (no full-library scans in memory,
+  no filesystem-path identity — content URIs are used)
+- **Domain model** `LocalMedia` + type-safe `MediaType` (PHOTO / VIDEO / GIF), normalized from
+  MediaStore MIME metadata, with metadata ready for the future Media Details / Albums / folder
+  selection features (bucket id/name, relative path, dimensions, size, dates, duration)
+- **Paging 3** (`PagingSource` → `Repository` → `ViewModel` → `LazyVerticalGrid`) for fast,
+  incremental, memory-efficient loading with stable keys and cancellation
+- **Thumbnail-first grid**: adaptive columns, rounded tiles, video play + duration indicators,
+  GIF badges, **Coil** image loading (with video-frame decoding) — full originals are never decoded
+  for the grid
+- **Chronological date grouping** with full-width day headers and a subtle **right-side date rail**
+  foundation for quick timeline navigation
+- **Permission-aware** (reuses the Phase 2 model): queries only when access is available; honest
+  granted / partial / denied / blocked states, each with appropriate UI and a recovery path
+- Distinct **Loading / Empty / Permission / Error** states with retry; MediaStore **change detection**
+  via a lifecycle-safe `ContentObserver` that invalidates the paged data
+- Viewer **navigation contract** (passes only a stable media id); the full viewer is a later phase
+- No backup, hashing, Telegram, or cloud is triggered by viewing media
+
 ### 🔜 Later phases
 
-Local media library (MediaStore) · Telegram/TDLib · Telepix Cloud · Backup engine · Recognition & deduplication · Polished Photos UI · Cloud/Albums/Viewer · Map/Restore · Settings & security hardening · Full integration.
+Telegram/TDLib · Telepix Cloud · Backup engine · Recognition & deduplication · Polished Photos interactions · Cloud/Albums/Viewer · Map/Restore · Settings & security hardening · Full integration.
 
 See [`PRD.md`](PRD.md) for the complete product specification and the 12-phase plan.
 
@@ -101,9 +125,11 @@ See [`PRD.md`](PRD.md) for the complete product specification and the 12-phase p
 ```
 app/src/main/java/com/telepix/
 ├── MainActivity.kt              # Single-activity Compose host
-├── TelepixApplication.kt        # Owns the DI container
+├── TelepixApplication.kt        # Owns the DI container + Coil image loader
 ├── di/                          # Lightweight manual dependency container
-├── navigation/                  # Destinations + NavHost
+├── navigation/                  # Destinations + NavHost + viewer route
+├── domain/media/                # LocalMedia, MediaType, PhotosItem, day grouping
+├── data/media/                  # MediaStore loader, mapper, PagingSource, repository, observer
 ├── onboarding/                  # BackupPreference, repository, ViewModel, startup routing
 ├── permissions/                 # MediaPermissionState + SDK-aware policy + controller
 ├── settings/                    # ThemeMode, repository, ViewModel (DataStore)
@@ -114,7 +140,7 @@ app/src/main/java/com/telepix/
     ├── theme/                   # Design system: Color, Type, Shape, Spacing, Theme
     ├── components/              # Reusable Empty/Loading/Error/Header components
     ├── onboarding/              # OnboardingScreen, steps, and reusable onboarding components
-    └── screens/                 # photos, cloud, albums, map, settings
+    └── screens/                 # photos (real library), cloud, albums, map, settings, viewer
 ```
 
 ---

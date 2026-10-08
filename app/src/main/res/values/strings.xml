@@ -120,4 +120,29 @@
     <string name="onboarding_ready_value_backup_folder">Selected folder</string>
     <string name="onboarding_ready_value_backup_none">Not configured</string>
     <string name="onboarding_ready_start">Start using Telepix</string>
+
+    <!-- Photos — real local library (Phase 3) -->
+    <string name="photos_no_media_title">No photos or videos yet</string>
+    <string name="photos_no_media_description">Telepix could not find any photos or videos available to the app on this device.</string>
+    <string name="photos_refresh">Refresh</string>
+    <string name="photos_permission_title">See your photos</string>
+    <string name="photos_permission_description">Telepix needs photo &amp; video access to show your local library. Your media stays on your device.</string>
+    <string name="photos_permission_blocked_title">Access is blocked</string>
+    <string name="photos_permission_blocked_description">Android is blocking photo access. Enable it in app settings, then refresh.</string>
+    <string name="photos_allow_access">Allow access</string>
+    <string name="photos_open_settings">Open settings</string>
+    <string name="photos_error_title">Couldn\'t load your library</string>
+    <string name="photos_error_description">Something went wrong while reading your media. Please try again.</string>
+    <string name="photos_retry">Try again</string>
+
+    <!-- Media tiles -->
+    <string name="media_type_photo">Photo</string>
+    <string name="media_type_video">Video</string>
+    <string name="media_type_gif">GIF</string>
+    <string name="media_gif_badge">GIF</string>
+    <string name="photos_date_rail">Jump to date</string>
+
+    <!-- Viewer (placeholder navigation contract) -->
+    <string name="viewer_title">Viewer</string>
+    <string name="viewer_placeholder_description">The full-screen viewer arrives in a later phase. This media item\'s identifier was passed for navigation.</string>
 </resources>
