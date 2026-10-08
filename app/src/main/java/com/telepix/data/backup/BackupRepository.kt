@@ -1,6 +1,5 @@
 package com.telepix.data.backup
 
-import com.telepix.data.backup.db.BackupQueueEntity
 import com.telepix.domain.backup.BackupItem
 import com.telepix.domain.backup.BackupQueueStats
 import com.telepix.domain.media.LocalMedia
@@ -17,6 +16,13 @@ interface BackupRepository {
 
     /** Queue one local item; a no-op (returning false) when it is already queued. */
     suspend fun enqueue(media: LocalMedia): Boolean
+
+    /**
+     * Queue one item that recognition already fingerprinted, carrying its content hash so it is
+     * persisted up front and the worker does not re-hash it (Phase 7). The default delegates to the
+     * hash-less [enqueue] so test fakes need not implement the two-arg form.
+     */
+    suspend fun enqueue(media: LocalMedia, contentHash: String, contentSizeBytes: Long): Boolean = enqueue(media)
 
     /** Queue a batch, returning how many were newly added. */
     suspend fun enqueueAll(media: List<LocalMedia>): Int

@@ -50,10 +50,15 @@ object BackupMapping {
     }
 
     /**
-     * Build the initial QUEUED row for a local item. [id] is the MediaStore id used as the stable
-     * dedup key — never the filename.
+     * Build the initial queue row for a local item. [id] is the MediaStore id used as the stable
+     * dedup key — never the filename. When recognition already computed a content hash it is carried
+     * here so the row is not re-hashed and the hash is persisted up front (Phase 7 §32).
      */
-    fun LocalMedia.toQueueEntity(nowMillis: Long): BackupQueueEntity = BackupQueueEntity(
+    fun LocalMedia.toQueueEntity(
+        nowMillis: Long,
+        contentHash: String? = null,
+        contentSizeBytes: Long? = null,
+    ): BackupQueueEntity = BackupQueueEntity(
         localMediaId = id.toString(),
         contentUri = contentUri.toString(),
         mediaType = cloudMediaType().name,
@@ -71,7 +76,38 @@ object BackupMapping {
         updatedAt = nowMillis,
         startedAt = null,
         completedAt = null,
-        contentHash = null,
+        contentHash = contentHash,
+        contentSizeBytes = contentSizeBytes ?: contentHash?.let { sizeBytes },
+        hashedAt = if (contentHash != null) nowMillis else null,
+    )
+
+    /** A terminal BACKED_UP row associating a local item with a remote identity (Phase 7 §25). */
+    fun LocalMedia.toRecognizedQueueEntity(
+        remote: com.telepix.domain.backup.RemoteMediaIdentity,
+        contentHash: String,
+        contentSizeBytes: Long,
+        nowMillis: Long,
+    ): BackupQueueEntity = BackupQueueEntity(
+        localMediaId = id.toString(),
+        contentUri = contentUri.toString(),
+        mediaType = cloudMediaType().name,
+        mimeType = mimeType,
+        fileName = displayName,
+        sizeBytes = sizeBytes,
+        modifiedTimeSeconds = dateMillis / 1000L,
+        state = BackupState.BACKED_UP.name,
+        retryCount = 0,
+        lastError = null,
+        telegramChatId = remote.chatId,
+        telegramMessageId = remote.messageId,
+        telegramFileId = null,
+        createdAt = nowMillis,
+        updatedAt = nowMillis,
+        startedAt = nowMillis,
+        completedAt = nowMillis,
+        contentHash = contentHash,
+        contentSizeBytes = contentSizeBytes,
+        hashedAt = nowMillis,
     )
 
     /** Map the local media category onto the cloud media kind the upload contract expects. */

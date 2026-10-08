@@ -192,6 +192,7 @@ class TelegramCloudRepository(
         previewFileId = null,
         originalFileId = result.telegramFileId,
         isDownloaded = true,
+        contentHash = request.contentHash,
     )
 
     private suspend fun currentDestination(): TelepixCloudDestination? {

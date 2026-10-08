@@ -9,8 +9,12 @@ import androidx.room.PrimaryKey
  * source of truth for backup state. [localMediaId] is unique so re-enqueuing the same MediaStore
  * item cannot create a second active row. [telegramChatId] / [telegramMessageId] / [telegramFileId]
  * are written together with the BACKED_UP state only after Telegram confirms the upload; they are
- * the crash-recovery evidence that an upload already succeeded. [contentHash] is reserved for
- * Phase 7.
+ * the crash-recovery evidence that an upload already succeeded.
+ *
+ * Phase 7 fills in the previously reserved [contentHash] (lowercase hex SHA-256) as the content
+ * identity, with [contentSizeBytes] as a cheap consistency check and [hashedAt] recording when the
+ * hash was computed — the cache-validation hint that lets recognition reuse an unchanged file's
+ * hash instead of re-hashing it.
  */
 @Entity(
     tableName = "backup_queue",
@@ -19,6 +23,7 @@ import androidx.room.PrimaryKey
         Index(value = ["state"]),
         Index(value = ["updatedAt"]),
         Index(value = ["telegramChatId", "telegramMessageId"]),
+        Index(value = ["contentHash"]),
     ],
 )
 data class BackupQueueEntity(
@@ -41,4 +46,6 @@ data class BackupQueueEntity(
     val startedAt: Long?,
     val completedAt: Long?,
     val contentHash: String?,
+    val contentSizeBytes: Long? = null,
+    val hashedAt: Long? = null,
 )

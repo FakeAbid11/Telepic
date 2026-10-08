@@ -18,6 +18,8 @@ data class CloudUploadRequest(
     val height: Int?,
     val durationMs: Long?,
     val dateEpochSec: Long?,
+    val contentHash: String? = null,
+    val contentSizeBytes: Long? = null,
 )
 
 /** Byte-level upload progress reported by the data source, when Telegram provides it. */

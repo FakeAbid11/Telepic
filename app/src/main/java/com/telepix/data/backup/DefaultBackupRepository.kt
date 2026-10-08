@@ -49,9 +49,13 @@ class DefaultBackupRepository(
     override fun observeStats(): Flow<BackupQueueStats> = dao.observeAll().map { it.toStats() }
 
     override suspend fun enqueue(media: LocalMedia): Boolean = withContext(dispatcher) {
-        val id = dao.insertIgnore(media.toQueueEntity(clock()))
-        id != -1L
+        dao.insertIgnore(media.toQueueEntity(clock())) != -1L
     }
+
+    override suspend fun enqueue(media: LocalMedia, contentHash: String, contentSizeBytes: Long): Boolean =
+        withContext(dispatcher) {
+            dao.insertIgnore(media.toQueueEntity(clock(), contentHash, contentSizeBytes)) != -1L
+        }
 
     override suspend fun enqueueAll(media: List<LocalMedia>): Int = withContext(dispatcher) {
         media.count { enqueue(it) }
@@ -127,6 +131,8 @@ class DefaultBackupRepository(
             height = null,
             durationMs = null,
             dateEpochSec = item.modifiedTimeSeconds,
+            contentHash = item.contentHash,
+            contentSizeBytes = item.contentSizeBytes ?: item.sizeBytes.takeIf { it > 0 },
         )
 
         val outcome = try {

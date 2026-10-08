@@ -7,10 +7,14 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.telepix.BuildConfig
 import com.telepix.data.backup.BackupCoordinator
+import com.telepix.data.backup.BackupRecognitionRepository
 import com.telepix.data.backup.BackupRepository
 import com.telepix.data.backup.BackupStager
 import com.telepix.data.backup.DefaultBackupCoordinator
+import com.telepix.data.backup.DefaultBackupRecognitionRepository
 import com.telepix.data.backup.DefaultBackupRepository
+import com.telepix.data.backup.hash.AndroidContentHasher
+import com.telepix.data.backup.hash.ContentHasher
 import com.telepix.data.backup.work.BackupWorkScheduler
 import com.telepix.data.backup.work.BackupWorkerDependencies
 import com.telepix.data.backup.work.WorkManagerBackupScheduler
@@ -76,7 +80,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     private val database: TelepixDatabase by lazy {
         Room.databaseBuilder(appContext, TelepixDatabase::class.java, TelepixDatabase.NAME)
-            .addMigrations(TelepixDatabase.MIGRATION_1_2)
+            .addMigrations(TelepixDatabase.MIGRATION_1_2, TelepixDatabase.MIGRATION_2_3)
             .build()
     }
 
@@ -134,6 +138,16 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         BackupStager(appContext.contentResolver, staging)
     }
 
+    private val contentHasher: ContentHasher by lazy { AndroidContentHasher(appContext.contentResolver) }
+
+    private val backupRecognitionRepository: BackupRecognitionRepository by lazy {
+        DefaultBackupRecognitionRepository(
+            queueDao = backupQueueDao,
+            manifestDao = cloudManifestDao,
+            hasher = contentHasher,
+        )
+    }
+
     override val backupRepository: BackupRepository by lazy {
         DefaultBackupRepository(
             dao = backupQueueDao,
@@ -152,6 +166,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val backupCoordinator: BackupCoordinator by lazy {
         DefaultBackupCoordinator(
             repository = backupRepository,
+            recognition = backupRecognitionRepository,
             scheduler = backupWorkScheduler,
             onboardingRepository = onboardingRepository,
             pageLoader = mediaLoader,

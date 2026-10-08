@@ -1,6 +1,7 @@
 package com.telepix.data.cloud.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -18,11 +19,18 @@ data class CloudDestinationEntity(
 )
 
 /**
- * A discovered remote media record (the cloud manifest foundation). Stable identity is the
- * (chatId, messageId) composite — never filename. [contentHash] is reserved for the future
- * recognition/dedup phase and is never computed in Phase 5.
+ * A discovered or uploaded remote media record (the cloud manifest — the long-term recognition
+ * source). Stable identity is the (chatId, messageId) composite — never filename. [contentHash]
+ * (lowercase hex SHA-256) + [sizeBytes] let recognition answer "already backed up?" by content
+ * across reinstall, independent of any local MediaStore id. It is populated only by Telepix's own
+ * trusted backup pipeline (a real upload result or an explicit recognition associate), never from
+ * an arbitrary Telegram caption.
  */
-@Entity(tableName = "cloud_media_manifest", primaryKeys = ["chatId", "messageId"])
+@Entity(
+    tableName = "cloud_media_manifest",
+    primaryKeys = ["chatId", "messageId"],
+    indices = [Index(value = ["contentHash"])],
+)
 data class CloudMediaManifestEntity(
     val chatId: Long,
     val messageId: Long,

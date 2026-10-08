@@ -25,6 +25,30 @@ interface BackupQueueDao {
     @Query("SELECT * FROM backup_queue WHERE localMediaId = :localMediaId LIMIT 1")
     suspend fun findByLocalId(localMediaId: String): BackupQueueEntity?
 
+    /** Persist a computed content identity (hash + size + when hashed) on a queue row. */
+    @Query(
+        "UPDATE backup_queue SET contentHash = :hash, contentSizeBytes = :sizeBytes, hashedAt = :hashedAt, updatedAt = :now " +
+            "WHERE id = :id",
+    )
+    suspend fun persistHash(id: Long, hash: String, sizeBytes: Long, hashedAt: Long, now: Long)
+
+    /** The active (non-terminal) queue row for a local item, if one exists. */
+    @Query(
+        "SELECT * FROM backup_queue WHERE localMediaId = :localMediaId " +
+            "AND state IN ('QUEUED', 'PREPARING', 'UPLOADING', 'WAITING_FOR_NETWORK', 'WAITING_FOR_AUTH') LIMIT 1",
+    )
+    suspend fun findActiveByLocalId(localMediaId: String): BackupQueueEntity?
+
+    /**
+     * An active row already carrying the same content hash — used to avoid queueing a second upload
+     * of identical bytes reached through a *different* local identity (§46 duplicate prevention).
+     */
+    @Query(
+        "SELECT * FROM backup_queue WHERE contentHash = :contentHash AND sizeBytes = :sizeBytes " +
+            "AND state IN ('QUEUED', 'PREPARING', 'UPLOADING', 'WAITING_FOR_NETWORK', 'WAITING_FOR_AUTH') LIMIT 1",
+    )
+    suspend fun findActiveByContentHash(contentHash: String, sizeBytes: Long): BackupQueueEntity?
+
     /** The next items a worker may act on, oldest first, respecting the retry limit. */
     @Query(
         "SELECT * FROM backup_queue " +

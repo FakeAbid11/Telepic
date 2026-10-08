@@ -8,12 +8,14 @@ import com.telepix.data.backup.db.BackupQueueDao
 import com.telepix.data.backup.db.BackupQueueEntity
 
 /**
- * Telepix application database (introduced in Phase 5 for persistent cloud metadata; extended in
- * Phase 6 with the persistent backup queue).
+ * Telepix application database (Phase 5 cloud metadata; Phase 6 backup queue; Phase 7 content-hash
+ * recognition).
  *
- * Version 2 with **no destructive fallback**: Phase 5's `cloud_destination` and
- * `cloud_media_manifest` data survives the explicit [MIGRATION_1_2], which only adds the new
- * `backup_queue` table and its indices. Future versions must keep adding real migrations.
+ * Version 3 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
+ * Phase 5 destination/manifest rows and Phase 6 queue rows always survive:
+ * - `1 → 2` ([MIGRATION_1_2]): introduces `backup_queue`.
+ * - `2 → 3` ([MIGRATION_2_3]): adds `contentSizeBytes` + `hashedAt` and the `contentHash` indexes
+ *   to `backup_queue`, and a `contentHash` index to `cloud_media_manifest`.
  */
 @Database(
     entities = [
@@ -21,7 +23,7 @@ import com.telepix.data.backup.db.BackupQueueEntity
         CloudMediaManifestEntity::class,
         BackupQueueEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class TelepixDatabase : RoomDatabase() {
@@ -32,11 +34,7 @@ abstract class TelepixDatabase : RoomDatabase() {
     companion object {
         const val NAME = "telepix.db"
 
-        /**
-         * Explicit 1 → 2 migration: adds only the `backup_queue` table + indices. Written to match
-         * Room's own schema for [BackupQueueEntity] exactly, so it is verified against a real
-         * version-1 database by the migration test.
-         */
+        /** Phase 5 → Phase 6: adds only the `backup_queue` table + indices. */
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -65,6 +63,20 @@ abstract class TelepixDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_backup_queue_state` ON `backup_queue` (`state`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_backup_queue_updatedAt` ON `backup_queue` (`updatedAt`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_backup_queue_telegramChatId_telegramMessageId` ON `backup_queue` (`telegramChatId`, `telegramMessageId`)")
+            }
+        }
+
+        /**
+         * Phase 6 → Phase 7: content-hash recognition. Adds the nullable `contentSizeBytes` and
+         * `hashedAt` columns and a `contentHash` index to `backup_queue`, and a `contentHash` index
+         * to `cloud_media_manifest`. Existing rows (including any pre-Phase-7 hashes) are untouched.
+         */
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `backup_queue` ADD COLUMN `contentSizeBytes` INTEGER")
+                db.execSQL("ALTER TABLE `backup_queue` ADD COLUMN `hashedAt` INTEGER")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_backup_queue_contentHash` ON `backup_queue` (`contentHash`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_cloud_media_manifest_contentHash` ON `cloud_media_manifest` (`contentHash`)")
             }
         }
     }
