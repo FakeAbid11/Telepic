@@ -136,8 +136,11 @@ class PhotosUiTest {
             composeRule.onAllNodesWithText("0:24").fetchSemanticsNodes().isNotEmpty()
         }
 
-        composeRule.onNodeWithText(MediaDay.label(dayA)).assertExists()
-        composeRule.onNodeWithText("0:24").assertExists()
-        composeRule.onNodeWithText("GIF").assertExists()
+        // The day label appears both as the grid header and in the date rail, so assert presence
+        // (>=1) rather than uniqueness. Video and GIF indicators are present as well.
+        assertTrue(
+            composeRule.onAllNodesWithText(MediaDay.label(dayA)).fetchSemanticsNodes().isNotEmpty(),
+        )
+        assertTrue(composeRule.onAllNodesWithText("GIF").fetchSemanticsNodes().isNotEmpty())
     }
 }
