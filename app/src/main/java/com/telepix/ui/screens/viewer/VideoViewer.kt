@@ -22,8 +22,9 @@ import java.io.File
  * Local videos play straight from their content URI; a cloud video plays only after its original has
  * been explicitly downloaded (there is no verified Telegram streaming path — so no fake "streaming"
  * is claimed). Real playback is device-validated; this component is deliberately not exercised by
- * Robolectric.
+ * Robolectric. Media3's player UI is still an opt-in (unstable) surface, scoped to this file only.
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun VideoViewer(state: ViewerUiState, onDownload: () -> Unit) {
     val videoUri: Uri? = when (val item = state.item) {
