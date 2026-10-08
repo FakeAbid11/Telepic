@@ -132,7 +132,6 @@ class BackupRecognitionRepositoryTest {
 
     @Test
     fun `local queue already BACKED_UP - recognized without hashing`() = runBlocking {
-        repo(FakeHasher(emptyMap())).let { r }
         queueDao.insertIgnore(
             media(1, "content://a").toRecognizedQueueEntity(
                 com.telepix.domain.backup.RemoteMediaIdentity(100L, 7L), hashA, 1000L, 1L,
