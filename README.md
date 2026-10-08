@@ -225,9 +225,53 @@ failure, so items stay `QUEUED`/`WAITING` and are **never falsely marked `BACKED
 downstream is complete and tested with a fake that does succeed, so finalizing only the request
 shapes activates real backup.
 
+### ✅ Phase 7 — Backup Recognition & Deduplication *(engine + hashing + persistence complete; live remote recognition pending device bring-up)*
+
+Implemented and CI-verified against fakes:
+
+- **SHA-256 content identity** — streaming, cancellable hashing on `Dispatchers.IO` via
+  `MessageDigest("SHA-256")` (no third-party hashing lib, no `readBytes()` of whole files), producing
+  a consistent **64-char lowercase hex** digest persisted across the queue, the remote manifest, and
+  tests. Recognition identity is **content, never filename/id/date/album** (unit-tested: same bytes
+  under different filenames are duplicates; same filename with different bytes are not).
+- **Hash cache with correct invalidation** — a stored hash is reused only while **both** content size
+  and modified timestamp are unchanged; a size or timestamp change forces a re-hash. A MediaStore URI
+  is never trusted as the cache key on its own.
+- **Content-change-during-hash guard** — the hasher re-checks the provider size after streaming and
+  discards a torn hash rather than persisting one for the wrong file version.
+- **Remote manifest is queryable by hash** — `findByContentHash` / `findByContentHashAndSize` (both
+  backed by an explicit `contentHash` **index**), returning a deterministic earliest message id when
+  several equivalent records exist, so recognition never triggers a new upload just because duplicates
+  already exist. The whole manifest is never scanned into memory.
+- **Room migration 2 → 3** — adds `hashedAt` and a `contentHash` index to `backup_queue` and a
+  `contentHash` index to `cloud_media_manifest`; **no destructive fallback**. A migration test builds
+  a real version-2 database, reopens at version 3 through the explicit migration, and proves Phase
+  5/6 rows **and existing hashes survive**.
+- **Recognition before enqueue** — the coordinator recognizes each item first: `AlreadyBackedUp` and
+  `Pending` never create a queue row, `NeedsBackup` enqueues carrying the fresh hash (persisted up
+  front), and a hash/read failure surfaces `Unavailable` and still tries backup (never silently
+  skipped, never falsely "backed up"). Cross-identity dedup stops identical bytes reached through two
+  local ids from being queued twice.
+- **Reinstall-proof by design** — recognition matches on content hash against the remote manifest, so
+  a fresh install with new MediaStore ids recognizes existing Telegram media without a second upload
+  (the model + DAO/query boundaries for the future reinstall UI are in place; the UI itself is not).
+- **Phase 6 preserved entirely** — state machine, WorkManager, retry, cancellation, crash recovery,
+  staging and the `CloudRepository` upload abstraction are untouched; recognition feeds the existing
+  queue rather than replacing it. On a real upload result the content hash is persisted into the
+  manifest as part of success (§32).
+- **No TDLib internals leak into recognition** — the engine knows only `CloudRepository` / the
+  manifest / a remote identity, never `TdApi`/`sendMessage`/`InputFile`; no JSON/JNI introduced.
+
+Pending (real Telegram) — **inherits the Phase 5/6 device bring-up dependency**: recognition against a
+remote manifest populated by *actual* Telegram uploads (and therefore real duplicate prevention on a
+device) cannot be exercised yet because the live upload path is not device-finalized. The **local
+recognition engine, hashing, cache invalidation, duplicate protection, concurrency and the manifest
+queries are all CI-tested with fakes**; a device test of real Telegram duplicate prevention is
+reported as NOT TESTED.
+
 ### 🔜 Later phases
 
-Recognition & reinstall recovery (SHA-256, dedup) · Polished Photos interactions · Albums · Viewer · Map/Restore · Settings & security hardening · Full integration.
+Polished Photos interactions · Albums · Viewer · Map/Restore · Settings & security hardening · Full integration.
 
 See [`PRD.md`](PRD.md) for the complete product specification and the 12-phase plan.
 
@@ -242,7 +286,14 @@ app/src/main/java/com/telepix/
 ├── di/                          # Lightweight manual dependency container
 ├── navigation/                  # Destinations + NavHost + viewer route
 ├── domain/media/                # LocalMedia, MediaType, PhotosItem, day grouping
+├── domain/cloud/                # CloudMedia, destination, status, upload contract
+├── domain/backup/               # BackupState + state machine, BackupItem, recognition models
 ├── data/media/                  # MediaStore loader, mapper, PagingSource, repository, observer
+├── data/cloud/                  # Cloud repository + TDLib data source + Room (destination/manifest)
+├── data/backup/                 # Backup queue/coordinator/repository, hashing, staging, WorkManager
+│   ├── hash/                    # Streaming SHA-256 ContentHasher
+│   ├── db/                      # backup_queue entity + DAO (content-hash indexed)
+│   └── work/                    # BackupWorker, scheduler, worker factory
 ├── onboarding/                  # BackupPreference, repository, ViewModel, startup routing
 ├── permissions/                 # MediaPermissionState + SDK-aware policy + controller
 ├── settings/                    # ThemeMode, repository, ViewModel (DataStore)
