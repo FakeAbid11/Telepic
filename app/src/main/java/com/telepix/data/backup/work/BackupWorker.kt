@@ -47,8 +47,6 @@ class BackupWorker(
 
     override suspend fun doWork(): Result {
         val repo = repository
-        val notification = buildNotification(0, 0)
-        runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, notification)) }
 
         // Repair anything a previous process left mid-flight before touching new work.
         repo.recoverInterruptedWork()
@@ -56,6 +54,7 @@ class BackupWorker(
         var uploaded = 0
         var processedThisRun = 0
         var waiting = false
+        var foregroundStarted = false
         while (processedThisRun < MAX_ITEMS_PER_RUN) {
             if (isStopped) break
             val summary = repo.processPendingWork(maxItems = BATCH_SIZE)
@@ -63,14 +62,20 @@ class BackupWorker(
             processedThisRun += summary.processed
             uploaded += summary.uploaded
             waiting = summary.hasRetryableWork
-            updateNotification(uploaded, processedThisRun)
+            // Only promote to a foreground notification once there is genuinely work to report —
+            // an empty/queue-drained run shouldn't show a backup notification at all.
+            if (!foregroundStarted) {
+                foregroundStarted = true
+                runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(uploaded, processedThisRun))) }
+            } else {
+                updateNotification(uploaded, processedThisRun)
+            }
         }
 
-        // If we only made progress by parking items to wait, ask WorkManager to retry later (backoff);
-        // if we are out of actionable work, finish. A cancellation is not a failure of the queue.
-        return if (isStopped) Result.success()
-        else if (waiting) Result.retry()
-        else Result.success()
+        // If the only progress this run was parking items to wait, ask WorkManager to retry later
+        // (its backoff handles the wait); otherwise the queue is drained and the run is done. A
+        // cancellation is communicated through isStopped, which WorkManager honors over the result.
+        return if (waiting) Result.retry() else Result.success()
     }
 
     private suspend fun updateNotification(uploaded: Int, processed: Int) {
