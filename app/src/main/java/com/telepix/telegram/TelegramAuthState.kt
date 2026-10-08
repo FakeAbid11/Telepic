@@ -1,17 +1,17 @@
 package com.telepix.telegram
 
 /**
- * The Telegram authorization lifecycle the UI can render.
+ * The Telegram authentication states the UI renders. This is the same contract Phase 2 defined
+ * (so existing screens/tests keep compiling), now produced for real by the TDLib backend
+ * ([TdLibTelegramAuthController]) via [AuthorizationStateMapper] instead of a stub.
  *
- * This is the state *contract* only. Phase 2 never produces anything other than
- * [NotConnected]; Phase 4 maps the real TDLib authorization state
- * (`org.drinkless.tdlib.TdApi.AuthorizationState`) onto these values.
+ * [NotConnected] remains the honest initial/unavailable state — nothing here is faked.
  */
 sealed interface TelegramAuthState {
-    /** No Telegram backend is connected. The Phase 2 default. */
+    /** No session started yet, or the backend is unavailable. */
     data object NotConnected : TelegramAuthState
 
-    data object Connecting : TelegramAuthState
+    data object Initializing : TelegramAuthState
 
     data object WaitingForPhoneNumber : TelegramAuthState
 
@@ -19,7 +19,26 @@ sealed interface TelegramAuthState {
 
     data object WaitingForPassword : TelegramAuthState
 
-    data object Authorized : TelegramAuthState
+    data class WaitingForOtherDeviceConfirmation(val link: String) : TelegramAuthState
 
-    data class Error(val message: String) : TelegramAuthState
+    data object WaitingForRegistration : TelegramAuthState
+
+    data class Authorized(val user: TelegramUser) : TelegramAuthState
+
+    data object LoggingOut : TelegramAuthState
+
+    data object Closing : TelegramAuthState
+
+    data object Closed : TelegramAuthState
+
+    data class Failed(val error: TelegramError) : TelegramAuthState
+
+    companion object {
+        /** Whether authentication has completed successfully. */
+        fun TelegramAuthState.isAuthorized(): Boolean = this is Authorized
+
+        /** Whether a fresh login flow can be started from this state. */
+        fun TelegramAuthState.canStartLogin(): Boolean =
+            this is NotConnected || this is Failed || this is Closed
+    }
 }

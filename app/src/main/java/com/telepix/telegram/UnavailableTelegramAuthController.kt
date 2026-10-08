@@ -5,24 +5,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Phase 2 stand-in: there is no Telegram backend yet, so this controller permanently reports
- * [TelegramAuthState.NotConnected] and never fabricates a connection, account, or channel.
- *
- * Phase 4 replaces this in [com.telepix.di.AppContainer] with a TDLib-backed implementation.
+ * Fallback controller used only when no Telegram backend is wired (e.g. native library missing).
+ * It permanently reports [TelegramAuthState.NotConnected] and never fakes a connection, account,
+ * or channel. [TdLibTelegramAuthController] is the real Phase 4 implementation.
  */
 class UnavailableTelegramAuthController : TelegramAuthController {
 
     private val _state = MutableStateFlow<TelegramAuthState>(TelegramAuthState.NotConnected)
-
     override val state: StateFlow<TelegramAuthState> = _state.asStateFlow()
 
     override val isBackendAvailable: Boolean = false
 
-    override fun connect() {
-        // No Telegram backend in Phase 2 — intentionally a no-op. UI stays "not connected".
-    }
-
-    override fun cancel() {
-        // No-op until Phase 4.
-    }
+    override fun start() = Unit
+    override fun submitPhoneNumber(phoneNumber: String) = Unit
+    override fun submitCode(code: String) = Unit
+    override fun submitPassword(password: String) = Unit
+    override fun logout() = Unit
 }

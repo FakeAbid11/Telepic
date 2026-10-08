@@ -93,6 +93,23 @@
     <string name="onboarding_telegram_not_connected">Not connected</string>
     <string name="onboarding_telegram_not_connected_body">Telegram sign-in arrives in the Telegram integration phase. You can continue now and connect later from Settings — cloud backup stays off until then.</string>
     <string name="onboarding_telegram_skip">Set up later</string>
+    <string name="telegram_connecting">Connecting to Telegram…</string>
+    <string name="telegram_authorizing">Signed in. Loading your account…</string>
+    <string name="telegram_phone_label">Phone number</string>
+    <string name="telegram_phone_hint">Include your country code, for example +1 555 010 1234</string>
+    <string name="telegram_send_code">Send code</string>
+    <string name="telegram_code_label">Confirmation code</string>
+    <string name="telegram_code_hint">Enter the code Telegram sent you</string>
+    <string name="telegram_verify">Sign in</string>
+    <string name="telegram_verify_continue">Continue</string>
+    <string name="telegram_logging_out">Signing out of Telegram…</string>
+    <string name="telegram_password_label">Two-factor password</string>
+    <string name="telegram_password_hint">This account has a cloud password</string>
+    <string name="telegram_other_device">Approve the login request on your other Telegram device.</string>
+    <string name="telegram_registration">Almost there — new accounts are finalized in a later step.</string>
+    <string name="telegram_connected_as">Connected as %1$s</string>
+    <string name="telegram_retry">Retry</string>
+    <string name="telegram_change_account">Use a different account</string>
 
     <!-- Screen 5 — Backup Preferences -->
     <string name="onboarding_backup_title">Choose your backup</string>

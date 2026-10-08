@@ -69,7 +69,7 @@ fun ReadyStep(
         }
         SummaryRow(R.string.onboarding_ready_photo_access, photoValueRes, photoOk)
 
-        val telegramAuthorized = telegramState == TelegramAuthState.Authorized
+        val telegramAuthorized = telegramState is TelegramAuthState.Authorized
         val telegramValueRes = if (telegramAuthorized) {
             R.string.onboarding_ready_value_connected
         } else {

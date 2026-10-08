@@ -3,23 +3,26 @@ package com.telepix.telegram
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Abstraction the UI consumes for Telegram authorization. Phase 4 provides a TDLib-backed
- * implementation; Phase 2 provides [UnavailableTelegramAuthController] so the onboarding
- * screen can render an honest "not connected" state without any fake client.
+ * The UI-facing contract for Telegram authentication. The UI depends only on this interface —
+ * never on [org.drinkless.tdlib.Client] directly.
+ *
+ * Phase 4 provides [TdLibTelegramAuthController] (real). [UnavailableTelegramAuthController]
+ * remains as a fallback when no backend is wired, and never fakes success.
  */
 interface TelegramAuthController {
-    /** Current authorization state. */
     val state: StateFlow<TelegramAuthState>
 
-    /**
-     * Whether a real Telegram backend is wired up. `false` in Phase 2, which lets the UI show
-     * a clean disabled/"being prepared" state instead of pretending authentication exists.
-     */
+    /** Whether a real Telegram backend is available. False for the fallback implementation. */
     val isBackendAvailable: Boolean
 
-    /** Begin authentication. No-op until the TDLib backend exists (Phase 4). */
-    fun connect()
+    /** Begin/restore the authentication session (idempotent). */
+    fun start()
 
-    /** Cancel an in-progress authentication. No-op until Phase 4. */
-    fun cancel()
+    fun submitPhoneNumber(phoneNumber: String)
+
+    fun submitCode(code: String)
+
+    fun submitPassword(password: String)
+
+    fun logout()
 }

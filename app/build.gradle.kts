@@ -4,19 +4,40 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Telegram API credentials come from the environment (GitHub Actions Secrets in CI).
+// They are NEVER committed. Debug builds fall back to a safe placeholder (id 0) so CI stays
+// green without secrets; real login requires valid values supplied via secrets. A non-numeric
+// TELEGRAM_API_ID that is actually provided fails fast rather than silently becoming 0.
+val telegramApiIdEnv = System.getenv("TELEGRAM_API_ID")
+val telegramApiId = when {
+    telegramApiIdEnv.isNullOrBlank() -> 0
+    else -> telegramApiIdEnv.toIntOrNull()
+        ?: error("TELEGRAM_API_ID must be a numeric integer")
+}
+val telegramApiHash = System.getenv("TELEGRAM_API_HASH").orEmpty()
+
 android {
     namespace = "com.telepix"
     compileSdk = 34
 
     defaultConfig {
         applicationId = "com.telepix"
-        minSdk = 24
+        // Phase 4: the TDLib Android artifact requires minSdk 26 (Android 8.0+).
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // ARM-only device support for the TDLib native libraries.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+
+        buildConfigField("int", "TELEGRAM_API_ID", telegramApiId.toString())
+        buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHash\"")
     }
 
     buildTypes {
@@ -85,6 +106,7 @@ dependencies {
     implementation(libs.androidx.paging.compose)
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
+    implementation(libs.tdlib.android)
 
     debugImplementation(libs.androidx.ui.tooling)
 

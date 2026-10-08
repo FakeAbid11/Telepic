@@ -11,11 +11,15 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.telepix.onboarding.BackupPreference
+import com.telepix.telegram.TelegramAuthController
 import com.telepix.telegram.TelegramAuthState
 import com.telepix.ui.onboarding.components.TAG_ONBOARDING_PRIMARY
 import com.telepix.ui.onboarding.components.TAG_ONBOARDING_SECONDARY
 import com.telepix.ui.onboarding.steps.TAG_BACKUP_ALL
 import com.telepix.ui.theme.TelepixTheme
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -28,8 +32,8 @@ import org.robolectric.annotation.GraphicsMode
  * Compose UI tests for the onboarding flow, run on the JVM via Robolectric (no emulator).
  *
  * Assertions key on stable screen titles and action test tags rather than implementation
- * details. The permission and Telegram steps are advanced with their secondary actions so the
- * flow never depends on a real system permission dialog.
+ * details. The Telegram step uses a fake, unavailable controller so the flow never depends on
+ * a real backend. Permission and Telegram steps are advanced with their secondary actions.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -39,15 +43,25 @@ class OnboardingUiTest {
     @get:Rule
     val composeRule = createComposeRule()
 
+    /** Fake fallback controller: honest "not connected", backend unavailable, no-op actions. */
+    private class FakeTelegramController : TelegramAuthController {
+        private val _state = MutableStateFlow<TelegramAuthState>(TelegramAuthState.NotConnected)
+        override val state: StateFlow<TelegramAuthState> = _state.asStateFlow()
+        override val isBackendAvailable: Boolean = false
+        override fun start() = Unit
+        override fun submitPhoneNumber(phoneNumber: String) = Unit
+        override fun submitCode(code: String) = Unit
+        override fun submitPassword(password: String) = Unit
+        override fun logout() = Unit
+    }
+
     @Test
     fun `welcome shows branding and a primary action`() {
         composeRule.setContent {
             TelepixTheme(darkTheme = true) {
                 OnboardingScreen(
                     backupPreference = null,
-                    telegramState = TelegramAuthState.NotConnected,
-                    telegramBackendAvailable = false,
-                    onTelegramConnect = {},
+                    telegramController = FakeTelegramController(),
                     onBackupPreferenceChange = {},
                     onComplete = {},
                 )
@@ -64,9 +78,7 @@ class OnboardingUiTest {
             TelepixTheme(darkTheme = true) {
                 OnboardingScreen(
                     backupPreference = null,
-                    telegramState = TelegramAuthState.NotConnected,
-                    telegramBackendAvailable = false,
-                    onTelegramConnect = {},
+                    telegramController = FakeTelegramController(),
                     onBackupPreferenceChange = { chosen = it },
                     onComplete = {},
                 )
@@ -127,9 +139,7 @@ class OnboardingUiTest {
         } else {
             OnboardingScreen(
                 backupPreference = backup,
-                telegramState = TelegramAuthState.NotConnected,
-                telegramBackendAvailable = false,
-                onTelegramConnect = {},
+                telegramController = FakeTelegramController(),
                 onBackupPreferenceChange = { backup = it },
                 onComplete = {
                     done = true

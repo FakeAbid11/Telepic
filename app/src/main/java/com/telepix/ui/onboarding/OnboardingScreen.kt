@@ -15,11 +15,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepix.R
 import com.telepix.onboarding.BackupPreference
 import com.telepix.permissions.MediaPermissionState
 import com.telepix.permissions.rememberMediaPermissionState
-import com.telepix.telegram.TelegramAuthState
+import com.telepix.telegram.TelegramAuthController
 import com.telepix.ui.onboarding.components.OnboardingScaffold
 import com.telepix.ui.onboarding.components.TAG_ONBOARDING_PRIMARY
 import com.telepix.ui.onboarding.steps.BackupPreferencesStep
@@ -43,14 +44,13 @@ private const val TOTAL_STEPS = 6
 @Composable
 fun OnboardingScreen(
     backupPreference: BackupPreference?,
-    telegramState: TelegramAuthState,
-    telegramBackendAvailable: Boolean,
-    onTelegramConnect: () -> Unit,
+    telegramController: TelegramAuthController,
     onBackupPreferenceChange: (BackupPreference) -> Unit,
     onComplete: () -> Unit,
 ) {
     var step by rememberSaveable { mutableIntStateOf(0) }
     val permission = rememberMediaPermissionState()
+    val telegramState by telegramController.state.collectAsStateWithLifecycle()
 
     // System back walks one step at a time; on the first step it falls through to the
     // normal Activity back behavior instead of trapping or exiting into a broken state.
@@ -114,10 +114,9 @@ fun OnboardingScreen(
                 }
             }
             3 -> {
-                primaryLabel = stringResource(R.string.onboarding_telegram_connect)
-                onPrimaryAction = onTelegramConnect
-                // Disabled honestly: the Telegram backend does not exist yet (Phase 4).
-                primaryEnabled = telegramBackendAvailable
+                // TelegramStep owns its interactive controls (connect / phone / code / password /
+                // continue). The scaffold only offers a non-blocking "Set up later" escape so the
+                // flow can never trap the user.
                 secondaryLabel = stringResource(R.string.onboarding_telegram_skip)
                 onSecondaryAction = goToNext
             }
@@ -154,7 +153,11 @@ fun OnboardingScreen(
                     0 -> WelcomeStep()
                     1 -> HowItWorksStep()
                     2 -> PermissionsStep(permission.state)
-                    3 -> TelegramStep(telegramState)
+                    3 -> TelegramStep(
+                        controller = telegramController,
+                        state = telegramState,
+                        onContinue = goToNext,
+                    )
                     4 -> BackupPreferencesStep(backupPreference, onBackupPreferenceChange)
                     5 -> ReadyStep(permission.state, telegramState, backupPreference)
                 }

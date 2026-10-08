@@ -23,10 +23,12 @@ class UnavailableTelegramAuthControllerTest {
     }
 
     @Test
-    fun `connect never fakes an authorized state`() {
+    fun `start never fakes an authorized state`() {
         val controller = UnavailableTelegramAuthController()
-        controller.connect()
-        controller.cancel()
+        controller.start()
+        controller.submitPhoneNumber("+10000000000")
+        controller.submitCode("12345")
+        controller.logout()
         assertTrue(controller.state.value is TelegramAuthState.NotConnected)
     }
 }

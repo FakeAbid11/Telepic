@@ -27,16 +27,13 @@ fun TelepixRoot(
 ) {
     val themeMode by themeViewModel.themeMode.collectAsStateWithLifecycle()
     val onboarding by onboardingViewModel.uiState.collectAsStateWithLifecycle()
-    val telegramState by telegramController.state.collectAsStateWithLifecycle()
 
     TelepixTheme(darkTheme = themeMode.isDarkTheme(isSystemInDarkTheme())) {
         when {
             onboarding.isLoading -> LoadingState()
             !onboarding.isCompleted -> OnboardingScreen(
                 backupPreference = onboarding.backupPreference,
-                telegramState = telegramState,
-                telegramBackendAvailable = telegramController.isBackendAvailable,
-                onTelegramConnect = telegramController::connect,
+                telegramController = telegramController,
                 onBackupPreferenceChange = onboardingViewModel::setBackupPreference,
                 onComplete = onboardingViewModel::completeOnboarding,
             )

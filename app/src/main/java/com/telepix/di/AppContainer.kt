@@ -9,12 +9,16 @@ import com.telepix.data.media.LocalMediaRepository
 import com.telepix.data.media.LocalMediaRepositoryImpl
 import com.telepix.data.media.MediaChangeWatcher
 import com.telepix.data.media.MediaStoreMediaLoader
+import com.telepix.BuildConfig
 import com.telepix.onboarding.OnboardingRepository
 import com.telepix.onboarding.OnboardingRepositoryImpl
 import com.telepix.settings.SettingsRepository
 import com.telepix.settings.SettingsRepositoryImpl
+import com.telepix.telegram.KeystoreTdLibKeyProvider
 import com.telepix.telegram.TelegramAuthController
-import com.telepix.telegram.UnavailableTelegramAuthController
+import com.telepix.telegram.TelegramSessionManager
+import com.telepix.telegram.TdLibClientGatewayImpl
+import com.telepix.telegram.TdLibTelegramAuthController
 
 /** Single DataStore instance for the whole process, shared by all preference repositories. */
 private val Context.telepixDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -47,7 +51,18 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val telegramAuthController: TelegramAuthController by lazy {
-        UnavailableTelegramAuthController()
+        // Real TDLib session, created lazily. TDLib is only initialized when start() is called
+        // (on app startup or the Telegram screen), and that is non-blocking — Photos is unaffected.
+        TdLibTelegramAuthController(
+            TelegramSessionManager(
+                context = context,
+                gateway = TdLibClientGatewayImpl(),
+                keyProvider = KeystoreTdLibKeyProvider(context),
+                apiId = BuildConfig.TELEGRAM_API_ID,
+                apiHash = BuildConfig.TELEGRAM_API_HASH,
+                applicationVersion = BuildConfig.VERSION_NAME,
+            ),
+        )
     }
 
     override val localMediaRepository: LocalMediaRepository by lazy {

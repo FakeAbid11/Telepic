@@ -20,6 +20,10 @@ class TelepixApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         container = DefaultAppContainer(this)
+        // Initialize the Telegram session at startup to restore a persisted login. This opens
+        // TDLib on a background scope and never blocks or crashes local startup (Photos works
+        // regardless); failures surface as a Telegram error state, not an app crash.
+        container.telegramAuthController.start()
     }
 
     override fun newImageLoader(): ImageLoader =
