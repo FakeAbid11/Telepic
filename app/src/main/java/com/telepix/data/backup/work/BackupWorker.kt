@@ -73,7 +73,7 @@ class BackupWorker(
         else Result.success()
     }
 
-    private fun updateNotification(uploaded: Int, processed: Int) {
+    private suspend fun updateNotification(uploaded: Int, processed: Int) {
         runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(uploaded, processed))) }
     }
 

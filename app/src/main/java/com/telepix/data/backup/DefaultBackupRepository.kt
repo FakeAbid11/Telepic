@@ -71,6 +71,7 @@ class DefaultBackupRepository(
         // BACKED_UP, so this is defensive); anything without one is safely returned to QUEUED.
         dao.finalizeInterruptedWithIdentity(now)
         dao.recoverInterruptedWithoutIdentity(now)
+        Unit
     }
 
     override suspend fun processPendingWork(maxItems: Int): BackupProcessSummary =

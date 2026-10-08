@@ -1,5 +1,6 @@
 package com.telepix.data.backup
 
+import com.telepix.data.backup.work.BackupWorkScheduler
 import com.telepix.data.media.MediaPageLoader
 import com.telepix.domain.media.LocalMedia
 import com.telepix.onboarding.BackupPreference

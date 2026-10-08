@@ -70,7 +70,7 @@ fun BackupCenterScreen(
             StatsRow(stats = state.stats, modifier = Modifier.padding(horizontal = spacing.screenMargin, vertical = spacing.md))
 
             Button(
-                onClick = viewModel.startBackup,
+                onClick = viewModel::startBackup,
                 modifier = Modifier
                     .padding(horizontal = spacing.screenMargin)
                     .fillMaxWidth(),
