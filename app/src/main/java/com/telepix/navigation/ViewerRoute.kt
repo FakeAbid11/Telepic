@@ -7,12 +7,12 @@ package com.telepix.navigation
  * back navigation returns to the originating context.
  */
 object ViewerRoute {
-    const val LOCAL = "viewer/local/{$ARG_MEDIA_ID}"
-    const val CLOUD = "viewer/cloud/{$ARG_CHAT_ID}/{$ARG_MESSAGE_ID}"
-
     const val ARG_MEDIA_ID = "mediaId"
     const val ARG_CHAT_ID = "chatId"
     const val ARG_MESSAGE_ID = "messageId"
+
+    const val LOCAL = "viewer/local/{$ARG_MEDIA_ID}"
+    const val CLOUD = "viewer/cloud/{$ARG_CHAT_ID}/{$ARG_MESSAGE_ID}"
 
     fun local(mediaId: Long): String = "viewer/local/$mediaId"
 

@@ -146,7 +146,7 @@ private fun ViewerContent(
 }
 
 @Composable
-private fun CloudUnavailable(state: ViewerUiState, onDownload: () -> Unit) {
+internal fun CloudUnavailable(state: ViewerUiState, onDownload: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,

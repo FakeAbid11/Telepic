@@ -1,10 +1,10 @@
 package com.telepix.data.media
 
 import android.content.Context
-import android.net.Uri
 import android.provider.MediaStore
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import com.telepix.domain.media.Album
 import com.telepix.domain.media.LocalMedia
 import com.telepix.domain.media.PhotosItem
@@ -87,10 +87,9 @@ class MediaStoreAlbumRepository(context: Context) : AlbumRepository {
         pagingSourceFactory = { MediaPagingSource(MediaStoreBucketLoader(appContext, bucketId)) },
     ).flow
 
-    private data class AlbumSeed(val uri: Uri, val isVideo: Boolean, val latest: Long)
-
     private companion object {
-        const val PAGE_SIZE = 60        const val PREFETCH_DISTANCE = 30
+        const val PAGE_SIZE = 60
+        const val PREFETCH_DISTANCE = 30
         const val INITIAL_LOAD_SIZE = 90
     }
 }
