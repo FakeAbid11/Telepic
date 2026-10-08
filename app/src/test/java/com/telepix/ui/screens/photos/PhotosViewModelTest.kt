@@ -113,7 +113,7 @@ class PhotosViewModelTest {
     }
 
     @Test
-    fun `backup status is empty when no repository is wired (offline / no queue)`() = runTest {
+    fun `backup status is empty when no repository is wired`() = runTest {
         val viewModel = PhotosViewModel(FakeRepository(), FakeWatcher())
         val job = launch { viewModel.backupStates.collect { } }
         runCurrent()
