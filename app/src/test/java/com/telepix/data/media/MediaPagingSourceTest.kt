@@ -13,6 +13,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+private typealias Page = PagingSource.LoadResult.Page<Int, PhotosItem>
+
 /**
  * Verifies the paging source's day-header behavior against a fake [MediaPageLoader]: headers on
  * day change, no duplicate header across a page boundary, reset at the top, and error passthrough.
@@ -45,8 +47,6 @@ class MediaPagingSourceTest {
         override suspend fun load(offset: Int, limit: Int): List<LocalMedia> =
             all.drop(offset).take(limit)
     }
-
-    private typealias Page = PagingSource.LoadResult.Page<Int, PhotosItem>
 
     private suspend fun PagingSource<Int, PhotosItem>.refreshTop(size: Int): Page {
         val result = load(PagingSource.LoadParams.Refresh(0, size, false))
