@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -38,13 +37,27 @@ class AlbumsViewModelTest {
         Dispatchers.resetMain()
     }
 
+    /**
+     * Waits (bounded) until the viewModelScope load settles into its final state, whichever Main
+     * dispatcher the scope resumes on. Fails with the last observed state instead of hanging.
+     */
+    private fun settleStatus(vm: AlbumsViewModel): AlbumsStatus {
+        var waited = 0
+        while (waited < 2_000) {
+            val status = vm.status.value
+            if (status !is AlbumsStatus.Loading) return status
+            Thread.sleep(10)
+            waited += 10
+        }
+        return vm.status.value
+    }
+
     @Test
     fun `loads albums into the ready state`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val vm = AlbumsViewModel(FakeAlbums { listOf(album(1), album(2)) })
-        runCurrent()
-        val status = vm.status.value
-        assertTrue(status is AlbumsStatus.Ready)
+        val status = settleStatus(vm)
+        assertTrue("expected Ready but was $status", status is AlbumsStatus.Ready)
         assertEquals(2, (status as AlbumsStatus.Ready).albums.size)
     }
 
@@ -52,15 +65,13 @@ class AlbumsViewModelTest {
     fun `empty library is the empty state`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val vm = AlbumsViewModel(FakeAlbums { emptyList() })
-        runCurrent()
-        assertEquals(AlbumsStatus.Empty, vm.status.value)
+        assertEquals(AlbumsStatus.Empty, settleStatus(vm))
     }
 
     @Test
     fun `a provider failure is the error state, not empty`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val vm = AlbumsViewModel(FakeAlbums { throw IllegalStateException("boom") })
-        runCurrent()
-        assertEquals(AlbumsStatus.Error, vm.status.value)
+        assertEquals(AlbumsStatus.Error, settleStatus(vm))
     }
 }
