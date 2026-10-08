@@ -59,11 +59,11 @@ class BackupWorker(
         while (processedThisRun < MAX_ITEMS_PER_RUN) {
             if (isStopped) break
             val summary = repo.processPendingWork(maxItems = BATCH_SIZE)
+            if (summary.processed == 0) break // queue drained of actionable items
             processedThisRun += summary.processed
             uploaded += summary.uploaded
             waiting = summary.hasRetryableWork
             updateNotification(uploaded, processedThisRun)
-            if (summary.processed == 0) break // queue drained of actionable items
         }
 
         // If we only made progress by parking items to wait, ask WorkManager to retry later (backoff);

@@ -35,10 +35,12 @@ abstract class Phase5Database : RoomDatabase() {
 class BackupMigrationTest {
 
     @Test
-    fun `phase 5 data survives the 1 to 2 migration and the queue is usable`() = kotlinx.coroutines.runBlocking {
+    fun `phase 5 data survives the 1 to 2 migration and the queue is usable`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dbFile = "migration_phase6.db"
         context.deleteDatabase(dbFile)
+
+        kotlinx.coroutines.runBlocking {
 
         // Arrange: create a real version-1 database with a destination + a manifest row.
         val v1 = Room.databaseBuilder(context, Phase5Database::class.java, dbFile)
@@ -72,6 +74,7 @@ class BackupMigrationTest {
         // Assert: the new queue table exists and works.
         assertEquals(0, v2.backupQueueDao().observeAll().first().size)
         v2.close()
+        }
 
         context.deleteDatabase(dbFile)
     }

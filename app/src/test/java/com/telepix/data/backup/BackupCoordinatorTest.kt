@@ -13,8 +13,13 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /** The coordinator honors the Phase 2 backup preference and only discovers incrementally. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class BackupCoordinatorTest {
 
     private class RecordingRepo : BackupRepository {
