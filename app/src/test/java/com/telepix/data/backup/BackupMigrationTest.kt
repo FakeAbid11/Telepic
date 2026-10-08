@@ -10,6 +10,7 @@ import com.telepix.data.cloud.db.CloudDestinationEntity
 import com.telepix.data.cloud.db.CloudMediaManifestDao
 import com.telepix.data.cloud.db.CloudMediaManifestEntity
 import com.telepix.data.cloud.db.TelepixDatabase
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,7 +70,7 @@ class BackupMigrationTest {
         assertEquals(1, v2.cloudMediaManifestDao().count())
 
         // Assert: the new queue table exists and works.
-        assertEquals(0, kotlinx.coroutines.flow.first(v2.backupQueueDao().observeAll()).size)
+        assertEquals(0, v2.backupQueueDao().observeAll().first().size)
         v2.close()
 
         context.deleteDatabase(dbFile)
