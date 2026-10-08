@@ -57,7 +57,7 @@ object MediaDay {
         return when {
             diff == 0L -> DayKind.TODAY
             diff == 1L -> DayKind.YESTERDAY
-            diff in 2..6 -> DayKind THIS_WEEK
+            diff in 2..6 -> DayKind.THIS_WEEK
             else -> DayKind.OLDER
         }
     }
