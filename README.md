@@ -20,7 +20,8 @@ Telepix organizes your local media into a fast, beautiful timeline and (in later
 | Persistence | Jetpack DataStore (Preferences) |
 | Local media | Android MediaStore + Paging 3 |
 | Persistence (app data) | Room (cloud destination, media manifest, backup queue) |
-| Image loading | Coil (thumbnail-first, video-frame decoding) |
+| Image loading | Coil (thumbnail-first, video-frame decoding, animated GIFs) |
+| Video playback | Media3 ExoPlayer (`PlayerView`), device-gated |
 | Recognition / dedup | Streaming SHA-256 content identity (no third-party hashing lib) |
 | Cloud backend | Telegram via **Java TDLib** (`org.drinkless.tdlib`), ARM-only |
 | Background work | **WorkManager** (network-constrained, foreground backup worker) |
@@ -310,9 +311,54 @@ not implemented** (later phases) — the grid navigates to the existing viewer p
 Device testing and the real-Telegram backup-indicator path remain NOT PERFORMED / NOT TESTED (live
 upload is still device-gated); indicators were verified with repository states, not real uploads.
 
+### ✅ Phase 9 — Cloud, Albums & Full-Screen Viewer *(UI + navigation + data layers complete; live cloud content pending device bring-up)*
+
+Implemented and CI-verified (209 tests, Robolectric + JVM), with all Phase 1–8 tests still green:
+
+- **Typed media-source navigation** — a `MediaSource` (Local = MediaStore id, Cloud = chatId +
+  messageId) is the *only* identity that crosses the Viewer boundary, so a Telegram message is never
+  mistaken for a local id and back navigation returns to the originating screen. Photos and album
+  tiles open `viewer/local/{id}`; Cloud tiles open `viewer/cloud/{chatId}/{messageId}`.
+- **Full-screen Viewer** for photos, videos and GIFs: pinch-to-zoom / pan with double-tap reset
+  (pure, unit-tested `ZoomState` math), a labelled source (on-device vs Telegram cloud), the item's
+  date, and previous/next **within the originating collection** — local neighbours come from two
+  cheap `_ID`-bounded MediaStore queries, cloud neighbours from the Room manifest's order. No
+  whole-library load for adjacency.
+- **Missing media is honest** — an unknown local id or a manifest-absent (chatId, messageId) renders
+  a "no longer available" state and never substitutes another item.
+- **Video playback via Media3/ExoPlayer** (`PlayerView`), isolated in one opt-in component with
+  proper release; local videos play their content URI directly. **Cloud video has no fake streaming**
+  — there is no verified TDLib streaming path, so a cloud video plays only its explicitly-downloaded
+  original and otherwise shows the honest download step. Playback itself is device-only and reported
+  NOT TESTED here.
+- **Cloud originals download only on explicit request** — opening the Viewer never fetches the
+  original; the download action runs `CloudRepository.downloadOriginal`, and success is shown only
+  with a verified local file path. Until the TDLib `download`/`getFile` shapes are device-finalized
+  the result is `Unavailable` (never a fabricated file), and previews remain the browse mechanism.
+- **Local Albums from real MediaStore buckets** — `AlbumGrouper` (pure, unit-tested) groups a
+  projection-limited, newest-first query by `BUCKET_ID`: newest item as cover, real counts, provider
+  bucket names with a neutral fallback (never a filename), null-bucket rows skipped. Permission-aware
+  with distinct loading / genuinely-empty / error states, like Photos.
+- **Album contents reuse the exact Photos pipeline** — the same `MediaPagingSource`, mapper,
+  projection and ordering filtered by bucket, rendered through the same `MediaGrid` (day headers,
+  date rail, backup badges), so an album behaves identically to the timeline. Paging 3 throughout;
+  no full-album memory load.
+- **Cloud grid → Viewer wiring** — tapping a cloud tile now opens the shared Viewer by remote
+  identity (previously a static grid); animated **GIF playback in the Viewer** via a Coil GIF
+  decoder registered on the app ImageLoader.
+- **Phase 1–8 preserved** — onboarding, theme, permissions, Photos timeline/date rail/backup status,
+  backup engine, recognition/dedup and all prior contracts and tests are untouched; the old untyped
+  viewer route was replaced by the typed source, nothing else in navigation changed.
+
+Pending (device bring-up, shared with Phases 5/6): real cloud **manifest content**, **preview
+files** and **original downloads** require the TDLib 1.8.64 request shapes to be finalized against
+an authorized session on an ARM device; until then the data source returns honest unavailable results
+and the UI shows truthful states. ExoPlayer playback (local and downloaded) is likewise
+device-validated — **no real-device test was performed for this phase**.
+
 ### 🔜 Later phases
 
-Albums · Full Viewer · Map/Restore · Media management · Settings & security hardening · Full integration.
+Media Details · Map/Restore · Media management · Settings & security hardening · Full integration.
 
 See [`PRD.md`](PRD.md) for the complete product specification and the 12-phase plan.
 
