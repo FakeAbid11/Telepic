@@ -21,15 +21,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val container = (application as TelepixApplication).container
-        val themeViewModel: ThemeViewModel = viewModel(
-            factory = viewModelFactory {
-                initializer { ThemeViewModel(container.settingsRepository) }
-            },
-        )
-
         setContent {
+            val container = (application as TelepixApplication).container
+            val themeViewModel: ThemeViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer { ThemeViewModel(container.settingsRepository) }
+                },
+            )
             val themeMode by themeViewModel.themeMode.collectAsStateWithLifecycle()
             TelepixTheme(darkTheme = themeMode.isDarkTheme(isSystemInDarkTheme())) {
                 TelepixApp(
