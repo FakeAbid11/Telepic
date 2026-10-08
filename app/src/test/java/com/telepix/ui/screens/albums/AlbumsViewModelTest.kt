@@ -6,10 +6,10 @@ import com.telepix.data.media.AlbumRepository
 import com.telepix.domain.media.Album
 import com.telepix.domain.media.PhotosItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -20,6 +20,7 @@ import org.junit.Before
 import org.junit.Test
 
 /** Album loading states: ready, genuinely empty, and error distinct from empty. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class AlbumsViewModelTest {
 
     private fun album(id: Long) = Album(
@@ -34,7 +35,7 @@ class AlbumsViewModelTest {
 
     @Before
     fun setUp() {
-        Dispatchers.setMain(StandardTestDispatcher())
+        Dispatchers.setMain(UnconfinedTestDispatcher())
     }
 
     @After

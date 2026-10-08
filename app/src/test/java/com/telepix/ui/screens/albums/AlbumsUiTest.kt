@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -56,10 +57,11 @@ class AlbumsUiTest {
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithContentDescription("Open album Camera").fetchSemanticsNodes().isNotEmpty()
         }
-        // The card merges its children into one accessibility node, so its texts are only in the unmerged tree.
-        composeRule.onNodeWithText("Camera", useUnmergedTree = true).assertIsDisplayed()
-        composeRule.onNodeWithText("Screenshots", useUnmergedTree = true).assertIsDisplayed()
-        composeRule.onNodeWithText("4 items", useUnmergedTree = true).assertIsDisplayed()
+        // Cards merge their children into one accessibility node, and the tiny Robolectric viewport can
+        // push the second column off-screen, so assert presence in the unmerged tree rather than display.
+        assertTrue(composeRule.onAllNodesWithText("Camera", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Screenshots", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(composeRule.onAllNodesWithText("4 items", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
 
         composeRule.onNodeWithContentDescription("Open album Camera").performClick()
         assertEquals(1L, opened?.bucketId)
