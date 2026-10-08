@@ -68,19 +68,21 @@ class RecognitionDaoTest {
 
     @Test
     fun `queue findActiveByLocalId ignores terminal rows`() = runBlocking {
-        val id = queue.insertIgnore(queueEntityFor("content://x"))
-        assertNotNull(queue.findActiveByLocalId(id.toString()))
-        queue.markBackedUp(id, 100L, 9L, null, 2L)
-        assertNull(queue.findActiveByLocalId(id.toString()))
+        val entity = queueEntityFor("content://x")
+        val rowId = queue.insertIgnore(entity)
+        assertNotNull(queue.findActiveByLocalId(entity.localMediaId))
+        queue.markBackedUp(rowId, 100L, 9L, null, 2L)
+        assertNull(queue.findActiveByLocalId(entity.localMediaId))
         // findByLocalId still returns the terminal row.
-        assertNotNull(queue.findByLocalId(id.toString()))
+        assertNotNull(queue.findByLocalId(entity.localMediaId))
     }
 
     @Test
     fun `persistHash stores hash, size and hashedAt`() = runBlocking {
-        val id = queue.insertIgnore(queueEntityFor("content://y"))
-        queue.persistHash(id, "h", 123L, 9L, 9L)
-        val reloaded = queue.findByLocalId(id.toString())!!
+        val entity = queueEntityFor("content://y")
+        val rowId = queue.insertIgnore(entity)
+        queue.persistHash(rowId, "h", 123L, 9L, 9L)
+        val reloaded = queue.findByLocalId(entity.localMediaId)!!
         assertEquals("h", reloaded.contentHash)
         assertEquals(123L, reloaded.contentSizeBytes)
         assertEquals(9L, reloaded.hashedAt)

@@ -165,17 +165,17 @@ class BackupRecognitionRepositoryTest {
     @Test
     fun `cache reuse - matching size and modified skips re-hashing`() = runBlocking {
         val id = queueDao.insertIgnore(media(1, "content://a", size = 1000L).toQueueEntity(1L, hashA, 1000L))
-        queueDao.persistHash(id, hashA, 1000L, 5L, 5L)
-        // Same size + same modified as the cached row (media.dateMillis default).
+        queueDao.markFailed(id, "prior transient failure", 2L)
         val hasher = FakeHasher(mapOf("content://a" to hashA))
-        repo(hasher).recognize(media(1, "content://a", size = 1000L))
-        assertEquals(0, hasher.hashCalls)
+        val result = repo(hasher).recognize(media(1, "content://a", size = 1000L))
+        assertTrue(result is BackupRecognitionResult.NeedsBackup)
+        assertEquals(0, hasher.hashCalls) // cached hash reused (size + modified unchanged)
     }
 
     @Test
     fun `changed file size invalidates the cached hash`() = runBlocking {
         val id = queueDao.insertIgnore(media(1, "content://a", size = 1000L).toQueueEntity(1L, hashA, 1000L))
-        queueDao.persistHash(id, hashA, 1000L, 5L, 5L)
+        queueDao.markFailed(id, "prior transient failure", 2L)
         val hasher = FakeHasher(mapOf("content://a" to hashB), sizeFor = 2000L)
         repo(hasher).recognize(media(1, "content://a", size = 2000L))
         assertEquals(1, hasher.hashCalls) // re-hashed because size changed

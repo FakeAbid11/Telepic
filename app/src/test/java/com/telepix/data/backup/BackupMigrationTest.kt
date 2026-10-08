@@ -61,9 +61,9 @@ class BackupMigrationTest {
         )
         v1.close()
 
-        // Act: reopen the same file at version 2 with the explicit migration.
+        // Act: reopen the same file at the current version with the full migration chain.
         val v2 = Room.databaseBuilder(context, TelepixDatabase::class.java, dbFile)
-            .addMigrations(TelepixDatabase.MIGRATION_1_2)
+            .addMigrations(TelepixDatabase.MIGRATION_1_2, TelepixDatabase.MIGRATION_2_3)
             .allowMainThreadQueries()
             .build()
 

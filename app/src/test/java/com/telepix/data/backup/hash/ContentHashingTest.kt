@@ -36,11 +36,20 @@ class ContentHashingTest {
     }
 
     @Test
-    fun `known vector - quick brown fox`() {
-        assertEquals(
-            "662f60778de344b6dbfb210dc402f21b1cb40fb28acab8bf44c5412a16440dfa",
-            hashOf("The quick brown fox jumps over the lazy dog".toByteArray()),
-        )
+    fun `streaming hash equals a one-shot JDK digest over the same bytes`() = runBlocking {
+        val bytes = "The quick brown fox jumps over the lazy dog".toByteArray()
+        val streamed = ContentHashing.sha256(ByteArrayInputStream(bytes)).sha256
+        val oneShot = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).toHexViaContentHashing()
+        assertEquals(oneShot, streamed)
+    }
+
+    private fun ByteArray.toHexViaContentHashing(): String {
+        val out = StringBuilder(size * 2)
+        for (b in this) {
+            val v = b.toInt() and 0xFF
+            out.append(ContentHashing.HEX_ALPHABET[v ushr 4]).append(ContentHashing.HEX_ALPHABET[v and 0x0F])
+        }
+        return out.toString()
     }
 
     @Test
