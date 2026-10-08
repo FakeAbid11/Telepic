@@ -3,7 +3,9 @@ package com.telepix.ui.screens.photos
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -62,48 +64,54 @@ fun MediaTile(
         )
 
         when (media.type) {
-            MediaType.VIDEO -> VideoOverlay(durationLabel = formatDuration(media.durationMillis))
-            MediaType.GIF -> GifOverlay()
+            MediaType.VIDEO -> VideoOverlay(
+                durationLabel = formatDuration(media.durationMillis),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(spacing.xs),
+            )
+            MediaType.GIF -> GifOverlay(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(spacing.xs),
+            )
             MediaType.PHOTO -> Unit
         }
     }
 }
 
 @Composable
-private fun VideoOverlay(durationLabel: String?) {
+private fun VideoOverlay(durationLabel: String?, modifier: Modifier = Modifier) {
     val spacing = TelepixTokens.spacing
-    Box(
-        modifier = Modifier
-            .align(Alignment.BottomStart)
-            .padding(spacing.xs),
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
     ) {
         Icon(
             imageVector = Icons.Filled.PlayArrow,
             contentDescription = null,
             tint = Color.White,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
         )
         if (durationLabel != null) {
             Text(
                 text = durationLabel,
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White,
-                modifier = Modifier.align(Alignment.BottomEnd),
             )
         }
     }
 }
 
 @Composable
-private fun GifOverlay() {
+private fun GifOverlay(modifier: Modifier = Modifier) {
     val spacing = TelepixTokens.spacing
     Text(
         text = stringResource(R.string.media_gif_badge),
         style = MaterialTheme.typography.labelSmall,
         color = Color.White,
-        modifier = Modifier
-            .align(Alignment.TopStart)
-            .padding(spacing.xs)
+        modifier = modifier
             .background(Color(0x99000000), RoundedCornerShape(4.dp))
             .padding(horizontal = spacing.xs, vertical = 1.dp),
     )

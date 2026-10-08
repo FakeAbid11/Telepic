@@ -24,7 +24,9 @@ class MediaPagingSource(
         val offset = params.key ?: 0
         val loadSize = params.loadSize.coerceAtLeast(1)
 
-        if (params.loadType is androidx.paging.LoadType.Refresh) {
+        // Offset 0 is the top of the newest-first stream (initial or post-invalidate refresh):
+        // reset header state there. Appends carry a day boundary forward instead.
+        if (offset == 0) {
             lastDayKey = null
         }
 
@@ -41,10 +43,10 @@ class MediaPagingSource(
                 items += PhotosItem.Media(item)
             }
 
-            LoadData(
+            LoadResult.Page(
                 data = items,
                 prevKey = null,
-                nextKey = if (media.size < loadSize) null else offset + media.size,
+                nextKey = if (media.isEmpty() || media.size < loadSize) null else offset + media.size,
             )
         } catch (cancellation: CancellationException) {
             throw cancellation

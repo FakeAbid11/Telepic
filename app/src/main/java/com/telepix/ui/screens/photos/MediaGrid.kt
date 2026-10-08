@@ -82,7 +82,7 @@ fun MediaGrid(
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyVerticalGrid(
-            cells = GridCells.Adaptive(minSize = 110.dp),
+            columns = GridCells.Adaptive(minSize = 110.dp),
             state = gridState,
             contentPadding = PaddingValues(
                 start = spacing.gridGutter,
