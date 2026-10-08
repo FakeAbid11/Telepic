@@ -14,6 +14,7 @@ import com.telepix.di.AppContainer
 import com.telepix.settings.ThemeMode
 import com.telepix.ui.screens.albums.AlbumsScreen
 import com.telepix.ui.screens.cloud.CloudScreen
+import com.telepix.ui.screens.cloud.CloudViewModel
 import com.telepix.ui.screens.map.MapScreen
 import com.telepix.ui.screens.photos.PhotosScreen
 import com.telepix.ui.screens.photos.PhotosViewModel
@@ -58,7 +59,12 @@ fun TelepixNavHost(
             )
         }
         composable(TelepixDestination.Cloud.route) {
-            CloudScreen()
+            val cloudViewModel: CloudViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer { CloudViewModel(container.cloudRepository) }
+                },
+            )
+            CloudScreen(viewModel = cloudViewModel)
         }
         composable(TelepixDestination.Albums.route) {
             AlbumsScreen()

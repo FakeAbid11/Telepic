@@ -19,6 +19,25 @@
     <string name="cloud_empty_title">Telepix Cloud is not set up yet</string>
     <string name="cloud_empty_description">Cloud will show the media you back up to your private Telepix Backup channel on Telegram. Browse previews without automatically downloading originals. Telegram connection arrives in a later phase.</string>
 
+    <!-- Cloud — real Telegram cloud (Phase 5) -->
+    <string name="cloud_refresh">Refresh</string>
+    <string name="cloud_status_connected">Connected</string>
+    <string name="cloud_status_setting_up">Setting up…</string>
+    <string name="cloud_offline_title">Telegram is unavailable</string>
+    <string name="cloud_offline_body">You appear to be offline. Local photos still work; your cloud will refresh once the connection returns.</string>
+    <string name="cloud_notconnected_title">Telegram is not connected</string>
+    <string name="cloud_notconnected_body">Sign in to Telegram during setup to browse your Telepix cloud.</string>
+    <string name="cloud_settingup_title">Setting up your cloud</string>
+    <string name="cloud_settingup_body">Telepix is preparing your Telepix Backup destination. Try again in a moment.</string>
+    <string name="cloud_empty_title">Your cloud is empty</string>
+    <string name="cloud_empty_body">Backed-up photos and videos will appear here once media is added to Telepix Backup.</string>
+    <string name="cloud_error_title">Couldn\'t load your cloud</string>
+    <string name="cloud_error_body">Something went wrong while reading Telegram. Please try again.</string>
+    <string name="cloud_retry">Try again</string>
+    <string name="cloud_gif_badge">GIF</string>
+    <string name="cloud_media_image">Cloud photo</string>
+    <string name="cloud_media_video">Cloud video</string>
+
     <!-- Albums -->
     <string name="albums_title">Albums</string>
     <string name="albums_empty_title">No albums yet</string>
