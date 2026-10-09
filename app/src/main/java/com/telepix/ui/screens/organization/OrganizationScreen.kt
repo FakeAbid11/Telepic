@@ -143,7 +143,10 @@ fun OrganizationScreen(
                                 ) {
                                     AsyncImage(
                                         model = media.contentUri,
-                                        contentDescription = stringResource(R.string.organization_item_description, media.displayName),
+                                        contentDescription = stringResource(
+                                            R.string.organization_item_description,
+                                            media.displayName ?: media.id.toString(),
+                                        ),
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.matchParentSize(),
                                     )
