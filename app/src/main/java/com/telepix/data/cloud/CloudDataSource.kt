@@ -18,7 +18,7 @@ interface CloudDataSource {
     /** Candidate chats matching the Telepix destination (mapped to validation-friendly facts). */
     suspend fun searchDestinationCandidates(): List<ChatCandidate>
 
-    /** Create the Telepix Backup channel where permitted; returns the created chat, or null. */
+    /** Create the Telepic Backup channel where permitted; returns the created chat, or null. */
     suspend fun createDestination(): ChatCandidate?
 
     /** Load the newest [limit] supported media items from [chatId] (newest-first). */

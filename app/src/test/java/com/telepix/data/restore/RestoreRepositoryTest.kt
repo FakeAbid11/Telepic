@@ -43,7 +43,7 @@ class RestoreRepositoryTest {
 
     private class FakeCloud(private val downloadedPath: String?) : CloudRepository {
         override val status: StateFlow<CloudStatus> = MutableStateFlow(CloudStatus.Ready).asStateFlow()
-        override val destinationTitle: StateFlow<String?> = MutableStateFlow<String?>("Telepix Backup").asStateFlow()
+        override val destinationTitle: StateFlow<String?> = MutableStateFlow<String?>("Telepic Backup").asStateFlow()
         override val media: Flow<List<CloudMedia>> = flowOf(emptyList())
         override suspend fun prepare() = Unit
         override suspend fun refresh() = Unit

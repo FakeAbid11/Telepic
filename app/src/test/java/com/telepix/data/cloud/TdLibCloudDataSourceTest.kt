@@ -79,11 +79,11 @@ class TdLibCloudDataSourceTest {
 
     @Test
     fun `discovery searches channels, resolves each chat and derives posting rights from membership`() = runBlocking {
-        val channel = TdApi.Chat().apply { id = 10L; title = "Telepix Backup"; type = TdApi.ChatTypeSupergroup().apply { isChannel = true } }
+        val channel = TdApi.Chat().apply { id = 10L; title = "Telepic Backup"; type = TdApi.ChatTypeSupergroup().apply { isChannel = true } }
         val responder: (TdApi.Function<*>) -> TdApi.Object = { req ->
             when (req) {
                 is TdApi.SearchChatsOnServer -> {
-                    assertTrue(req.query == "Telepix Backup")
+                    assertTrue(req.query == "Telepic Backup")
                     assertTrue(req.typeFilter is TdApi.SearchChatTypeFilterChannel)
                     TdApi.Chats(1, longArrayOf(10L))
                 }
@@ -104,7 +104,7 @@ class TdLibCloudDataSourceTest {
 
     @Test
     fun `a candidate the account cannot post to is reported honestly`() = runBlocking {
-        val channel = TdApi.Chat().apply { id = 11L; title = "Telepix Backup"; type = TdApi.ChatTypeSupergroup().apply { isChannel = true } }
+        val channel = TdApi.Chat().apply { id = 11L; title = "Telepic Backup"; type = TdApi.ChatTypeSupergroup().apply { isChannel = true } }
         val (ds, _) = source { req ->
             when (req) {
                 is TdApi.SearchChatsOnServer -> TdApi.Chats(1, longArrayOf(11L))

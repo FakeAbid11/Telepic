@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Telepix"
+rootProject.name = "Telepic"
 include(":app")

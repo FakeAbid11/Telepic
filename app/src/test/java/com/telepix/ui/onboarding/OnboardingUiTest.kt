@@ -70,7 +70,7 @@ class OnboardingUiTest {
                 )
             }
         }
-        composeRule.onNodeWithText("Telepix").assertIsDisplayed()
+        composeRule.onNodeWithText("Telepic").assertIsDisplayed()
         composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).assertIsDisplayed()
     }
 
@@ -131,9 +131,9 @@ class OnboardingUiTest {
             }
         }
 
-        composeRule.onNodeWithText("Telepix").assertIsDisplayed()
+        composeRule.onNodeWithText("Telepic").assertIsDisplayed()
         composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick()
-        composeRule.onNodeWithText("How Telepix works").assertIsDisplayed()
+        composeRule.onNodeWithText("How Telepic works").assertIsDisplayed()
 
         composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick()
         composeRule.onNodeWithText("Media permissions").assertIsDisplayed()
@@ -146,7 +146,7 @@ class OnboardingUiTest {
 
         composeRule.onNodeWithTag(TAG_BACKUP_ALL).performClick()
         composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick()
-        composeRule.onNodeWithText("You're ready to use Telepix").assertIsDisplayed()
+        composeRule.onNodeWithText("You're ready to use Telepic").assertIsDisplayed()
 
         composeRule.onNodeWithTag(TAG_ONBOARDING_START).performClick()
         composeRule.onNodeWithText("MAIN_APP").assertIsDisplayed()

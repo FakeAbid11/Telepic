@@ -101,7 +101,7 @@ class TelegramCloudRepositoryTest {
         )
 
     private fun candidate(chatId: Long = 100L, canPost: Boolean = true, channel: Boolean = true, owned: Boolean = true) =
-        ChatCandidate(chatId, "Telepix Backup", channel, canPost, true, owned)
+        ChatCandidate(chatId, "Telepic Backup", channel, canPost, true, owned)
 
     private fun mediaItem(id: Long) = CloudMedia(
         messageId = id,

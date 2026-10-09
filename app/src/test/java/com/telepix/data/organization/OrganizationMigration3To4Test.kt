@@ -61,7 +61,7 @@ class OrganizationMigration3To4Test {
         raw.execSQL("CREATE INDEX `index_backup_queue_telegramChatId_telegramMessageId` ON `backup_queue` (`telegramChatId`, `telegramMessageId`)")
         raw.execSQL("CREATE INDEX `index_backup_queue_contentHash` ON `backup_queue` (`contentHash`)")
 
-        raw.execSQL("INSERT INTO cloud_destination (provider, chatId, title, validated, createdAt, updatedAt) VALUES ('telegram', 100, 'Telepix Backup', 1, 1, 1)")
+        raw.execSQL("INSERT INTO cloud_destination (provider, chatId, title, validated, createdAt, updatedAt) VALUES ('telegram', 100, 'Telepic Backup', 1, 1, 1)")
         raw.execSQL("INSERT INTO cloud_media_manifest (chatId, messageId, mediaType, isDownloaded, contentHash, createdAt, updatedAt) VALUES (100, 7, 'IMAGE', 0, 'deadbeef', 1, 1)")
         raw.execSQL(
             "INSERT INTO backup_queue (localMediaId, contentUri, mediaType, sizeBytes, modifiedTimeSeconds, state, retryCount, createdAt, updatedAt, contentHash) " +

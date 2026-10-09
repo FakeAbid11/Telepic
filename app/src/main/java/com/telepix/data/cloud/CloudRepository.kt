@@ -30,7 +30,7 @@ interface CloudRepository {
     /** Verify auth + destination, pull the latest cloud messages, update the manifest + state. */
     suspend fun refresh()
 
-    /** Resolve the Telepix Backup destination (reuse → discover → create), persisting it. */
+    /** Resolve the Telepic Backup destination (reuse → discover → create), persisting it. */
     suspend fun ensureDestination(): TelepixCloudDestination?
 
     suspend fun getPreview(media: CloudMedia): CloudPreview?

@@ -81,7 +81,7 @@ class CloudScreenUiTest {
         render(
             FakeCloudRepository(
                 status = CloudStatus.Ready,
-                title = "Telepix Backup",
+                title = "Telepic Backup",
                 mediaList = listOf(
                     item(1, CloudMediaType.IMAGE),
                     item(2, CloudMediaType.VIDEO, duration = 24_000L),
@@ -89,7 +89,7 @@ class CloudScreenUiTest {
                 ),
             ),
         )
-        composeRule.onNodeWithText("Telepix Backup").assertIsDisplayed()
+        composeRule.onNodeWithText("Telepic Backup").assertIsDisplayed()
         composeRule.onNodeWithText("Connected").assertIsDisplayed()
         composeRule.onNodeWithText("0:24").assertIsDisplayed()
         composeRule.onNodeWithText("GIF").assertIsDisplayed()
@@ -97,13 +97,13 @@ class CloudScreenUiTest {
 
     @Test
     fun `empty shows the honest empty state`() {
-        render(FakeCloudRepository(CloudStatus.Empty, "Telepix Backup", emptyList()))
+        render(FakeCloudRepository(CloudStatus.Empty, "Telepic Backup", emptyList()))
         composeRule.onNodeWithText("Your cloud is empty").assertIsDisplayed()
     }
 
     @Test
     fun `offline is shown distinctly from empty`() {
-        render(FakeCloudRepository(CloudStatus.Offline, "Telepix Backup", emptyList()))
+        render(FakeCloudRepository(CloudStatus.Offline, "Telepic Backup", emptyList()))
         composeRule.onNodeWithText("Telegram is unavailable").assertIsDisplayed()
     }
 
@@ -115,7 +115,7 @@ class CloudScreenUiTest {
 
     @Test
     fun `failure surfaces a retryable error`() {
-        render(FakeCloudRepository(CloudStatus.Failed("boom"), "Telepix Backup", emptyList()))
+        render(FakeCloudRepository(CloudStatus.Failed("boom"), "Telepic Backup", emptyList()))
         composeRule.onNodeWithText("Couldn't load your cloud").assertIsDisplayed()
         composeRule.onNodeWithText("Try again").assertIsDisplayed()
     }
@@ -124,7 +124,7 @@ class CloudScreenUiTest {
     fun `tapping a cloud tile opens it by its remote identity`() {
         var opened: CloudMedia? = null
         render(
-            FakeCloudRepository(CloudStatus.Ready, "Telepix Backup", listOf(item(7, CloudMediaType.IMAGE))),
+            FakeCloudRepository(CloudStatus.Ready, "Telepic Backup", listOf(item(7, CloudMediaType.IMAGE))),
             onOpen = { opened = it },
         )
         composeRule.onNodeWithContentDescription("Cloud photo").performClick()

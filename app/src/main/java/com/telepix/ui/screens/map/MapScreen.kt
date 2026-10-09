@@ -114,7 +114,7 @@ private fun OsmMap(pins: List<MapClusterer.MapPin>, onOpenMedia: (Long) -> Unit,
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
-            val prefs = context.getSharedPreferences("telepix_osmdroid", android.content.Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("telepic_osmdroid", android.content.Context.MODE_PRIVATE)
             val config = Configuration.getInstance()
             config.load(context, prefs)
             if (config.userAgentValue.isNullOrBlank()) config.userAgentValue = context.packageName

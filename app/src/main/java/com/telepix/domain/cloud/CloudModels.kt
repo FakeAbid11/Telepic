@@ -8,7 +8,7 @@ enum class CloudMediaType {
 }
 
 /**
- * The validated Telegram destination that backs Telepix's cloud (the "Telepix Backup" channel).
+ * The validated Telegram destination that backs Telepic's cloud (the "Telepic Backup" channel).
  *
  * [isValidated] is only true once the destination has been confirmed to be a channel the
  * authenticated account can actually post to — never inferred from the title alone.

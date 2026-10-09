@@ -47,7 +47,7 @@ class BackupMigrationTest {
             .allowMainThreadQueries()
             .build()
         v1.cloudDestinationDao().upsert(
-            CloudDestinationEntity("telegram", 100L, "Telepix Backup", true, 1L, 1L),
+            CloudDestinationEntity("telegram", 100L, "Telepic Backup", true, 1L, 1L),
         )
         v1.cloudMediaManifestDao().upsertAll(
             listOf(
