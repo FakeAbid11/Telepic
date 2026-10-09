@@ -42,11 +42,6 @@
     <string name="albums_empty_title">No albums yet</string>
     <string name="albums_empty_description">Albums are grouped from the folders that hold your photos and videos. New albums appear as your library gains media.</string>
 
-    <!-- Map -->
-    <string name="map_title">Map</string>
-    <string name="map_empty_title">Location view is coming</string>
-    <string name="map_empty_description">Photos with location information will be displayed on an interactive map. Mapping arrives in a later phase.</string>
-
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="settings_section_account">Account</string>

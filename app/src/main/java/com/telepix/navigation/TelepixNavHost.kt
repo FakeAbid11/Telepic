@@ -144,7 +144,15 @@ fun TelepixNavHost(
             )
         }
         composable(TelepixDestination.Map.route) {
-            MapScreen()
+            val mapViewModel: com.telepix.ui.screens.map.MapViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer { com.telepix.ui.screens.map.MapViewModel(container.mapLocationRepository) }
+                },
+            )
+            com.telepix.ui.screens.map.MapScreen(
+                viewModel = mapViewModel,
+                onOpenMedia = { mediaId -> navController.navigate(ViewerRoute.local(mediaId)) },
+            )
         }
         composable(TelepixDestination.Settings.route) {
             SettingsScreen(

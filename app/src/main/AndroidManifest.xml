@@ -25,6 +25,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      Phase 10 map: tiles are fetched from an OpenStreetMap-compatible provider over the network.
+      Telepix does NOT request any device location permission — photo locations come only from the
+      GPS data already embedded in the media files, and no coordinates or EXIF are ever uploaded.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:name=".TelepixApplication"
         android:allowBackup="true"

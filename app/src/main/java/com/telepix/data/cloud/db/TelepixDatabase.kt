@@ -6,19 +6,22 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.telepix.data.backup.db.BackupQueueDao
 import com.telepix.data.backup.db.BackupQueueEntity
+import com.telepix.data.media.db.MediaLocationDao
+import com.telepix.data.media.db.MediaLocationEntity
 import com.telepix.data.organization.db.MediaOrganizationDao
 import com.telepix.data.organization.db.MediaOrganizationEntity
 
 /**
  * Telepix application database (Phase 5 cloud metadata; Phase 6 backup queue; Phase 7 content-hash
- * recognition; Phase 10 favorites/archive/trash organization).
+ * recognition; Phase 10 favorites/archive/trash organization + geotagged-location cache).
  *
- * Version 4 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
+ * Version 5 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
  * Phase 5 destination/manifest rows, Phase 6 queue rows and Phase 7 hashes always survive:
  * - `1 → 2` ([MIGRATION_1_2]): introduces `backup_queue`.
  * - `2 → 3` ([MIGRATION_2_3]): adds `contentSizeBytes` + `hashedAt` and the `contentHash` indexes
  *   to `backup_queue`, and a `contentHash` index to `cloud_media_manifest`.
  * - `3 → 4` ([MIGRATION_3_4]): introduces `media_organization` (favorites / archive / trash state).
+ * - `4 → 5` ([MIGRATION_4_5]): introduces `media_location` (the geotagged-location cache).
  */
 @Database(
     entities = [
@@ -26,8 +29,9 @@ import com.telepix.data.organization.db.MediaOrganizationEntity
         CloudMediaManifestEntity::class,
         BackupQueueEntity::class,
         MediaOrganizationEntity::class,
+        MediaLocationEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class TelepixDatabase : RoomDatabase() {
@@ -35,6 +39,7 @@ abstract class TelepixDatabase : RoomDatabase() {
     abstract fun cloudMediaManifestDao(): CloudMediaManifestDao
     abstract fun backupQueueDao(): BackupQueueDao
     abstract fun mediaOrganizationDao(): MediaOrganizationDao
+    abstract fun mediaLocationDao(): MediaLocationDao
 
     companion object {
         const val NAME = "telepix.db"
@@ -108,6 +113,24 @@ abstract class TelepixDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_media_organization_isFavorite` ON `media_organization` (`isFavorite`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_media_organization_isArchived` ON `media_organization` (`isArchived`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_media_organization_isTrashed` ON `media_organization` (`isTrashed`)")
+            }
+        }
+
+        /**
+         * Phase 10 map: introduces `media_location` (the geotagged-location cache). A new table only
+         * — no existing table or row is touched.
+         */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `media_location` (" +
+                        "`localMediaId` INTEGER NOT NULL, " +
+                        "`latitude` REAL NOT NULL, " +
+                        "`longitude` REAL NOT NULL, " +
+                        "`contentUri` TEXT NOT NULL, " +
+                        "`extractedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`localMediaId`))",
+                )
             }
         }
     }

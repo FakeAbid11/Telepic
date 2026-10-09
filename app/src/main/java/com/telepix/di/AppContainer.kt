@@ -28,7 +28,10 @@ import com.telepix.data.cloud.db.CloudMediaManifestDao
 import com.telepix.data.cloud.db.CloudDestinationDao
 import com.telepix.data.cloud.db.TelepixDatabase
 import com.telepix.data.media.AndroidMediaChangeWatcher
+import com.telepix.data.media.AndroidLocationExtractor
 import com.telepix.data.media.AlbumRepository
+import com.telepix.data.media.DefaultMapLocationRepository
+import com.telepix.data.media.MapLocationRepository
 import com.telepix.data.media.LocalMediaLookup
 import com.telepix.data.media.LocalMediaRepository
 import com.telepix.data.media.LocalMediaRepositoryImpl
@@ -74,6 +77,7 @@ interface AppContainer {
     val albumRepository: AlbumRepository
     val mediaOrganizationRepository: MediaOrganizationRepository
     val mediaDeleter: LocalMediaDeleter
+    val mapLocationRepository: MapLocationRepository
     val mediaChangeWatcher: MediaChangeWatcher
     val backupRepository: BackupRepository
     val backupStatusRepository: BackupStatusRepository
@@ -99,6 +103,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                 TelepixDatabase.MIGRATION_1_2,
                 TelepixDatabase.MIGRATION_2_3,
                 TelepixDatabase.MIGRATION_3_4,
+                TelepixDatabase.MIGRATION_4_5,
             )
             .build()
     }
@@ -157,6 +162,16 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val mediaDeleter: LocalMediaDeleter by lazy { MediaStoreLocalDeleter(appContext) }
+
+    private val mediaLocationDao: com.telepix.data.media.db.MediaLocationDao by lazy { database.mediaLocationDao() }
+
+    override val mapLocationRepository: MapLocationRepository by lazy {
+        DefaultMapLocationRepository(
+            dao = mediaLocationDao,
+            pageLoader = mediaLoader,
+            extractor = AndroidLocationExtractor(appContext),
+        )
+    }
 
     override val albumRepository: AlbumRepository by lazy {
         MediaStoreAlbumRepository(appContext) { mediaOrganizationRepository.hiddenIds() }
