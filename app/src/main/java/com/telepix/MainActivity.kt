@@ -28,7 +28,13 @@ class MainActivity : ComponentActivity() {
             )
             val onboardingViewModel: OnboardingViewModel = viewModel(
                 factory = viewModelFactory {
-                    initializer { OnboardingViewModel(container.onboardingRepository) }
+                    initializer {
+                        OnboardingViewModel(
+                            repository = container.onboardingRepository,
+                            // Apply a first-run or changed backup choice immediately instead of only at next launch.
+                            onBackupChoiceChanged = { container.backupCoordinator.syncFromPreference() },
+                        )
+                    }
                 },
             )
 
