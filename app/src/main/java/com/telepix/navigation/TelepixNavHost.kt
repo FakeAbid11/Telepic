@@ -5,7 +5,6 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -236,18 +235,5 @@ fun TelepixNavHost(
             )
             ViewerScreen(viewModel = viewerViewModel, onBack = { navController.popBackStack() })
         }
-    }
-}
-
-/**
- * Navigates to a top-level destination the same way the bottom bar does (single-top, restores the
- * per-tab back stack). Used by the Photos top-bar Settings action so it behaves identically to
- * tapping the Settings tab, without duplicating the navigation shell.
- */
-private fun NavHostController.navigateToTopLevel(destination: TelepixDestination) {
-    navigate(destination.route) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
-        launchSingleTop = true
-        restoreState = true
     }
 }
