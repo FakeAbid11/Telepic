@@ -40,29 +40,48 @@ class TelegramSessionManager(
 
     private val authorizedUser = MutableStateFlow<TelegramUser?>(null)
     private var lastAuthorizationState: TdApi.AuthorizationState? = null
-    private var started = false
+    private var collectorJob: kotlinx.coroutines.Job? = null
     private var parametersSent = false
 
+    /**
+     * Begin (or re-attempt) authentication. Idempotent and safe to call again after a
+     * [TelegramAuthState.Failed]: the update collector is started at most once, the client is opened
+     * only if not already open, and the flow is re-driven from TDLib's *current* authorization state —
+     * so a login whose `SetTdlibParameters` was rejected can recover without an app restart (TDLib does
+     * not re-announce that wait on its own).
+     */
     @Synchronized
     fun initialize() {
-        if (started) return
-        started = true
         _state.value = TelegramAuthState.Initializing
-
         scope.launch {
-            // Subscribe to updates BEFORE opening the client, so the initial authorization update
-            // (emitted during/right after open()) is received, not lost. The gateway also replays the
-            // latest update as a second guard against the open/subscribe ordering race.
-            val collector = launch { gateway.updates.collect { update -> handle(update) } }
+            if (collectorJob == null) {
+                // Subscribe to updates BEFORE opening the client, so the initial authorization update
+                // (emitted during/right after open()) is received, not lost. The gateway also replays the
+                // latest update as a second guard against the open/subscribe ordering race.
+                collectorJob = launch { gateway.updates.collect { update -> handle(update) } }
+            }
             try {
-                gateway.open()
+                if (!gateway.isOpen) gateway.open()
             } catch (throwable: Throwable) {
-                collector.cancel()
+                collectorJob?.cancel()
+                collectorJob = null
                 _state.value = TelegramAuthState.Failed(
                     TelegramError.Initialization("Telegram engine could not start."),
                 )
                 return@launch
             }
+            driveFromCurrentState()
+        }
+    }
+
+    /** Re-drive the auth flow from whatever state TDLib is currently in (used on first start and on retry). */
+    private suspend fun driveFromCurrentState() {
+        val current = safeRequest(TdApi.GetAuthorizationState())
+        if (current is TdApi.AuthorizationState) {
+            // A prior SetTdlibParameters may have errored and TDLib won't re-emit the wait, so allow the
+            // parameters to be re-sent for this attempt instead of latching on the earlier send.
+            if (current is TdApi.AuthorizationStateWaitTdlibParameters) parametersSent = false
+            onAuthorizationState(current)
         }
     }
 
@@ -74,8 +93,7 @@ class TelegramSessionManager(
 
     private suspend fun onAuthorizationState(state: TdApi.AuthorizationState) {
         lastAuthorizationState = state
-        if (state is TdApi.AuthorizationStateWaitTdlibParameters && !parametersSent) {
-            parametersSent = true
+        if (state is TdApi.AuthorizationStateWaitTdlibParameters) {
             sendParameters()
         }
         publishMappedState()
@@ -85,6 +103,10 @@ class TelegramSessionManager(
     }
 
     private suspend fun sendParameters() {
+        // Single choke-point guard: never send twice for the same attempt, even if the update stream and
+        // the re-drive both observe the parameters wait. A retry clears the flag in driveFromCurrentState.
+        if (parametersSent) return
+        parametersSent = true
         val dir = File(appContext.noBackupFilesDir, "tdlib").apply { mkdirs() }
         val databaseKey = keyProvider.getOrCreate()
         val request = TdApi.SetTdlibParameters(
@@ -189,7 +211,7 @@ class TelegramSessionManager(
     fun close() {
         gateway.close()
         scope.cancel()
-        started = false
+        collectorJob = null
         parametersSent = false
     }
 }

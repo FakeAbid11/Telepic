@@ -2,7 +2,6 @@ package com.telepix.telegram
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -18,60 +17,101 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Regression for the authorization-startup race: TDLib can emit the first `UpdateAuthorizationState`
- * during/right after `open()`. The session manager must still receive it and send the TDLib
- * parameters — otherwise a fresh first login hangs. Uses a fake gateway that emits the initial
- * update at open() time (before the collector is guaranteed to have subscribed) plus the gateway's
- * replay guard.
+ * The authorization-startup flow must (a) never lose the first `UpdateAuthorizationState` emitted at
+ * open(), and (b) be re-attemptable after a failure — the onboarding "Try again" button calls
+ * `initialize()` again, and because TDLib does not re-announce `WaitTdlibParameters` after a rejected
+ * `SetTdlibParameters`, the retry must re-drive the parameters itself (previously it was a no-op).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class TelegramSessionManagerTest {
 
-    private class FakeGateway : TdLibClientGateway {
-        // Same replay configuration as the real gateway: the initial update must survive a late subscriber.
+    private class FakeGateway(
+        // What GetAuthorizationState reports — a fresh/failed client is still waiting on parameters.
+        private val authorizationState: TdApi.AuthorizationState = TdApi.AuthorizationStateWaitTdlibParameters(),
+    ) : TdLibClientGateway {
         private val _updates = MutableSharedFlow<TdApi.Object>(replay = 1, extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
         override val updates: SharedFlow<TdApi.Object> = _updates.asSharedFlow()
-        override val isOpen: Boolean get() = true
 
+        @Volatile private var opened = false
+        override val isOpen: Boolean get() = opened
+
+        // When true, SetTdlibParameters is rejected (simulating bad credentials/parameters) until flipped.
+        @Volatile var failParameters: Boolean = false
         @Volatile var requests: List<TdApi.Function<*>> = emptyList()
 
+        fun setParametersSent(): Int = requests.count { it is TdApi.SetTdlibParameters }
+
         override fun open() {
-            // The initial authorization state arrives as soon as the client opens.
+            opened = true
             _updates.tryEmit(TdApi.UpdateAuthorizationState(TdApi.AuthorizationStateWaitTdlibParameters()))
         }
 
         override suspend fun request(request: TdApi.Function<*>): TdApi.Object {
             requests += request
-            return TdApi.Ok()
+            return when (request) {
+                is TdApi.GetAuthorizationState -> authorizationState
+                is TdApi.SetTdlibParameters -> if (failParameters) TdApi.Error(400, "invalid api_id") else TdApi.Ok()
+                else -> TdApi.Ok()
+            }
         }
 
-        override fun close() = Unit
+        override fun close() { opened = false }
     }
 
     private class FakeKeyProvider : SecureTdLibKeyProvider {
         override suspend fun getOrCreate(): ByteArray = ByteArray(32) { (it + 1).toByte() }
     }
 
+    private fun manager(gateway: TdLibClientGateway) = TelegramSessionManager(
+        context = ApplicationProvider.getApplicationContext<Context>(),
+        gateway = gateway,
+        keyProvider = FakeKeyProvider(),
+        apiId = 12345,
+        apiHash = "hash",
+        applicationVersion = "1.0.0",
+    )
+
     @Test
     fun `initial authorization update during open triggers SetTdlibParameters and is never lost`() = runBlocking {
-        val context = ApplicationProvider.getApplicationContext<Context>()
         val gateway = FakeGateway()
-        val manager = TelegramSessionManager(
-            context = context,
-            gateway = gateway,
-            keyProvider = FakeKeyProvider(),
-            apiId = 12345,
-            apiHash = "hash",
-            applicationVersion = "1.0.0",
-        )
+        val manager = manager(gateway)
         manager.initialize()
 
-        // The manager must react to the startup authorization state by sending the TDLib parameters.
         withTimeout(3_000) {
             while (gateway.requests.none { it is TdApi.SetTdlibParameters }) delay(20)
         }
         assertTrue(gateway.requests.any { it is TdApi.SetTdlibParameters })
         manager.close()
+    }
+
+    @Test
+    fun `a failed start can be retried and re-sends the parameters`() = runBlocking {
+        val gateway = FakeGateway().apply { failParameters = true }
+        val m = manager(gateway)
+        m.initialize()
+
+        // The failure surfaces as Failed, and the parameters were attempted at least once.
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
+        assertTrue(m.state.value is TelegramAuthState.Failed)
+        val attemptsBeforeRetry = gateway.setParametersSent()
+        assertTrue(attemptsBeforeRetry >= 1)
+
+        // The credential is fixed: subsequent SetTdlibParameters succeed.
+        gateway.failParameters = false
+
+        // Retry — exactly what the onboarding "Try again" button triggers. It must re-drive, not no-op,
+        // since TDLib won't re-emit the parameters wait on its own.
+        m.initialize()
+        withTimeout(3_000) { while (gateway.setParametersSent() <= attemptsBeforeRetry) delay(20) }
+        assertTrue(
+            "retry should re-send SetTdlibParameters",
+            gateway.setParametersSent() > attemptsBeforeRetry,
+        )
+
+        // Once the resend succeeds, the flow is no longer Failed.
+        withTimeout(3_000) { while (m.state.value is TelegramAuthState.Failed) delay(20) }
+        assertTrue(m.state.value !is TelegramAuthState.Failed)
+        m.close()
     }
 }
