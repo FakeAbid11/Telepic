@@ -100,8 +100,8 @@ class TelegramCloudRepositoryTest {
             dispatcher = Dispatchers.Unconfined,
         )
 
-    private fun candidate(chatId: Long = 100L, canPost: Boolean = true, channel: Boolean = true) =
-        ChatCandidate(chatId, "Telepix Backup", channel, canPost, true)
+    private fun candidate(chatId: Long = 100L, canPost: Boolean = true, channel: Boolean = true, owned: Boolean = true) =
+        ChatCandidate(chatId, "Telepix Backup", channel, canPost, true, owned)
 
     private fun mediaItem(id: Long) = CloudMedia(
         messageId = id,

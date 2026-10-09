@@ -150,17 +150,18 @@ class TdApiCloudMapperTest {
             title = "Telepix Backup"
             type = TdApi.ChatTypeSupergroup().apply { isChannel = true }
         }
-        val candidate = TdApiCloudMapper.chatToCandidate(chat, canPost = true, accessible = true)
+        val candidate = TdApiCloudMapper.chatToCandidate(chat, canPost = true, isOwnedByAccount = true, accessible = true)
         assertEquals(7L, candidate.chatId)
         assertTrue(candidate.isChannel)
         assertTrue(candidate.canPostMessages)
+        assertTrue(candidate.isOwnedByAccount)
 
         val group = TdApi.Chat().apply {
             id = 8L
             title = "Telepix Backup"
             type = TdApi.ChatTypeSupergroup().apply { isChannel = false }
         }
-        assertFalse(TdApiCloudMapper.chatToCandidate(group, true, true).isChannel)
+        assertFalse(TdApiCloudMapper.chatToCandidate(group, canPost = true, isOwnedByAccount = true, accessible = true).isChannel)
     }
 
     @Test

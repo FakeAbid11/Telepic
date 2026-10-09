@@ -4,7 +4,9 @@ package com.telepix.domain.cloud
  * A chat candidate reduced to the facts Telepix needs to validate a backup destination.
  *
  * Deliberately free of TdApi so validation is pure and unit-testable; the TDLib data source maps
- * a raw chat into this shape.
+ * a raw chat into this shape. [isOwnedByAccount] is true only when the current account CREATED /
+ * owns the channel (TDLib membership status Creator), never inferred from the title or mere posting
+ * rights — an admin of someone else's same-name channel is not an owner.
  */
 data class ChatCandidate(
     val chatId: Long,
@@ -12,19 +14,23 @@ data class ChatCandidate(
     val isChannel: Boolean,
     val canPostMessages: Boolean,
     val isAccessible: Boolean,
+    val isOwnedByAccount: Boolean,
 )
 
 /** Why a candidate is (or isn't) a usable Telepix backup destination. */
 sealed interface DestinationVerdict {
     data object Valid : DestinationVerdict
     data class Invalid(val reason: String) : DestinationVerdict
+    /** A same-name channel the account can post to but does not own: usable only with explicit consent. */
+    data class NeedsConfirmation(val chatId: Long, val reason: String) : DestinationVerdict
 }
 
 /**
  * Validates that a Telegram chat is genuinely suitable as the Telepix Backup destination — never
- * from the title alone. A destination must be an accessible channel the account can post to and
- * that carries the expected Telepix title, so a same-name chat owned by someone else (or a private
- * chat / non-postable group) is rejected.
+ * from the title alone. A destination must be an accessible channel the account can post to, carries
+ * the expected Telepix title, AND is owned by the account, so a same-name channel owned by someone
+ * else is not used automatically. A postable-but-not-owned same-name channel yields
+ * [DestinationVerdict.NeedsConfirmation] (never an implicit auto-backup); anything else is invalid.
  */
 object ChatValidator {
 
@@ -34,7 +40,11 @@ object ChatValidator {
         !candidate.canPostMessages -> DestinationVerdict.Invalid("Telepix cannot post to this channel.")
         !candidate.title.equals(expectedTitle, ignoreCase = true) ->
             DestinationVerdict.Invalid("Name does not match '$expectedTitle'.")
-        else -> DestinationVerdict.Valid
+        candidate.isOwnedByAccount -> DestinationVerdict.Valid
+        else -> DestinationVerdict.NeedsConfirmation(
+            candidate.chatId,
+            "A matching channel exists but is not owned by this account; explicit confirmation required.",
+        )
     }
 
     const val TelepixDestinationTitle = "Telepix Backup"

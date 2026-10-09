@@ -50,15 +50,19 @@ class TelegramSessionManager(
         _state.value = TelegramAuthState.Initializing
 
         scope.launch {
+            // Subscribe to updates BEFORE opening the client, so the initial authorization update
+            // (emitted during/right after open()) is received, not lost. The gateway also replays the
+            // latest update as a second guard against the open/subscribe ordering race.
+            val collector = launch { gateway.updates.collect { update -> handle(update) } }
             try {
                 gateway.open()
             } catch (throwable: Throwable) {
+                collector.cancel()
                 _state.value = TelegramAuthState.Failed(
                     TelegramError.Initialization("Telegram engine could not start."),
                 )
                 return@launch
             }
-            gateway.updates.collect { update -> handle(update) }
         }
     }
 

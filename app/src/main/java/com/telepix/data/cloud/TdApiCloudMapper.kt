@@ -22,11 +22,17 @@ import org.drinkless.tdlib.TdApi
 object TdApiCloudMapper {
 
     /**
-     * Reduces a discovered [TdApi.Chat] plus the account's posting rights into a [ChatCandidate].
-     * `canPost` comes from the current user's real membership ([canPostFromMember]) — never inferred
-     * from the title — and `accessible` reflects that the chat resolved at all.
+     * Reduces a discovered [TdApi.Chat] plus the account's real membership into a [ChatCandidate].
+     * [canPost] and [isOwnedByAccount] both derive from the account's genuine chat-member status
+     * (creator / admin-with-post-right), never the title. A channel the account merely administers
+     * is postable but not owned.
      */
-    fun chatToCandidate(chat: TdApi.Chat, canPost: Boolean, accessible: Boolean): ChatCandidate {
+    fun chatToCandidate(
+        chat: TdApi.Chat,
+        canPost: Boolean,
+        isOwnedByAccount: Boolean,
+        accessible: Boolean,
+    ): ChatCandidate {
         val isChannel = (chat.type as? TdApi.ChatTypeSupergroup)?.isChannel == true
         return ChatCandidate(
             chatId = chat.id,
@@ -34,8 +40,13 @@ object TdApiCloudMapper {
             isChannel = isChannel,
             canPostMessages = canPost,
             isAccessible = accessible,
+            isOwnedByAccount = isOwnedByAccount,
         )
     }
+
+    /** Whether the account CREATED/owns the chat, from its member status (Creator only). */
+    fun isOwnerFromMember(member: TdApi.ChatMember?): Boolean =
+        member?.status is TdApi.ChatMemberStatusCreator
 
     /**
      * Whether the account may post to the destination, from its real chat-member status: the creator

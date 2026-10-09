@@ -31,30 +31,9 @@ interface CloudMediaManifestDao {
     @Upsert
     suspend fun upsertAll(items: List<CloudMediaManifestEntity>)
 
-    /**
-     * Upsert a freshly-discovered remote row WITHOUT destroying app-trusted local metadata. A
-     * Cloud refresh maps Telegram messages that carry no content hash, so a plain @Upsert would null
-     * out a previously-recorded SHA-256 (and reset download state / creation time). Here those
-     * trusted fields are only overwritten when the incoming row supplies a real value:
-     * `contentHash`, preview/original ids use COALESCE, `isDownloaded` keeps a prior true, and
-     * `createdAt` is never reset. Identity (chatId+messageId) matches the retained record, so a
-     * preserved hash always belongs to the same Telegram message. Repeated refreshes are idempotent.
-     */
-    @Query(
-        "INSERT INTO cloud_media_manifest " +
-            "(chatId, messageId, mediaType, mimeType, fileName, sizeBytes, width, height, durationMs, dateEpochSec, previewFileId, originalFileId, isDownloaded, contentHash, createdAt, updatedAt) " +
-            "VALUES (:chatId, :messageId, :mediaType, :mimeType, :fileName, :sizeBytes, :width, :height, :durationMs, :dateEpochSec, :previewFileId, :originalFileId, :isDownloaded, :contentHash, :createdAt, :updatedAt) " +
-            "ON CONFLICT(chatId, messageId) DO UPDATE SET " +
-            "mediaType = excluded.mediaType, mimeType = excluded.mimeType, fileName = excluded.fileName, " +
-            "sizeBytes = excluded.sizeBytes, width = excluded.width, height = excluded.height, " +
-            "durationMs = excluded.durationMs, dateEpochSec = excluded.dateEpochSec, " +
-            "previewFileId = COALESCE(excluded.previewFileId, cloud_media_manifest.previewFileId), " +
-            "originalFileId = COALESCE(excluded.originalFileId, cloud_media_manifest.originalFileId), " +
-            "isDownloaded = MAX(excluded.isDownloaded, cloud_media_manifest.isDownloaded), " +
-            "contentHash = COALESCE(excluded.contentHash, cloud_media_manifest.contentHash), " +
-            "createdAt = cloud_media_manifest.createdAt, updatedAt = excluded.updatedAt",
-    )
-    suspend fun upsertPreservingTrusted(item: CloudMediaManifestEntity)
+    /** Single row lookup by stable remote identity, used to preserve trusted local metadata on refresh. */
+    @Query("SELECT * FROM cloud_media_manifest WHERE chatId = :chatId AND messageId = :messageId LIMIT 1")
+    suspend fun get(chatId: Long, messageId: Long): CloudMediaManifestEntity?
 
     @Query("SELECT COUNT(*) FROM cloud_media_manifest")
     suspend fun count(): Int

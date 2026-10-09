@@ -94,9 +94,7 @@ class TelegramCloudRepository(
         try {
             val items = dataSource.loadNewestMedia(destination.chatId, PAGE_SIZE)
             val now = clock()
-            // Preserve trusted local metadata (content hash, download state) across refresh; remote
-            // discovery cannot reconstruct it, so a null incoming hash must not clobber a stored one.
-            items.forEach { manifestDao.upsertPreservingTrusted(it.toEntity(now)) }
+            items.forEach { upsertPreservingTrusted(it.toEntity(now)) }
             _status.value = if (manifestDao.count() == 0) CloudStatus.Empty else CloudStatus.Ready
         } catch (network: CloudNetworkException) {
             _status.value = CloudStatus.Offline
@@ -174,11 +172,34 @@ class TelegramCloudRepository(
         mutex.withLock {
             val destination = currentDestination() ?: throw CloudDestinationInvalidException("No Telepix Backup destination")
             val result = dataSource.upload(destination.chatId, request, onProgress)
-            // Remote confirmation arrived: record it in the manifest under its stable identity,
-            // preserving any existing trusted hash (upload rows carry a real hash; discovery null).
-            manifestDao.upsertPreservingTrusted(fromUpload(request, result).toEntity(clock()))
+            // Remote confirmation arrived: record it under its stable identity, preserving any
+            // existing trusted hash (upload rows carry a real hash; discovery rows carry none).
+            upsertPreservingTrusted(fromUpload(request, result).toEntity(clock()))
             result
         }
+    }
+
+    /**
+     * Upserts a manifest row while preserving app-trusted local metadata a remote discovery cannot
+     * reconstruct: an existing non-null `contentHash`, a prior `isDownloaded`, preview/original ids
+     * and the original `createdAt` are kept unless the incoming row supplies a real value. Identity
+     * is (chatId, messageId), so a preserved hash always belongs to the same Telegram message, and
+     * repeated refreshes are idempotent.
+     */
+    private suspend fun upsertPreservingTrusted(entity: com.telepix.data.cloud.db.CloudMediaManifestEntity) {
+        val existing = manifestDao.get(entity.chatId, entity.messageId)
+        val merged = if (existing == null) {
+            entity
+        } else {
+            entity.copy(
+                contentHash = entity.contentHash ?: existing.contentHash,
+                isDownloaded = entity.isDownloaded || existing.isDownloaded,
+                previewFileId = entity.previewFileId ?: existing.previewFileId,
+                originalFileId = entity.originalFileId ?: existing.originalFileId,
+                createdAt = existing.createdAt,
+            )
+        }
+        manifestDao.upsertAll(listOf(merged))
     }
 
     private fun fromUpload(request: CloudUploadRequest, result: CloudUploadResult): CloudMedia = CloudMedia(

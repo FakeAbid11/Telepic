@@ -37,7 +37,11 @@ interface TdLibClientGateway {
  */
 class TdLibClientGatewayImpl : TdLibClientGateway {
 
+    // replay = 1 keeps the most recent update for a subscriber that attaches microseconds late
+    // (TDLib can emit the first UpdateAuthorizationState during/right after open()), so the initial
+    // authorization event is never lost and a fresh first login cannot hang.
     private val _updates = MutableSharedFlow<TdApi.Object>(
+        replay = 1,
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )

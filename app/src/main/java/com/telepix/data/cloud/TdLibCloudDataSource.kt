@@ -64,7 +64,7 @@ class TdLibCloudDataSource(
         if (response is TdApi.Error) throw CloudNetworkException("Create destination failed: ${response.message}")
         val chat = response as? TdApi.Chat ?: return null
         // We just created it, so the account is its creator and may post — confirmed by the API.
-        return TdApiCloudMapper.chatToCandidate(chat, canPost = true, accessible = true)
+        return TdApiCloudMapper.chatToCandidate(chat, canPost = true, isOwnedByAccount = true, accessible = true)
     }
 
     override suspend fun loadNewestMedia(chatId: Long, limit: Int): List<CloudMedia> {
@@ -127,11 +127,17 @@ class TdLibCloudDataSource(
         val chatResponse = gateway.request(TdApiCloudRequests.getChat(chatId))
         if (chatResponse is TdApi.Error) return null // inaccessible/deleted → not a candidate
         val chat = chatResponse as? TdApi.Chat ?: return null
-        val canPost = currentUserId()?.let { userId ->
-            val memberResponse = gateway.request(TdApiCloudRequests.getChatMember(chatId, userId))
-            TdApiCloudMapper.canPostFromMember(memberResponse as? TdApi.ChatMember)
-        } ?: false
-        return TdApiCloudMapper.chatToCandidate(chat, canPost = canPost, accessible = true)
+        val member = currentUserId()?.let { userId ->
+            gateway.request(TdApiCloudRequests.getChatMember(chatId, userId)) as? TdApi.ChatMember
+        }
+        // Ownership and posting rights come only from the account's real member status, never the
+        // title: an admin of someone else's same-name channel is postable but NOT owned.
+        return TdApiCloudMapper.chatToCandidate(
+            chat,
+            canPost = TdApiCloudMapper.canPostFromMember(member),
+            isOwnedByAccount = TdApiCloudMapper.isOwnerFromMember(member),
+            accessible = true,
+        )
     }
 
     private suspend fun currentUserId(): Long? {
