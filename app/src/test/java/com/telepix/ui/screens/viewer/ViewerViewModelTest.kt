@@ -245,6 +245,7 @@ class ViewerViewModelTest {
                 cameraMake = "Google",
                 cameraModel = "Pixel 8",
                 captureMillis = 5_000L,
+                libraryAddedMillis = 7_000L,
                 location = com.telepix.domain.media.GeoLocation(48.85, 2.35),
             ),
         )
@@ -261,6 +262,7 @@ class ViewerViewModelTest {
         val details = vm.details.first { it != null }!!
         assertEquals("f5", details.fileName)
         assertEquals(5_000L, details.captureMillis) // EXIF capture, not the library date
+        assertEquals(7_000L, details.libraryAddedMillis) // MediaStore DATE_ADDED, shown separately
         assertEquals("Google", details.cameraMake)
         assertEquals(48.85, details.latitude!!, 0.0001)
         assertEquals(2.35, details.longitude!!, 0.0001)

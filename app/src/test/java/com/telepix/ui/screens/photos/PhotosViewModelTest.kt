@@ -147,8 +147,12 @@ class PhotosViewModelTest {
     private class RecordingCoordinator : BackupCoordinator {
         override val repository: BackupRepository = FakeBackupRepository()
         val bulk = mutableListOf<List<LocalMedia>>()
-        override suspend fun backup(media: LocalMedia) { bulk += listOf(media) }
-        override suspend fun backupAll(media: List<LocalMedia>) { bulk += media }
+        override suspend fun backup(media: LocalMedia): com.telepix.data.backup.BulkBackupSummary {
+            bulk += listOf(media); return com.telepix.data.backup.BulkBackupSummary(1, 0)
+        }
+        override suspend fun backupAll(media: List<LocalMedia>): com.telepix.data.backup.BulkBackupSummary {
+            bulk += media; return com.telepix.data.backup.BulkBackupSummary(media.size, 0)
+        }
         override suspend fun retry(itemId: Long) = Unit
         override suspend fun cancel(itemId: Long) = Unit
         override suspend fun syncFromPreference() = Unit
@@ -197,7 +201,7 @@ class PhotosViewModelTest {
         assertEquals(setOf(1L, 2L), coordinator.bulk.first().map { it.id }.toSet())
         // Selection is cleared and a queued-count is surfaced for feedback.
         assertFalse(vm.selectionActive.value)
-        assertEquals(2, vm.selectionMessage.value)
+        assertEquals(2, vm.selectionMessage.value?.queued)
     }
 
     @Test

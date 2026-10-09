@@ -53,8 +53,8 @@ class BackupCenterUiTest {
 
     private class FakeCoordinator(override val repository: BackupRepository) : BackupCoordinator {
         var started = false
-        override suspend fun backup(media: LocalMedia) = Unit
-        override suspend fun backupAll(media: List<LocalMedia>) = Unit
+        override suspend fun backup(media: LocalMedia) = com.telepix.data.backup.BulkBackupSummary(0, 0)
+        override suspend fun backupAll(media: List<LocalMedia>) = com.telepix.data.backup.BulkBackupSummary(0, 0)
         override suspend fun retry(itemId: Long) = repository.retry(itemId)
         override suspend fun cancel(itemId: Long) = repository.cancel(itemId)
         override suspend fun syncFromPreference() = Unit

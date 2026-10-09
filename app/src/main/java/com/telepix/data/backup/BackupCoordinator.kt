@@ -10,6 +10,21 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
 /**
+ * Outcome of a manual backup request over one or more items, for honest UI feedback. [queued] counts
+ * genuinely new work handed to the engine; [alreadyCovered] counts items recognized as already
+ * backed up or with an in-flight/pending operation (so no duplicate upload was started). Failures at
+ * this stage are none-by-design — a failed hash is still enqueued, never silently skipped.
+ */
+data class BulkBackupSummary(val queued: Int, val alreadyCovered: Int) {
+    operator fun plus(other: BulkBackupSummary) =
+        BulkBackupSummary(queued + other.queued, alreadyCovered + other.alreadyCovered)
+
+    companion object {
+        val Empty = BulkBackupSummary(0, 0)
+    }
+}
+
+/**
  * The backup entry point the UI and startup use. It decides *what* becomes eligible (from the
  * Phase 2 backup preference and the Phase 3 MediaStore library), **recognizes it by content first**
  * (Phase 7) so already-backed-up or pending media is never re-queued, and hands new content to
@@ -22,10 +37,10 @@ interface BackupCoordinator {
     fun observeStats(): Flow<com.telepix.domain.backup.BackupQueueStats> = repository.observeStats()
 
     /** Back up a single item explicitly (manual action). Recognition may turn this into a no-op. */
-    suspend fun backup(media: LocalMedia)
+    suspend fun backup(media: LocalMedia): BulkBackupSummary
 
-    /** Back up an explicit selection (manual multi-select action). */
-    suspend fun backupAll(media: List<LocalMedia>)
+    /** Back up an explicit selection (manual multi-select action); reports queued vs already-covered. */
+    suspend fun backupAll(media: List<LocalMedia>): BulkBackupSummary
 
     suspend fun retry(itemId: Long)
     suspend fun cancel(itemId: Long)
@@ -60,16 +75,19 @@ class DefaultBackupCoordinator(
     private val discoveryMaxItems: Int = 2000,
 ) : BackupCoordinator {
 
-    override suspend fun backup(media: LocalMedia) {
-        if (recognizeAndMaybeEnqueue(media)) scheduler.schedule()
+    override suspend fun backup(media: LocalMedia): BulkBackupSummary {
+        val result = recognizeAndMaybeEnqueue(media)
+        if (result.queued > 0) scheduler.schedule()
+        return result
     }
 
-    override suspend fun backupAll(media: List<LocalMedia>) {
-        var enqueuedAny = false
+    override suspend fun backupAll(media: List<LocalMedia>): BulkBackupSummary {
+        var total = BulkBackupSummary.Empty
         for (item in media) {
-            if (recognizeAndMaybeEnqueue(item)) enqueuedAny = true
+            total += recognizeAndMaybeEnqueue(item)
         }
-        if (enqueuedAny) scheduler.schedule()
+        if (total.queued > 0) scheduler.schedule()
+        return total
     }
 
     override suspend fun retry(itemId: Long) {
@@ -98,7 +116,7 @@ class DefaultBackupCoordinator(
             val page = pageLoader.load(offset, discoveryPageSize)
             if (page.isEmpty()) break
             for (item in page) {
-                if (recognizeAndMaybeEnqueue(item)) enqueuedAny = true
+                if (recognizeAndMaybeEnqueue(item).queued > 0) enqueuedAny = true
             }
             seen += page.size
             if (page.size < discoveryPageSize) break
@@ -108,15 +126,18 @@ class DefaultBackupCoordinator(
     }
 
     /**
-     * Recognize one item and enqueue only when it genuinely needs backup. Returns whether new work
-     * was added (so the caller knows whether to schedule). A recognition failure still enqueues the
-     * item — a failed hash must never be mistaken for "already backed up", nor silently skipped.
+     * Recognize one item and enqueue only when it genuinely needs backup. Returns a per-item summary
+     * (1 queued, or 1 already-covered). A recognition failure still enqueues the item as queued — a
+     * failed hash must never be mistaken for "already backed up", nor silently skipped.
      */
-    private suspend fun recognizeAndMaybeEnqueue(media: LocalMedia): Boolean = when (val result = recognition.recognize(media)) {
-        is BackupRecognitionResult.AlreadyBackedUp -> false // already associated; nothing to do
-        is BackupRecognitionResult.Pending -> false // an active operation exists; no duplicate row
-        is BackupRecognitionResult.NeedsBackup ->
-            repository.enqueue(media, result.contentHash, result.contentSizeBytes)
-        is BackupRecognitionResult.Unavailable -> repository.enqueue(media) // hash unknown → try backup
-    }
+    private suspend fun recognizeAndMaybeEnqueue(media: LocalMedia): BulkBackupSummary =
+        when (val result = recognition.recognize(media)) {
+            is BackupRecognitionResult.AlreadyBackedUp -> BulkBackupSummary(0, 1) // associated; nothing to do
+            is BackupRecognitionResult.Pending -> BulkBackupSummary(0, 1) // an active operation exists; no duplicate row
+            is BackupRecognitionResult.NeedsBackup ->
+                if (repository.enqueue(media, result.contentHash, result.contentSizeBytes)) BulkBackupSummary(1, 0)
+                else BulkBackupSummary(0, 1) // already present in the queue
+            is BackupRecognitionResult.Unavailable ->
+                if (repository.enqueue(media)) BulkBackupSummary(1, 0) else BulkBackupSummary(0, 1)
+        }
 }

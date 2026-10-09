@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.telepix.data.backup.BackupCoordinator
+import com.telepix.data.backup.BulkBackupSummary
 import com.telepix.data.backup.BackupStatusRepository
 import com.telepix.data.media.LocalMediaRepository
 import com.telepix.data.media.MediaChangeWatcher
@@ -77,8 +78,8 @@ class PhotosViewModel(
     val selectionActive: StateFlow<Boolean> = _selected.map { it.isNotEmpty() }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** Transient bulk-backup feedback for a snackbar; null when nothing to report. */
-    private val _selectionMessage = MutableStateFlow<Int?>(null)
-    val selectionMessage: StateFlow<Int?> = _selectionMessage.asStateFlow()
+    private val _selectionMessage = MutableStateFlow<BulkBackupSummary?>(null)
+    val selectionMessage: StateFlow<BulkBackupSummary?> = _selectionMessage.asStateFlow()
 
     /** Long-press entry: begin a selection containing this item (idempotent if already selecting). */
     fun beginSelection(media: LocalMedia) {
@@ -108,10 +109,9 @@ class PhotosViewModel(
         val items = _selected.value.values.toList()
         if (items.isEmpty()) return
         viewModelScope.launch {
-            // backupAll returns nothing today; reflect the selection size as the queued feedback and let
-            // the queue's own status drive the true per-item outcome in the Backup Center.
-            coordinator.backupAll(items)
-            _selectionMessage.value = items.size
+            // The engine performs recognition/dedup and reports how many were genuinely new vs already
+            // covered — the count reflects real new work, never a fabricated "all uploaded".
+            _selectionMessage.value = coordinator.backupAll(items)
             clearSelection()
         }
     }

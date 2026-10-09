@@ -1,6 +1,7 @@
 package com.telepix.ui.screens.photos
 
 import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -53,6 +54,7 @@ import java.util.Locale
  * and a translucent scrim when [selected], and the tap routes to [onClick] (the caller's toggle) while
  * a long-press always routes to [onLongClick]. Outside selection mode it behaves as a plain viewer cell.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MediaTile(
     media: LocalMedia,

@@ -133,6 +133,25 @@ class BackupCoordinatorTest {
     }
 
     @Test
+    fun `backupAll reports queued vs already-covered and only enqueues new items`() = runBlocking {
+        val repo = RecordingRepo()
+        val recognition = FixedRecognition { media ->
+            if (media.id == 1L) {
+                BackupRecognitionResult.AlreadyBackedUp("1", RemoteMediaIdentity(100L, 500L))
+            } else {
+                BackupRecognitionResult.NeedsBackup("hash-${media.id}", media.sizeBytes)
+            }
+        }
+        val summary = coordinator(repo, FakeScheduler(), BackupPreference.NOT_NOW, recognition)
+            .backupAll(listOf(media(1), media(2)))
+        assertEquals(1, summary.queued)
+        assertEquals(1, summary.alreadyCovered)
+        // Only the genuinely-new item (id 2) reached the queue.
+        assertEquals(1, repo.enqueuedWithHash.size)
+        assertEquals(2L, repo.enqueuedWithHash.first().first.id)
+    }
+
+    @Test
     fun `already-backed-up and pending items are NOT enqueued again`() = runBlocking {
         val repo = RecordingRepo()
         val recognition = FixedRecognition { media ->

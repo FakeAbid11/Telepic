@@ -158,9 +158,10 @@ fun PhotosScreen(
                 )
             }
 
-            // Transient feedback after a bulk enqueue; auto-cleared. Honest count of items handed to the queue.
-            selectionMessage?.let { count ->
-                LaunchedEffect(count) {
+            // Transient feedback after a bulk enqueue; auto-cleared. Honest split of new work vs items
+            // the engine recognized as already backed up / in progress (never a fabricated upload claim).
+            selectionMessage?.let { summary ->
+                LaunchedEffect(summary) {
                     kotlinx.coroutines.delay(2_500)
                     viewModel.consumeSelectionMessage()
                 }
@@ -175,7 +176,7 @@ fun PhotosScreen(
                     color = MaterialTheme.colorScheme.inverseSurface,
                 ) {
                     Text(
-                        text = stringResource(R.string.photos_selection_queued, count),
+                        text = stringResource(R.string.photos_selection_result, summary.queued, summary.alreadyCovered),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.inverseOnSurface,
                         modifier = Modifier.padding(horizontal = TelepixTokens.spacing.md, vertical = TelepixTokens.spacing.sm),

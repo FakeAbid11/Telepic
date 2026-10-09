@@ -316,7 +316,7 @@
     <string name="photos_selection_count">%1$d selected</string>
     <string name="photos_selection_cancel">Cancel</string>
     <string name="photos_selection_backup">Back up</string>
-    <string name="photos_selection_queued">Added %1$d to the backup queue</string>
+    <string name="photos_selection_result">%1$d queued for backup · %2$d already backed up</string>
 
     <!-- ============================ Media Details (Feature 2) ============================ -->
     <string name="viewer_details">Details</string>
@@ -327,6 +327,7 @@
     <string name="details_dimensions_value">%1$d × %2$d</string>
     <string name="details_size">Size</string>
     <string name="details_taken">Taken</string>
+    <string name="details_date_added">Added to library</string>
     <string name="details_camera">Camera</string>
     <string name="details_location">Location</string>
     <string name="details_unknown">Unknown</string>

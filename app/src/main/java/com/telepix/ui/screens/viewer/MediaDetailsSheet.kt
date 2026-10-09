@@ -99,6 +99,10 @@ internal fun MediaDetails.displayRows(context: Context): List<DetailRow> {
     captureMillis?.let {
         rows += DetailRow(R.string.details_taken, DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(it))
     }
+    // The date the item entered the device library (MediaStore DATE_ADDED), when available.
+    libraryAddedMillis?.let {
+        rows += DetailRow(R.string.details_date_added, DateFormat.getDateInstance(DateFormat.MEDIUM).format(it))
+    }
     cameraMake?.let { make ->
         val model = cameraModel
         val value = if (model != null && model.isNotBlank()) "$make $model" else make
