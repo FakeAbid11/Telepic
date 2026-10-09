@@ -18,9 +18,9 @@ object AuthorizationStateMapper {
     ): TelegramAuthState = when (state) {
         null -> TelegramAuthState.NotConnected
         is TdApi.AuthorizationStateWaitTdlibParameters -> TelegramAuthState.Initializing
-        is TdApi.AuthorizationStateWaitPhoneNumber -> TelegramAuthState.WaitingForPhoneNumber
-        is TdApi.AuthorizationStateWaitCode -> TelegramAuthState.WaitingForCode
-        is TdApi.AuthorizationStateWaitPassword -> TelegramAuthState.WaitingForPassword
+        is TdApi.AuthorizationStateWaitPhoneNumber -> TelegramAuthState.WaitingForPhoneNumber()
+        is TdApi.AuthorizationStateWaitCode -> TelegramAuthState.WaitingForCode()
+        is TdApi.AuthorizationStateWaitPassword -> TelegramAuthState.WaitingForPassword()
         is TdApi.AuthorizationStateWaitRegistration -> TelegramAuthState.WaitingForRegistration
         is TdApi.AuthorizationStateWaitOtherDeviceConfirmation ->
             TelegramAuthState.WaitingForOtherDeviceConfirmation(state.link)

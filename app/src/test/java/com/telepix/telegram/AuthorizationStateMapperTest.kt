@@ -22,15 +22,15 @@ class AuthorizationStateMapperTest {
     @Test
     fun `phone code password map directly`() {
         assertEquals(
-            TelegramAuthState.WaitingForPhoneNumber,
+            TelegramAuthState.WaitingForPhoneNumber(),
             AuthorizationStateMapper.map(TdApi.AuthorizationStateWaitPhoneNumber()),
         )
         assertEquals(
-            TelegramAuthState.WaitingForCode,
+            TelegramAuthState.WaitingForCode(),
             AuthorizationStateMapper.map(TdApi.AuthorizationStateWaitCode()),
         )
         assertEquals(
-            TelegramAuthState.WaitingForPassword,
+            TelegramAuthState.WaitingForPassword(),
             AuthorizationStateMapper.map(TdApi.AuthorizationStateWaitPassword()),
         )
     }

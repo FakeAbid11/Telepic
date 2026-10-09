@@ -43,6 +43,10 @@ class TelegramSessionManager(
     private var collectorJob: kotlinx.coroutines.Job? = null
     private var parametersSent = false
 
+    // A build compiled without real credentials (CI defaults apiId=0) can never log in; surface that
+    // honestly up front instead of opening TDLib and reporting a generic engine error.
+    private val credentialsConfigured = apiId > 0 && apiHash.isNotBlank()
+
     /**
      * Begin (or re-attempt) authentication. Idempotent and safe to call again after a
      * [TelegramAuthState.Failed]: the update collector is started at most once, the client is opened
@@ -52,6 +56,10 @@ class TelegramSessionManager(
      */
     @Synchronized
     fun initialize() {
+        if (!credentialsConfigured) {
+            _state.value = TelegramAuthState.Failed(TelegramError.NotConfigured())
+            return
+        }
         _state.value = TelegramAuthState.Initializing
         scope.launch {
             val isRetry = collectorJob != null
@@ -165,8 +173,10 @@ class TelegramSessionManager(
                 isCurrentPhoneNumber = false
             }
             when (val response = safeRequest(TdApi.SetAuthenticationPhoneNumber(normalized, settings))) {
-                is TdApi.Error -> fail(
-                    TelegramError.classify(response.code, response.message, TelegramError.AuthStage.PhoneNumber),
+                // A rejected number is recoverable: TDLib stays at the phone wait and does not re-emit,
+                // so keep the input visible and surface the reason inline instead of a dead-end Failed.
+                is TdApi.Error -> _state.value = TelegramAuthState.WaitingForPhoneNumber(
+                    error = TelegramError.classify(response.code, response.message, TelegramError.AuthStage.PhoneNumber).message,
                 )
                 else -> Unit
             }
@@ -176,8 +186,8 @@ class TelegramSessionManager(
     fun submitCode(code: String) {
         scope.launch {
             when (val response = safeRequest(TdApi.CheckAuthenticationCode(code.trim()))) {
-                is TdApi.Error -> fail(
-                    TelegramError.classify(response.code, response.message, TelegramError.AuthStage.Code),
+                is TdApi.Error -> _state.value = TelegramAuthState.WaitingForCode(
+                    error = TelegramError.classify(response.code, response.message, TelegramError.AuthStage.Code).message,
                 )
                 else -> Unit
             }
@@ -188,8 +198,8 @@ class TelegramSessionManager(
         scope.launch {
             // The password is passed straight to TDLib and never stored or logged.
             when (val response = safeRequest(TdApi.CheckAuthenticationPassword(password))) {
-                is TdApi.Error -> fail(
-                    TelegramError.classify(response.code, response.message, TelegramError.AuthStage.Password),
+                is TdApi.Error -> _state.value = TelegramAuthState.WaitingForPassword(
+                    error = TelegramError.classify(response.code, response.message, TelegramError.AuthStage.Password).message,
                 )
                 else -> Unit
             }

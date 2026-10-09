@@ -75,7 +75,7 @@ class TelegramStepUiTest {
     @Test
     fun `phone state shows input and submits to the controller`() {
         val controller = FakeController(isBackendAvailable = true)
-        render(controller, TelegramAuthState.WaitingForPhoneNumber)
+        render(controller, TelegramAuthState.WaitingForPhoneNumber())
         composeRule.onNodeWithText("Phone number").assertIsDisplayed()
         // Send code is disabled until a number is entered.
         composeRule.onNodeWithText("Send code").assertIsNotEnabled()
@@ -86,14 +86,25 @@ class TelegramStepUiTest {
 
     @Test
     fun `code state shows a code input`() {
-        render(FakeController(isBackendAvailable = true), TelegramAuthState.WaitingForCode)
+        render(FakeController(isBackendAvailable = true), TelegramAuthState.WaitingForCode())
         composeRule.onNodeWithText("Confirmation code").assertIsDisplayed()
         composeRule.onNodeWithText("Sign in").assertIsDisplayed()
     }
 
     @Test
+    fun `a wrong code stays on the code field and shows the reason inline`() {
+        render(
+            FakeController(isBackendAvailable = true),
+            TelegramAuthState.WaitingForCode(error = "The code is invalid."),
+        )
+        // Not a dead-end: the code input is still present AND the reason is shown.
+        composeRule.onNodeWithText("Confirmation code").assertIsDisplayed()
+        composeRule.onNodeWithText("The code is invalid.").assertIsDisplayed()
+    }
+
+    @Test
     fun `password state shows a password input`() {
-        render(FakeController(isBackendAvailable = true), TelegramAuthState.WaitingForPassword)
+        render(FakeController(isBackendAvailable = true), TelegramAuthState.WaitingForPassword())
         composeRule.onNodeWithText("Two-factor password").assertIsDisplayed()
         composeRule.onNodeWithText("Sign in").assertIsDisplayed()
     }

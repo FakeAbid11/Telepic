@@ -119,7 +119,7 @@
     <string name="telegram_password_label">Two-factor password</string>
     <string name="telegram_password_hint">This account has a cloud password</string>
     <string name="telegram_other_device">Approve the login request on your other Telegram device.</string>
-    <string name="telegram_registration">Almost there — new accounts are finalized in a later step.</string>
+    <string name="telegram_registration">This phone number doesn\'t have a Telegram account yet. Telepix backs up to an existing account — please create one in the official Telegram app first, then sign in here.</string>
     <string name="telegram_connected_as">Connected as %1$s</string>
     <string name="telegram_retry">Retry</string>
     <string name="telegram_change_account">Use a different account</string>

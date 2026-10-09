@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.drinkless.tdlib.TdApi
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -38,6 +40,8 @@ class TelegramSessionManagerTest {
 
         // When true, SetTdlibParameters is rejected (simulating bad credentials/parameters) until flipped.
         @Volatile var failParameters: Boolean = false
+        // When true, CheckAuthenticationCode is rejected (a wrong code) with a recoverable 400.
+        @Volatile var failCode: Boolean = false
         @Volatile var requests: List<TdApi.Function<*>> = emptyList()
 
         fun setParametersSent(): Int = requests.count { it is TdApi.SetTdlibParameters }
@@ -52,6 +56,7 @@ class TelegramSessionManagerTest {
             return when (request) {
                 is TdApi.GetAuthorizationState -> authorizationState
                 is TdApi.SetTdlibParameters -> if (failParameters) TdApi.Error(400, "invalid api_id") else TdApi.Ok()
+                is TdApi.CheckAuthenticationCode -> if (failCode) TdApi.Error(400, "code invalid") else TdApi.Ok()
                 else -> TdApi.Ok()
             }
         }
@@ -112,6 +117,36 @@ class TelegramSessionManagerTest {
         // Once the resend succeeds, the flow is no longer Failed.
         withTimeout(3_000) { while (m.state.value is TelegramAuthState.Failed) delay(20) }
         assertTrue(m.state.value !is TelegramAuthState.Failed)
+        m.close()
+    }
+
+    @Test
+    fun `unconfigured credentials fail fast without opening the client`() = runBlocking {
+        val gateway = FakeGateway()
+        val m = TelegramSessionManager(
+            context = ApplicationProvider.getApplicationContext<Context>(),
+            gateway = gateway,
+            keyProvider = FakeKeyProvider(),
+            apiId = 0,
+            apiHash = "",
+            applicationVersion = "1.0.0",
+        )
+        m.initialize()
+        // No TDLib client is opened; the honest NotConfigured failure is surfaced immediately.
+        assertTrue(m.state.value is TelegramAuthState.Failed)
+        assertFalse(gateway.isOpen)
+    }
+
+    @Test
+    fun `a rejected code returns to the code field instead of a dead-end`() = runBlocking {
+        val gateway = FakeGateway().apply { failCode = true }
+        val m = manager(gateway)
+        m.submitCode("00000")
+
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForCode) delay(20) }
+        val state = m.state.value as TelegramAuthState.WaitingForCode
+        // Recoverable: still the code-waiting state (input stays visible) carrying an inline reason.
+        assertNotNull(state.error)
         m.close()
     }
 }

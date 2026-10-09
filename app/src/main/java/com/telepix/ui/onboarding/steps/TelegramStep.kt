@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,13 +96,14 @@ private fun AuthContent(
                 }
             }
         }
-        TelegramAuthState.WaitingForPhoneNumber -> {
+        is TelegramAuthState.WaitingForPhoneNumber -> {
             var phone by rememberSaveable { mutableStateOf("") }
             OutlinedTextField(
                 value = phone,
                 onValueChange = { phone = it },
                 label = { Text(stringResource(R.string.telegram_phone_label)) },
-                supportingText = { Text(stringResource(R.string.telegram_phone_hint)) },
+                supportingText = { Text(state.error ?: stringResource(R.string.telegram_phone_hint)) },
+                isError = state.error != null,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 modifier = Modifier.fillMaxWidth(),
@@ -112,13 +114,14 @@ private fun AuthContent(
                 onClick = { controller.submitPhoneNumber(phone) },
             )
         }
-        TelegramAuthState.WaitingForCode -> {
+        is TelegramAuthState.WaitingForCode -> {
             var code by rememberSaveable { mutableStateOf("") }
             OutlinedTextField(
                 value = code,
                 onValueChange = { code = it },
                 label = { Text(stringResource(R.string.telegram_code_label)) },
-                supportingText = { Text(stringResource(R.string.telegram_code_hint)) },
+                supportingText = { Text(state.error ?: stringResource(R.string.telegram_code_hint)) },
+                isError = state.error != null,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                 modifier = Modifier.fillMaxWidth(),
@@ -129,13 +132,14 @@ private fun AuthContent(
                 onClick = { controller.submitCode(code) },
             )
         }
-        TelegramAuthState.WaitingForPassword -> {
+        is TelegramAuthState.WaitingForPassword -> {
             var password by rememberSaveable { mutableStateOf("") }
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
                 label = { Text(stringResource(R.string.telegram_password_label)) },
-                supportingText = { Text(stringResource(R.string.telegram_password_hint)) },
+                supportingText = { Text(state.error ?: stringResource(R.string.telegram_password_hint)) },
+                isError = state.error != null,
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -152,8 +156,14 @@ private fun AuthContent(
         }
         is TelegramAuthState.WaitingForOtherDeviceConfirmation ->
             StatusRow(stringResource(R.string.telegram_other_device), busy = true)
-        TelegramAuthState.WaitingForRegistration ->
+        TelegramAuthState.WaitingForRegistration -> {
+            // Telepix signs an existing Telegram account in as a storage layer; it does not create new
+            // Telegram accounts. Be honest about that and offer sign-out rather than a silent dead-end.
             StatusRow(stringResource(R.string.telegram_registration), busy = false)
+            TextButton(onClick = controller::logout, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.telegram_change_account))
+            }
+        }
         is TelegramAuthState.Authorized -> {
             StatusRow(
                 stringResource(R.string.telegram_connected_as, state.user.displayName),

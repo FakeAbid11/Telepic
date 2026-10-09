@@ -20,6 +20,11 @@ sealed class TelegramError(
     class Initialization(message: String) : TelegramError(message)
     class Unknown(message: String) : TelegramError(message)
 
+    /** The build was compiled without Telegram API credentials, so sign-in cannot proceed. */
+    class NotConfigured : TelegramError(
+        "Telegram sign-in isn't configured on this build. Provide the Telegram API credentials to enable it.",
+    )
+
     companion object {
         /**
          * Maps a TDLib error (HTTP-ish [code] + [message]) to a safe [TelegramError]. Pure, so

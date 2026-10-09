@@ -13,11 +13,14 @@ sealed interface TelegramAuthState {
 
     data object Initializing : TelegramAuthState
 
-    data object WaitingForPhoneNumber : TelegramAuthState
+    /** Waiting for the phone number. [error] is a recoverable message shown inline while staying here. */
+    data class WaitingForPhoneNumber(val error: String? = null) : TelegramAuthState
 
-    data object WaitingForCode : TelegramAuthState
+    /** Waiting for the SMS code. A wrong code keeps this state and surfaces [error] — not a dead-end. */
+    data class WaitingForCode(val error: String? = null) : TelegramAuthState
 
-    data object WaitingForPassword : TelegramAuthState
+    /** Waiting for the 2FA password. A wrong password keeps this state and surfaces [error]. */
+    data class WaitingForPassword(val error: String? = null) : TelegramAuthState
 
     data class WaitingForOtherDeviceConfirmation(val link: String) : TelegramAuthState
 
