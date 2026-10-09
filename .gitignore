@@ -20,3 +20,7 @@ build/
 # Secrets — never commit Telegram credentials
 telegram.properties
 secrets.properties
+
+# local dependency-inspection scratch (never committed)
+.tdlib-inspect/
+.ci-scratch/

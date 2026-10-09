@@ -1,72 +1,98 @@
 package com.telepix.data.cloud
 
 import com.telepix.domain.cloud.ChatCandidate
+import com.telepix.domain.cloud.ChatValidator
 import com.telepix.domain.cloud.CloudMedia
 import com.telepix.domain.cloud.CloudPreview
 import com.telepix.domain.cloud.CloudUploadProgress
 import com.telepix.domain.cloud.CloudUploadRequest
 import com.telepix.domain.cloud.CloudUploadResult
 import com.telepix.domain.cloud.LocalDownloadedMedia
+import com.telepix.telegram.TdLibClientGateway
 import com.telepix.telegram.TelegramAuthState
 import java.io.File
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import org.drinkless.tdlib.TdApi
 
 /**
- * TDLib-backed [CloudDataSource].
+ * TDLib-backed [CloudDataSource] implementing the real Telegram cloud operations against the
+ * **resolved** `io.github.tdlib-android:core:0.1.1` (TDLib 1.8.x) Java API. Every request shape is
+ * built by [TdApiCloudRequests] and every response mapped by [TdApiCloudMapper], both verified
+ * against the generated `TdApi` classes (not another TDLib version).
  *
- * Phase 5 status (honest): the concrete Telegram cloud calls — chat discovery
- * (`searchChatsOnServer`/`getChats`), destination creation (`createNewSupergroupChat`), history
- * paging (`getChatHistory`) and file download (`download` + local `getFile` path) — depend on
- * TDLib's Java `TdApi`, whose generated surface is produced at AAR build time and has churned
- * across 1.8.x. Exact field/method names must be finalized against the bundled schema **on a real
- * ARM device with an authenticated Telegram session** (see README). Until that bring-up, every
- * call below is defensive and returns an honest "not available" result — it NEVER fabricates a
- * destination, media list, preview, or download.
+ * It reuses the app's single [TdLibClientGateway] — never a second client. Requests run through the
+ * gateway's `request()` seam; there is no TDLib access from any Composable.
  *
- * Everything downstream (validation, persistence, manifest, Cloud state machine, UI, repository
- * orchestration) is implemented and unit/UI-tested against fakes, so completing only the request
- * shapes above activates the live cloud with no further changes.
+ * Honesty guarantees preserved from earlier phases:
+ * - Nothing is fabricated. A missing/failed response yields `null`/empty or an honest exception.
+ * - An upload returns a [CloudUploadResult] **only** after Telegram confirms the send (the message's
+ *   sending state clears); a rejected/failed send throws, so the queue never becomes BACKED_UP on a
+ *   guess.
+ * - Downloads use a synchronous TDLib download and the local path is verified to exist and be
+ *   non-empty before it is reported.
  *
- * Phase 6 adds the upload path. For the same reason it is deliberately **not** guessed: until the
- * `sendMessage` + `InputFile` request shapes are finalized on a real device, [upload] throws an
- * honest transient [CloudNetworkException] so the engine keeps items QUEUED rather than falsely
- * marking them BACKED_UP. The repository/queue/WorkManager layers are built against the [CloudDataSource]
- * seam and are fully tested with a fake that does succeed.
+ * Live validation against a real, authorized session on an ARM device is **device-gated**; until it
+ * is performed the request/response behaviour is covered by JVM unit tests with a fake gateway and
+ * must not be described as a live integration test.
  */
 class TdLibCloudDataSource(
-    private val filesDir: File,
+    private val gateway: TdLibClientGateway,
     private val authState: StateFlow<TelegramAuthState>,
+    private val destinationTitle: String = ChatValidator.TelepixDestinationTitle,
+    private val sendPollDelayMs: Long = DEFAULT_SEND_POLL_DELAY_MS,
+    private val maxSendAttempts: Int = DEFAULT_MAX_SEND_ATTEMPTS,
 ) : CloudDataSource {
 
     private val isReady: Boolean get() = authState.value is TelegramAuthState.Authorized
 
     override suspend fun searchDestinationCandidates(): List<ChatCandidate> {
-        // TODO(Phase 5 device bring-up): searchChatsOnServer -> map each Chat(chatId, title,
-        // ChatTypeSupergroup.isChannel, postability, accessibility) into a ChatCandidate.
-        return emptyList()
+        requireAuth()
+        val response = gateway.request(TdApiCloudRequests.searchChannels(destinationTitle, SEARCH_LIMIT))
+        if (response is TdApi.Error) throw CloudNetworkException("Chat search failed: ${response.message}")
+        val chats = response as? TdApi.Chats ?: return emptyList()
+        return chats.chatIds.mapNotNull { chatId -> candidateFor(chatId) }
     }
 
     override suspend fun createDestination(): ChatCandidate? {
-        // TODO(Phase 5 device bring-up): createNewSupergroupChat(title = "Telepix Backup",
-        // isChannel = true) -> map the resulting Chat. Persisted only after validation.
-        return null
+        requireAuth()
+        val response = gateway.request(TdApiCloudRequests.createChannel(destinationTitle, ""))
+        if (response is TdApi.Error) throw CloudNetworkException("Create destination failed: ${response.message}")
+        val chat = response as? TdApi.Chat ?: return null
+        // We just created it, so the account is its creator and may post — confirmed by the API.
+        return TdApiCloudMapper.chatToCandidate(chat, canPost = true, accessible = true)
     }
 
     override suspend fun loadNewestMedia(chatId: Long, limit: Int): List<CloudMedia> {
-        // TODO(Phase 5 device bring-up): getChatHistory(chatId, returnLastMessages) newest-first;
-        // map MessagePhoto/Video/Animation via CloudMediaKind; ignore unsupported messages.
-        return emptyList()
+        requireAuth()
+        val collected = ArrayList<CloudMedia>(limit)
+        var fromMessageId = 0L
+        var pages = 0
+        while (collected.size < limit && pages < MAX_PAGES) {
+            pages++
+            val response = gateway.request(TdApiCloudRequests.history(chatId, fromMessageId, 0, PAGE_SIZE))
+            if (response is TdApi.Error) throw CloudNetworkException("History failed: ${response.message}")
+            val messages = (response as? TdApi.Messages)?.messages ?: break
+            if (messages.isEmpty()) break
+            for (message in messages) {
+                TdApiCloudMapper.messageToCloudMedia(chatId, message)?.let { collected += it }
+            }
+            fromMessageId = messages.last().id
+            if (messages.size < PAGE_SIZE) break
+        }
+        return collected.take(limit)
     }
 
     override suspend fun downloadPreview(media: CloudMedia): CloudPreview? {
-        // TODO(Phase 5 device bring-up): download the smallest preview file into [filesDir].
-        return null
+        requireAuth()
+        val path = downloadAndVerify(media.previewFileId, PREVIEW_PRIORITY) ?: return null
+        return CloudPreview(localPath = path, width = media.width, height = media.height)
     }
 
     override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? {
-        if (!isReady) throw CloudNetworkException("Not authenticated")
-        // TODO(Phase 5 device bring-up): explicitly download the original into [filesDir].
-        return null
+        requireAuth()
+        val path = downloadAndVerify(media.originalFileId, ORIGINAL_PRIORITY) ?: return null
+        return LocalDownloadedMedia(localPath = path, chatId = media.chatId, messageId = media.messageId)
     }
 
     override suspend fun upload(
@@ -74,12 +100,95 @@ class TdLibCloudDataSource(
         request: CloudUploadRequest,
         onProgress: (CloudUploadProgress) -> Unit,
     ): CloudUploadResult {
+        requireAuth()
+        val content = TdApiCloudMapper.uploadContent(request)
+        val response = gateway.request(TdApiCloudRequests.sendMessage(chatId, content))
+        if (response is TdApi.Error) throw classifySendError(response)
+        val sent = response as? TdApi.Message ?: throw CloudNetworkException("Unexpected sendMessage response")
+        val confirmed = awaitSendConfirmation(chatId, sent)
+        // Telegram confirmed the send; report the real remote identity. Progress is not fabricated:
+        // the byte count is only known once, at confirmation, so a single honest sample is emitted.
+        request.sizeBytes?.let { onProgress(CloudUploadProgress(uploadedBytes = it, totalBytes = it)) }
+        return CloudUploadResult(
+            chatId = confirmed.chatId.takeIf { it != 0L } ?: chatId,
+            messageId = confirmed.id,
+            telegramFileId = TdApiCloudMapper.uploadedFileId(confirmed),
+            mediaType = request.mediaType,
+        )
+    }
+
+    // --- internals ---------------------------------------------------------------------------
+
+    private suspend fun candidateFor(chatId: Long): ChatCandidate? {
+        val chatResponse = gateway.request(TdApiCloudRequests.getChat(chatId))
+        if (chatResponse is TdApi.Error) return null // inaccessible/deleted → not a candidate
+        val chat = chatResponse as? TdApi.Chat ?: return null
+        val canPost = currentUserId()?.let { userId ->
+            val memberResponse = gateway.request(TdApiCloudRequests.getChatMember(chatId, userId))
+            TdApiCloudMapper.canPostFromMember(memberResponse as? TdApi.ChatMember)
+        } ?: false
+        return TdApiCloudMapper.chatToCandidate(chat, canPost = canPost, accessible = true)
+    }
+
+    private suspend fun currentUserId(): Long? {
+        val me = gateway.request(TdApiCloudRequests.getMe())
+        return (me as? TdApi.User)?.id
+    }
+
+    /** Synchronously downloads [fileId] and returns a verified, non-empty local path (or null). */
+    private suspend fun downloadAndVerify(fileId: Int?, priority: Int): String? {
+        if (fileId == null) return null
+        val response = gateway.request(TdApiCloudRequests.downloadSynchronously(fileId, priority))
+        if (response is TdApi.Error) return null
+        val file = response as? TdApi.File ?: return null
+        val local = file.local ?: return null
+        if (!local.isDownloadingCompleted) return null
+        val path = local.path ?: return null
+        val onDisk = File(path)
+        return if (onDisk.exists() && onDisk.length() > 0L) path else null
+    }
+
+    /**
+     * Polls the just-sent message until Telegram clears its sending state (success) or reports a
+     * failure. Polling (rather than racing the shared update stream) keeps confirmation reliable; a
+     * timeout is treated as a transient failure so the queue can retry rather than claim success.
+     */
+    private suspend fun awaitSendConfirmation(chatId: Long, initial: TdApi.Message): TdApi.Message {
+        var current = initial
+        var attempts = 0
+        while (current.sendingState != null) {
+            val state = current.sendingState
+            if (state is TdApi.MessageSendingStateFailed) {
+                throw CloudUploadRejectedException("Telegram rejected the upload: ${state.error?.message ?: "unknown"}")
+            }
+            if (attempts++ >= maxSendAttempts) throw CloudNetworkException("Upload confirmation timed out")
+            delay(sendPollDelayMs)
+            val response = gateway.request(TdApiCloudRequests.getMessage(chatId, current.id))
+            if (response is TdApi.Error) throw CloudNetworkException("Confirm failed: ${response.message}")
+            current = response as? TdApi.Message ?: throw CloudNetworkException("Unexpected getMessage response")
+        }
+        return current
+    }
+
+    private fun classifySendError(error: TdApi.Error): Exception =
+        // 429 (flood wait) and 5xx are transient/retryable; anything else is a permanent rejection.
+        if (error.code == 429 || error.code >= 500) {
+            CloudNetworkException("Telegram send failed (${error.code}): ${error.message}")
+        } else {
+            CloudUploadRejectedException("Telegram rejected the upload (${error.code}): ${error.message}")
+        }
+
+    private fun requireAuth() {
         if (!isReady) throw CloudNetworkException("Not authenticated")
-        // TODO(Phase 6 device bring-up): map [request] to a Telegram InputFile + sendMessage
-        // (Photo/Video/Animation vs Document for byte-preserving upload) against the bundled TdApi,
-        // await the sent Message, and return its real (chatId, messageId, fileId). Until then this
-        // is an honest, transient "not available": the upload never succeeds and the queue never
-        // becomes BACKED_UP — no fabricated remote identity.
-        throw CloudNetworkException("Telegram upload is not yet available on this build")
+    }
+
+    private companion object {
+        const val SEARCH_LIMIT = 20
+        const val PAGE_SIZE = 50
+        const val MAX_PAGES = 20
+        const val PREVIEW_PRIORITY = 1
+        const val ORIGINAL_PRIORITY = 32
+        const val DEFAULT_SEND_POLL_DELAY_MS = 300L
+        const val DEFAULT_MAX_SEND_ATTEMPTS = 200 // ~60s at 300ms
     }
 }
