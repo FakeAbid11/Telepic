@@ -46,6 +46,7 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
             if (!source.exists() || source.length() <= 0L) return@withContext PublishResult.Failed
 
             val mime = mimeType?.takeIf { it.isNotBlank() } ?: guessMime(displayName)
+                ?: guessMime(source.name) ?: "application/octet-stream"
             val collection = collectionFor(mime)
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, displayName ?: source.name)
