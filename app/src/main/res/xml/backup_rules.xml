@@ -1,8 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Android full-backup rules (API <= 30).
-  Phase 1 stores no sensitive data. Later phases will exclude the Room database,
-  Telegram/TDLib session files and cached media from cloud backup.
+
+  Telepix keeps the Telegram/TDLib session and database in noBackupFilesDir and the upload staging
+  files in cacheDir, so those are already outside the backup set by location. These rules cover the
+  two remaining sensitive pieces of app-private state:
+
+    * the wrapped TDLib database key blob in filesDir (crypto material — useless off the keystore,
+      but it must never leave the device), and
+    * the Room database, which holds the cloud manifest, backup queue, organization flags and the
+      geotag cache. All of it is keyed to this device's MediaStore ids and this Telegram session, so
+      restoring it on another device would be meaningless at best and a privacy leak at worst.
+
+  Benign preferences (theme, onboarding completion, backup choice) live in DataStore and remain
+  eligible for backup.
 -->
 <full-backup-content>
+    <exclude domain="file" path=".tdlib_db_key.v1" />
+    <exclude domain="database" path="telepix.db" />
+    <exclude domain="database" path="telepix.db-wal" />
+    <exclude domain="database" path="telepix.db-shm" />
 </full-backup-content>

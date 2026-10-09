@@ -64,23 +64,33 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
             }
 
             try {
-                resolver.openOutputStream(target)?.use { out ->
+                val expected = source.length()
+                val written = resolver.openOutputStream(target)?.use { out ->
                     source.inputStream().use { input ->
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var total = 0L
                         var read = input.read(buffer)
                         while (read >= 0) {
                             scope.ensureActive()
                             out.write(buffer, 0, read)
+                            total += read
                             read = input.read(buffer)
                         }
                         out.flush()
+                        total
                     }
                 } ?: throw IOException("Could not open the destination for writing")
+
+                // Only a complete byte-for-byte copy counts; a short write is not a restoration.
+                if (written != expected) throw IOException("Incomplete copy ($written of $expected bytes)")
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear()
                     values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    resolver.update(target, values, null, null)
+                    // Confirm the row actually flipped out of pending before declaring success; a 0-row
+                    // update would leave an orphaned, invisible pending entry while we claim "saved".
+                    val updated = resolver.update(target, values, null, null)
+                    if (updated != 1) throw IOException("Provider did not finalize the media row")
                 }
                 PublishResult.Inserted(target.toString())
             } catch (_: Throwable) {
