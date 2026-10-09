@@ -68,9 +68,9 @@ class ViewerViewModelTest {
     }
 
     private class FakeOrg(
-        favs: Set<Long>,
-        arch: Set<Long>,
-        trash: Set<Long>,
+        val favs: Set<Long>,
+        val arch: Set<Long>,
+        val trash: Set<Long>,
     ) : com.telepix.data.organization.MediaOrganizationRepository {
         override val favoriteIds: Flow<Set<Long>> = flowOf(favs)
         override val archivedIds: Flow<Set<Long>> = flowOf(arch)
@@ -184,7 +184,7 @@ class ViewerViewModelTest {
     }
 
     @Test
-    fun `bucket scope confines next/previous to the album bucket`() = runBlocking {
+    fun `bucket scope confines next and previous to the album bucket`() = runBlocking {
         val lookup = FakeLookup(
             mapOf(5L to local(5)),
             newer = mapOf(5L to 9L),
