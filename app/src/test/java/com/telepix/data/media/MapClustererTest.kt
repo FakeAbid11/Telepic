@@ -15,7 +15,7 @@ class MapClustererTest {
     @Test
     fun `isolated points stay single pins carrying their own id`() {
         val pins = MapClusterer.cluster(
-            listOf(tagged(1, 48.85, 2.35), tagged(2, 40.71, -74.0)),
+            listOf(tagged(1L, 48.85, 2.35), tagged(2L, 40.71, -74.0)),
             precision = 4,
         )
         assertEquals(2, pins.size)
@@ -26,9 +26,9 @@ class MapClustererTest {
     @Test
     fun `nearby points in the same grid cell collapse into one cluster with all ids`() {
         val near = listOf(
-            tagged(10, 48.850001, 2.350001),
-            tagged(11, 48.850002, 2.350002),
-            tagged(12, 48.850003, 2.350003),
+            tagged(10L, 48.850001, 2.350001),
+            tagged(11L, 48.850002, 2.350002),
+            tagged(12L, 48.850003, 2.350003),
         )
         val pins = MapClusterer.cluster(near, precision = 4)
         assertEquals(1, pins.size)
@@ -46,7 +46,7 @@ class MapClustererTest {
 
     @Test
     fun `a coarse precision groups more aggressively than a fine one`() {
-        val items = listOf(tagged(1, 10.0001, 10.0001), tagged(2, 10.0009, 10.0009))
+        val items = listOf(tagged(1L, 10.0001, 10.0001), tagged(2L, 10.0009, 10.0009))
         assertEquals(1, MapClusterer.cluster(items, precision = 2).size) // coarse -> same cell
         assertEquals(2, MapClusterer.cluster(items, precision = 8).size) // fine -> distinct
     }

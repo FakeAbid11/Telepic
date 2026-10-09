@@ -32,9 +32,9 @@ class MapLocationRepositoryTest {
     private lateinit var dao: MediaLocationDao
 
     private val items = listOf(
-        media(1, "content://m/1"),
-        media(2, "content://m/2"),
-        media(3, "content://m/3"),
+        media(1L, "content://m/1"),
+        media(2L, "content://m/2"),
+        media(3L, "content://m/3"),
     )
 
     private class FakeLoader(private val items: List<LocalMedia>) : MediaPageLoader {
