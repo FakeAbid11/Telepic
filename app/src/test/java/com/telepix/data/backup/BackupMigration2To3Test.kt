@@ -70,7 +70,11 @@ class BackupMigration2To3Test {
 
         // Act: reopen at version 3 with the explicit migration (Room validates the final schema).
         val db = Room.databaseBuilder(context, TelepixDatabase::class.java, dbFile)
-            .addMigrations(TelepixDatabase.MIGRATION_2_3)
+            .addMigrations(
+                TelepixDatabase.MIGRATION_2_3,
+                TelepixDatabase.MIGRATION_3_4,
+                TelepixDatabase.MIGRATION_4_5,
+            )
             .allowMainThreadQueries()
             .build()
 

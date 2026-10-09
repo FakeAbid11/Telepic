@@ -24,6 +24,9 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The collection ViewModel maps favorite/archive/trash id-sets to media, and its undo / consented
@@ -31,6 +34,8 @@ import org.junit.Test
  * device-gated and is exercised here only through the [LocalMediaDeleter] seam.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class OrganizationViewModelTest {
 
     @After

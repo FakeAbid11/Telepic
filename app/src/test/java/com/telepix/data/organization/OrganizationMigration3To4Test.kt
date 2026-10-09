@@ -70,7 +70,10 @@ class OrganizationMigration3To4Test {
         raw.close()
 
         val db = Room.databaseBuilder(context, TelepixDatabase::class.java, dbFile)
-            .addMigrations(TelepixDatabase.MIGRATION_3_4)
+            .addMigrations(
+                TelepixDatabase.MIGRATION_3_4,
+                TelepixDatabase.MIGRATION_4_5,
+            )
             .allowMainThreadQueries()
             .build()
 
