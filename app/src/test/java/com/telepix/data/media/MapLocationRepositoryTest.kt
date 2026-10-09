@@ -92,6 +92,31 @@ class MapLocationRepositoryTest {
         assertEquals(setOf(1L, 3L), repository.locations.first().map { it.mediaId }.toSet())
     }
 
+    @Test
+    fun `rescan drops markers for media no longer in the library`() = runBlocking {
+        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), pageSize = 10, maxPages = 5)
+        repository.rescan()
+        assertEquals(setOf(1L, 3L), repository.locations.first().map { it.mediaId }.toSet())
+
+        // id 3 is removed from the device; the next complete rescan reconciles the cache.
+        val afterDelete = listOf(items[0], items[1]) // ids 1 and 2 only
+        val reopened = DefaultMapLocationRepository(dao, FakeLoader(afterDelete), FakeExtractor(), pageSize = 10, maxPages = 5)
+        reopened.rescan()
+        assertEquals(setOf(1L), reopened.locations.first().map { it.mediaId }.toSet())
+    }
+
+    @Test
+    fun `a scan that cannot reach the library end does not prune still-existing markers`() = runBlocking {
+        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), pageSize = 10, maxPages = 5)
+        repository.rescan() // caches 1 and 3
+
+        // Only one page of size 2 is read, so id 3 is never seen this pass — but because the scan did
+        // not reach the end, the reconcile-prune must not run and id 3 stays.
+        val truncated = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), pageSize = 2, maxPages = 1)
+        truncated.rescan()
+        assertEquals(setOf(1L, 3L), truncated.locations.first().map { it.mediaId }.toSet())
+    }
+
     private fun media(id: Long, uri: String) = LocalMedia(
         id = id, contentUri = Uri.parse(uri), type = MediaType.PHOTO, mimeType = "image/jpeg",
         displayName = "f$id", dateMillis = 1L, durationMillis = null, width = 1, height = 1, sizeBytes = 1L,

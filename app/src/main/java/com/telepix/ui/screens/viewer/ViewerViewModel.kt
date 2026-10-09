@@ -13,6 +13,8 @@ import com.telepix.domain.cloud.CloudMediaType
 import com.telepix.domain.media.LocalMedia
 import com.telepix.domain.media.MediaType
 import com.telepix.navigation.MediaSource
+import com.telepix.navigation.OrganizationKind
+import com.telepix.navigation.ViewerScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,6 +75,7 @@ class ViewerViewModel(
     private val cloudRepository: CloudRepository,
     private val organizationRepository: MediaOrganizationRepository? = null,
     private val restoreRepository: RestoreRepository? = null,
+    private val scope: ViewerScope = ViewerScope.Global,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ViewerUiState(initialSource))
@@ -204,8 +207,7 @@ class ViewerViewModel(
 
     private suspend fun resolveLocal(s: MediaSource.Local): ViewerUiState {
         val media = localLookup.byId(s.mediaId) ?: return ViewerUiState(s, ViewerStatus.MISSING)
-        val newer = localLookup.neighborId(s.mediaId, NeighborDirection.NEWER)
-        val older = localLookup.neighborId(s.mediaId, NeighborDirection.OLDER)
+        val (newer, older) = localNeighbors(s.mediaId)
         return ViewerUiState(
             source = s,
             status = ViewerStatus.READY,
@@ -215,6 +217,36 @@ class ViewerViewModel(
             next = older?.let { MediaSource.Local(it) },
             dateMillis = media.dateMillis,
         )
+    }
+
+    /**
+     * Resolves the adjacent local ids honoring the originating [scope]: the album's bucket, a curated
+     * collection's own (newest-first) order, or the visible global timeline. Returns (previous, next)
+     * as ids, where previous is the newer item and next the older one.
+     */
+    private suspend fun localNeighbors(id: Long): Pair<Long?, Long?> = when (scope) {
+        ViewerScope.Global ->
+            localLookup.neighborId(id, NeighborDirection.NEWER) to localLookup.neighborId(id, NeighborDirection.OLDER)
+        is ViewerScope.Bucket ->
+            localLookup.neighborId(id, NeighborDirection.NEWER, scope.bucketId) to
+                localLookup.neighborId(id, NeighborDirection.OLDER, scope.bucketId)
+        is ViewerScope.Collection -> collectionNeighbors(id, scope.kind)
+    }
+
+    // The collection's ordered id list is exactly what the originating screen shows (the Room id-set
+    // resolved newest-first through the same bounded lookup), so next/previous stay inside it.
+    private suspend fun collectionNeighbors(id: Long, kind: OrganizationKind): Pair<Long?, Long?> {
+        val repo = organizationRepository
+            ?: return localLookup.neighborId(id, NeighborDirection.NEWER) to localLookup.neighborId(id, NeighborDirection.OLDER)
+        val ids = when (kind) {
+            OrganizationKind.FAVORITES -> repo.favoriteIds
+            OrganizationKind.ARCHIVE -> repo.archivedIds
+            OrganizationKind.TRASH -> repo.trashedIds
+        }.first()
+        val ordered = localLookup.byIdList(ids).map { it.id } // newest-first, existing items only
+        val index = ordered.indexOf(id)
+        if (index < 0) return null to null
+        return ordered.getOrNull(index - 1) to ordered.getOrNull(index + 1)
     }
 
     private suspend fun resolveCloud(s: MediaSource.Cloud): ViewerUiState {

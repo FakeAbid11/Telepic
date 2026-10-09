@@ -85,7 +85,7 @@ class OrganizationViewModelTest {
     private class FakeLookup : LocalMediaLookup {
         val store = mutableMapOf<Long, LocalMedia>()
         override suspend fun byId(id: Long): LocalMedia? = store[id]
-        override suspend fun neighborId(id: Long, direction: NeighborDirection): Long? = null
+        override suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long?): Long? = null
         override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> =
             ids.toList().mapNotNull { store[it] }
     }

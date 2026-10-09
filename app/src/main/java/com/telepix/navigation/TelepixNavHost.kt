@@ -107,7 +107,7 @@ fun TelepixNavHost(
             com.telepix.ui.screens.organization.OrganizationScreen(
                 viewModel = organizationViewModel,
                 onBack = { navController.popBackStack() },
-                onOpenMedia = { mediaId -> navController.navigate(ViewerRoute.local(mediaId)) },
+                onOpenMedia = { mediaId -> navController.navigate(ViewerRoute.localInCollection(mediaId, kind)) },
             )
         }
         composable(
@@ -140,7 +140,7 @@ fun TelepixNavHost(
             AlbumContentsScreen(
                 viewModel = contentsViewModel,
                 onBack = { navController.popBackStack() },
-                onMediaSelected = { media -> navController.navigate(ViewerRoute.local(media.id)) },
+                onMediaSelected = { media -> navController.navigate(ViewerRoute.localInBucket(media.id, bucketId)) },
             )
         }
         composable(TelepixDestination.Map.route) {
@@ -176,9 +176,16 @@ fun TelepixNavHost(
         }
         composable(
             route = ViewerRoute.LOCAL,
-            arguments = listOf(navArgument(ViewerRoute.ARG_MEDIA_ID) { type = NavType.LongType }),
+            arguments = listOf(
+                navArgument(ViewerRoute.ARG_MEDIA_ID) { type = NavType.LongType },
+                navArgument(ViewerRoute.ARG_BUCKET_ID) { type = NavType.LongType; nullable = true; defaultValue = -1L },
+                navArgument(ViewerRoute.ARG_ORG_KIND) { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
         ) { backStackEntry ->
             val mediaId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_MEDIA_ID) ?: 0L
+            val bucketId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_BUCKET_ID)
+                ?.takeIf { it >= 0L }
+            val orgKind = OrganizationRoute.kindOf(backStackEntry.arguments?.getString(ViewerRoute.ARG_ORG_KIND))
             val viewerViewModel: ViewerViewModel = viewModel(
                 factory = viewModelFactory {
                     initializer {
@@ -187,6 +194,7 @@ fun TelepixNavHost(
                             localLookup = container.localMediaLookup,
                             cloudRepository = container.cloudRepository,
                             organizationRepository = container.mediaOrganizationRepository,
+                            scope = ViewerRoute.scopeOf(bucketId, orgKind),
                         )
                     }
                 },

@@ -48,7 +48,7 @@ class ViewerUiTest {
 
     private class Lookup(private val items: Map<Long, LocalMedia>, private val older: Long? = null) : LocalMediaLookup {
         override suspend fun byId(id: Long): LocalMedia? = items[id]
-        override suspend fun neighborId(id: Long, direction: NeighborDirection): Long? =
+        override suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long?): Long? =
             if (direction == NeighborDirection.OLDER) older else null
         override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = ids.toList().mapNotNull { items[it] }
     }

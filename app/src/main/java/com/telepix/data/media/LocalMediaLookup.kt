@@ -19,8 +19,14 @@ interface LocalMediaLookup {
     /** Resolve a single item by its stable MediaStore id, or null when it is gone/inaccessible. */
     suspend fun byId(id: Long): LocalMedia?
 
-    /** The id of the adjacent item in [direction], or null at the ends of the collection. */
-    suspend fun neighborId(id: Long, direction: NeighborDirection): Long?
+    /**
+     * The id of the adjacent item in [direction], or null at the ends of the collection.
+     *
+     * Hidden (archived/trashed) ids are excluded so the Viewer never lands on media the user has filed
+     * away, consistent with the timeline and album grids. When [bucketId] is supplied the search stays
+     * within that one bucket, so an album's Viewer wraps around its own contents instead of the library.
+     */
+    suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long? = null): Long?
 
     /**
      * Resolve many items in a single bounded `_ID IN (...)` query (used by Favorites / Archive /
@@ -30,7 +36,10 @@ interface LocalMediaLookup {
     suspend fun byIdList(ids: Collection<Long>): List<LocalMedia>
 }
 
-class MediaStoreLocalLookup(context: Context) : LocalMediaLookup {
+class MediaStoreLocalLookup(
+    context: Context,
+    private val hiddenIdsProvider: suspend () -> Set<Long> = { emptySet() },
+) : LocalMediaLookup {
 
     private val contentResolver = context.applicationContext.contentResolver
 
@@ -62,15 +71,26 @@ class MediaStoreLocalLookup(context: Context) : LocalMediaLookup {
         )
     }
 
-    override suspend fun neighborId(id: Long, direction: NeighborDirection): Long? = withContext(Dispatchers.IO) {
-        val cmp = if (direction == NeighborDirection.OLDER) "<" else ">"
-        val order = if (direction == NeighborDirection.OLDER) "_ID DESC" else "_ID ASC"
-        queryOne(
-            selection = "$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} $cmp ?",
-            args = arrayOf(id.toString()),
-            sortOrder = order,
-        )?.id
-    }
+    override suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long?): Long? =
+        withContext(Dispatchers.IO) {
+            val cmp = if (direction == NeighborDirection.OLDER) "<" else ">"
+            val order = if (direction == NeighborDirection.OLDER) "_ID DESC" else "_ID ASC"
+            // Skip media the user archived/trashed so a swipe never lands on a hidden item, and stay
+            // inside the requested bucket when one is given (album context).
+            val hidden = hiddenIdsProvider().take(MAX_LOOKUP_IDS)
+            val sb = StringBuilder("$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} $cmp ?")
+            val args = ArrayList<String>()
+            args += id.toString()
+            if (bucketId != null) {
+                sb.append(" AND ${MediaStore.MediaColumns.BUCKET_ID} = ?")
+                args += bucketId.toString()
+            }
+            if (hidden.isNotEmpty()) {
+                sb.append(" AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { "?" }})")
+                hidden.forEach { args += it.toString() }
+            }
+            queryOne(selection = sb.toString(), args = args.toTypedArray(), sortOrder = order)?.id
+        }
 
     override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = withContext(Dispatchers.IO) {
         if (ids.isEmpty()) return@withContext emptyList()
@@ -126,6 +146,6 @@ class MediaStoreLocalLookup(context: Context) : LocalMediaLookup {
 /** A no-op lookup used when the caller cannot supply a real MediaStore source (keeps Viewer safe). */
 object EmptyLocalMediaLookup : LocalMediaLookup {
     override suspend fun byId(id: Long): LocalMedia? = null
-    override suspend fun neighborId(id: Long, direction: NeighborDirection): Long? = null
+    override suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long?): Long? = null
     override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = emptyList()
 }

@@ -159,7 +159,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         LocalMediaRepositoryImpl(mediaLoader)
     }
 
-    override val localMediaLookup: LocalMediaLookup by lazy { MediaStoreLocalLookup(appContext) }
+    override val localMediaLookup: LocalMediaLookup by lazy {
+        MediaStoreLocalLookup(appContext) { mediaOrganizationRepository.hiddenIds() }
+    }
 
     override val mediaOrganizationRepository: MediaOrganizationRepository by lazy {
         DefaultMediaOrganizationRepository(mediaOrganizationDao)

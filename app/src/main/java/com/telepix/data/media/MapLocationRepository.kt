@@ -34,13 +34,19 @@ class DefaultMapLocationRepository(
 
     override suspend fun rescan() {
         val cached = dao.cachedIds().toHashSet()
+        val present = HashSet<Long>()
         var offset = 0
         var pages = 0
+        var reachedEnd = false
         while (pages < maxPages) {
             pages++
             val items = pageLoader.load(offset, pageSize)
-            if (items.isEmpty()) break
+            if (items.isEmpty()) {
+                reachedEnd = true
+                break
+            }
             for (item in items) {
+                present += item.id
                 if (item.id in cached) continue
                 val location = extractor.extract(item.contentUri) ?: continue
                 dao.upsert(
@@ -55,7 +61,17 @@ class DefaultMapLocationRepository(
                 cached += item.id
             }
             offset += items.size
-            if (items.size < pageSize) break
+            if (items.size < pageSize) {
+                reachedEnd = true
+                break
+            }
+        }
+        // Reconcile the cache against the visible library: drop markers for media that is gone (deleted)
+        // or now hidden (archived/trashed — pageLoader excludes those). Only prune a scan that actually
+        // reached the end; a maxPages-truncated scan has an incomplete `present` set and would wrongly
+        // delete still-existing locations.
+        if (reachedEnd) {
+            (cached - present).forEach { dao.delete(it) }
         }
     }
 }

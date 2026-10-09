@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepix.data.media.AlbumRepository
 import com.telepix.domain.media.Album
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,11 +36,17 @@ class AlbumsViewModel(
     fun refresh() {
         _status.value = AlbumsStatus.Loading
         viewModelScope.launch {
-            val albums = runCatching { repository.albums() }
-            _status.value = albums.fold(
-                onSuccess = { if (it.isEmpty()) AlbumsStatus.Empty else AlbumsStatus.Ready(it) },
-                onFailure = { AlbumsStatus.Error },
-            )
+            _status.value = try {
+                val albums = repository.albums()
+                if (albums.isEmpty()) AlbumsStatus.Empty else AlbumsStatus.Ready(albums)
+            } catch (c: CancellationException) {
+                // A cancelled load is not an error; propagate so the scope honors cancellation
+                // rather than showing a spurious Error state.
+                throw c
+            } catch (_: Exception) {
+                // A genuine query/permission failure is distinct from an empty library.
+                AlbumsStatus.Error
+            }
         }
     }
 }

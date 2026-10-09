@@ -1,6 +1,7 @@
 package com.telepix.data.media
 
 import android.content.Context
+import android.os.CancellationSignal
 import android.provider.MediaStore
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
@@ -44,38 +45,45 @@ class MediaStoreAlbumRepository(
             "${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})"
 
     override suspend fun albums(): List<Album> = withContext(Dispatchers.IO) {
+        val scope: CoroutineScope = this
         val order = "${MediaStore.MediaColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns._ID} DESC"
         val rows = ArrayList<AlbumGrouper.Row>()
-        try {
-            contentResolver.query(
-                MediaStore.Files.getContentUri("external"),
-                albumProjection,
-                mediaSelection,
-                null,
-                order,
-            )?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
-                val takenCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
-                val modCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
-                val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_ID)
-                val bucketNameCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
-                if (bucketCol < 0) return@use
-                while (cursor.moveToNext()) {
-                    val bucketId = if (cursor.isNull(bucketCol)) null else cursor.getLong(bucketCol)
-                    val taken = if (takenCol >= 0 && !cursor.isNull(takenCol)) cursor.getLong(takenCol) else 0L
-                    val mod = if (modCol >= 0 && !cursor.isNull(modCol)) cursor.getLong(modCol) else 0L
-                    rows += AlbumGrouper.Row(
-                        id = cursor.getLong(idCol),
-                        bucketId = bucketId,
-                        bucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol) else null,
-                        mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null,
-                        whenMillis = if (taken > 0L) taken else mod * 1000L,
-                    )
-                }
+        // Exclude archived/trashed media the same way the timeline and bucket loaders do, so album
+        // counts and covers reflect only what the user can actually see. Done in-query to keep the
+        // projection-light grouping honest rather than filtering a partial cursor afterward.
+        val hidden = hiddenIdsProvider().take(MAX_EXCLUDED_IDS)
+        val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { "?" }})"
+        val realSelection = mediaSelection + exclusion
+        val args = hidden.map { it.toString() }.toTypedArray()
+        val cancellation = CancellationSignal()
+        contentResolver.query(
+            MediaStore.Files.getContentUri("external"),
+            albumProjection,
+            realSelection,
+            args,
+            order,
+            cancellation,
+        )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
+            val takenCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
+            val modCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+            val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_ID)
+            val bucketNameCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+            if (bucketCol < 0) return@use
+            while (cursor.moveToNext()) {
+                scope.ensureActive()
+                val bucketId = if (cursor.isNull(bucketCol)) null else cursor.getLong(bucketCol)
+                val taken = if (takenCol >= 0 && !cursor.isNull(takenCol)) cursor.getLong(takenCol) else 0L
+                val mod = if (modCol >= 0 && !cursor.isNull(modCol)) cursor.getLong(modCol) else 0L
+                rows += AlbumGrouper.Row(
+                    id = cursor.getLong(idCol),
+                    bucketId = bucketId,
+                    bucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol) else null,
+                    mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null,
+                    whenMillis = if (taken > 0L) taken else mod * 1000L,
+                )
             }
-        } catch (_: Throwable) {
-            return@withContext emptyList()
         }
         AlbumGrouper.group(rows) { id, mime -> MediaStoreMediaMapper.contentUriFor(id, mime) }
     }
