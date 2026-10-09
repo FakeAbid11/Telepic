@@ -231,4 +231,71 @@ class ViewerViewModelTest {
         assertNull(state.previous) // newest in the collection
         assertEquals(MediaSource.Local(1), state.next)
     }
+
+    /** A deterministic metadata reader for the Details flow tests. */
+    private class FakeMetadataReader(private val metadata: com.telepix.data.media.MediaMetadata) :
+        com.telepix.data.media.MediaMetadataReader {
+        override suspend fun read(uri: Uri) = metadata
+    }
+
+    @Test
+    fun `details merges media fields with EXIF capture, camera and gps`() = runBlocking {
+        val reader = FakeMetadataReader(
+            com.telepix.data.media.MediaMetadata(
+                cameraMake = "Google",
+                cameraModel = "Pixel 8",
+                captureMillis = 5_000L,
+                location = com.telepix.domain.media.GeoLocation(48.85, 2.35),
+            ),
+        )
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5))),
+            cloudRepository = FakeCloud(emptyList()),
+            metadataReader = reader,
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+        assertNull(vm.details.value) // not loaded until requested
+
+        vm.loadDetails()
+        val details = vm.details.first { it != null }!!
+        assertEquals("f5", details.fileName)
+        assertEquals(5_000L, details.captureMillis) // EXIF capture, not the library date
+        assertEquals("Google", details.cameraMake)
+        assertEquals(48.85, details.latitude!!, 0.0001)
+        assertEquals(2.35, details.longitude!!, 0.0001)
+    }
+
+    @Test
+    fun `details reports no capture time when the file has no EXIF datetime`() = runBlocking {
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5))),
+            cloudRepository = FakeCloud(emptyList()),
+            metadataReader = FakeMetadataReader(com.telepix.data.media.MediaMetadata()), // all-null EXIF
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+        vm.loadDetails()
+        val details = vm.details.first { it != null }!!
+        assertNull(details.captureMillis) // never fabricate; the library date is kept separate
+        assertEquals(1_000L, details.libraryDateMillis)
+        assertNull(details.latitude)
+        assertNull(details.cameraMake)
+    }
+
+    @Test
+    fun `navigating to another item clears the previous item's details`() = runBlocking {
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5), 6L to local(6))),
+            cloudRepository = FakeCloud(emptyList()),
+            metadataReader = FakeMetadataReader(com.telepix.data.media.MediaMetadata(cameraMake = "X")),
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+        vm.loadDetails()
+        vm.details.first { it != null }
+        vm.open(MediaSource.Local(6))
+        vm.uiState.first { it.source == MediaSource.Local(6) && it.status != ViewerStatus.LOADING }
+        assertNull(vm.details.value) // cleared on navigation
+    }
 }

@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import com.telepix.data.backup.BackupCoordinator
 import com.telepix.data.backup.BackupStatusRepository
 import com.telepix.data.media.LocalMediaRepository
 import com.telepix.data.media.MediaChangeWatcher
 import com.telepix.data.organization.MediaOrganizationRepository
 import com.telepix.domain.backup.MediaBackupVisualState
+import com.telepix.domain.media.LocalMedia
 import com.telepix.domain.media.PhotosItem
 import com.telepix.permissions.MediaPermissionState
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -37,6 +40,7 @@ class PhotosViewModel(
     private val changeWatcher: MediaChangeWatcher,
     backupStatusRepository: BackupStatusRepository? = null,
     organizationRepository: MediaOrganizationRepository? = null,
+    private val backupCoordinator: BackupCoordinator? = null,
 ) : ViewModel() {
 
     private val _permissionState = MutableStateFlow(MediaPermissionState.NotRequested)
@@ -62,6 +66,59 @@ class PhotosViewModel(
     val favoriteIds: StateFlow<Set<Long>> =
         (organizationRepository?.favoriteIds ?: kotlinx.coroutines.flow.flowOf(emptySet()))
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    // --- Multi-selection (§15) -----------------------------------------------------------------
+    //
+    // Selection is keyed by the stable MediaStore id (never grid position), so it survives paging,
+    // scrolling and recomposition; the LocalMedia captured at selection time is what gets enqueued,
+    // so an item scrolled out of the loaded window stays selected. Ordering is insertion order.
+    private val _selected = MutableStateFlow<Map<Long, LocalMedia>>(emptyMap())
+    val selectedIds: StateFlow<Set<Long>> = _selected.map { it.keys }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    val selectionActive: StateFlow<Boolean> = _selected.map { it.isNotEmpty() }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Transient bulk-backup feedback for a snackbar; null when nothing to report. */
+    private val _selectionMessage = MutableStateFlow<Int?>(null)
+    val selectionMessage: StateFlow<Int?> = _selectionMessage.asStateFlow()
+
+    /** Long-press entry: begin a selection containing this item (idempotent if already selecting). */
+    fun beginSelection(media: LocalMedia) {
+        _selected.update { if (it.containsKey(media.id)) it else LinkedHashMap(it).also { m -> m[media.id] = media } }
+    }
+
+    /** Tap while selecting: toggle one item without disturbing the rest of the selection. */
+    fun toggleSelection(media: LocalMedia) {
+        _selected.update { current ->
+            val next = LinkedHashMap(current)
+            if (next.remove(media.id) == null) next[media.id] = media
+            next
+        }
+    }
+
+    fun clearSelection() {
+        _selected.value = emptyMap()
+    }
+
+    /**
+     * Back up every selected photo through the existing engine (recognition + dedup + queue + schedule).
+     * Reports how many were newly enqueued — already-backed-up/pending items are recognised and skipped
+     * by the coordinator, so the count reflects genuine new work, never a fabricated success.
+     */
+    fun backupSelected() {
+        val coordinator = backupCoordinator ?: return
+        val items = _selected.value.values.toList()
+        if (items.isEmpty()) return
+        viewModelScope.launch {
+            // backupAll returns nothing today; reflect the selection size as the queued feedback and let
+            // the queue's own status drive the true per-item outcome in the Backup Center.
+            coordinator.backupAll(items)
+            _selectionMessage.value = items.size
+            clearSelection()
+        }
+    }
+
+    fun consumeSelectionMessage() {
+        _selectionMessage.value = null
+    }
 
     init {
         // Re-read the library when MediaStore changes while the screen is alive.

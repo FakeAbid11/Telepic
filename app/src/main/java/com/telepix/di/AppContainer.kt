@@ -33,6 +33,8 @@ import com.telepix.data.media.AndroidLocationExtractor
 import com.telepix.data.media.AlbumRepository
 import com.telepix.data.media.DefaultMapLocationRepository
 import com.telepix.data.media.MapLocationRepository
+import com.telepix.data.media.MediaMetadataReader
+import com.telepix.data.media.AndroidMediaMetadataReader
 import com.telepix.data.media.LocalMediaLookup
 import com.telepix.data.media.LocalMediaRepository
 import com.telepix.data.media.LocalMediaRepositoryImpl
@@ -82,6 +84,7 @@ interface AppContainer {
     val mediaOrganizationRepository: MediaOrganizationRepository
     val mediaDeleter: LocalMediaDeleter
     val mapLocationRepository: MapLocationRepository
+    val mediaMetadataReader: MediaMetadataReader
     val restoreRepository: RestoreRepository
     val mediaChangeWatcher: MediaChangeWatcher
     val backupRepository: BackupRepository
@@ -178,6 +181,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             pageLoader = mediaLoader,
             extractor = AndroidLocationExtractor(appContext),
         )
+    }
+
+    override val mediaMetadataReader: MediaMetadataReader by lazy {
+        AndroidMediaMetadataReader(appContext)
     }
 
     override val restoreRepository: RestoreRepository by lazy {

@@ -2,7 +2,8 @@ package com.telepix.ui.screens.photos
 
 import android.content.Context
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
@@ -46,6 +48,10 @@ import java.util.Locale
  * original), a video play + duration or a GIF badge, and a compact backup indicator derived from the
  * repository-provided [backupState]. The tile reads its status from the passed-in snapshot — it runs
  * no database query, hashing or network call itself, and never infers backup success on its own.
+ *
+ * In selection mode ([selectionActive]) a long-press or tap toggles this cell: it shows a check badge
+ * and a translucent scrim when [selected], and the tap routes to [onClick] (the caller's toggle) while
+ * a long-press always routes to [onLongClick]. Outside selection mode it behaves as a plain viewer cell.
  */
 @Composable
 fun MediaTile(
@@ -53,6 +59,9 @@ fun MediaTile(
     backupState: MediaBackupVisualState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    selectionActive: Boolean = false,
+    onLongClick: () -> Unit = onClick,
 ) {
     val spacing = TelepixTokens.spacing
     val context = LocalContext.current
@@ -64,7 +73,7 @@ fun MediaTile(
             .clip(RoundedCornerShape(spacing.gridItemRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .semantics { contentDescription = label }
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         AsyncImage(
             model = media.contentUri,
@@ -94,6 +103,48 @@ fun MediaTile(
                 .align(Alignment.TopEnd)
                 .padding(spacing.xs),
         )
+
+        if (selectionActive) {
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
+                )
+            }
+            SelectionCheck(
+                selected = selected,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(spacing.xs),
+            )
+        }
+    }
+}
+
+/** A top-left check circle shown only while selecting: filled check when selected, a hollow ring otherwise. */
+@Composable
+private fun SelectionCheck(selected: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(if (selected) MaterialTheme.colorScheme.primary else Color(0x99000000))
+            .border(
+                width = if (selected) 0.dp else 2.dp,
+                color = if (selected) Color.Transparent else Color.White,
+                shape = CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp),
+            )
+        }
     }
 }
 

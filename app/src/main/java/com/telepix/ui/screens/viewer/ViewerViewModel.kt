@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepix.data.cloud.CloudRepository
 import com.telepix.data.media.LocalMediaLookup
+import com.telepix.data.media.MediaMetadataReader
 import com.telepix.data.media.NeighborDirection
 import com.telepix.data.organization.MediaOrganizationRepository
 import com.telepix.data.restore.RestoreRepository
@@ -63,6 +64,25 @@ data class ViewerUiState(
 )
 
 /**
+ * Presentation metadata for the Viewer's Details sheet. Every field is null when it cannot be
+ * obtained reliably — the UI omits null rows rather than showing a fabricated value. [captureMillis]
+ * comes only from EXIF (never the file-modified time), and [latitude]/[longitude] only from EXIF GPS.
+ */
+data class MediaDetails(
+    val fileName: String?,
+    val mimeType: String?,
+    val sizeBytes: Long,
+    val width: Int,
+    val height: Int,
+    val captureMillis: Long?,
+    val libraryDateMillis: Long,
+    val cameraMake: String?,
+    val cameraModel: String?,
+    val latitude: Double?,
+    val longitude: Double?,
+)
+
+/**
  * One Viewer session. Resolves a [MediaSource] strictly by its own identity — a local MediaStore id
  * via [LocalMediaLookup], a cloud (chatId, messageId) via the [CloudRepository] manifest — and
  * derives adjacent sources for next/previous without loading whole libraries. A missing item surfaces
@@ -76,6 +96,7 @@ class ViewerViewModel(
     private val organizationRepository: MediaOrganizationRepository? = null,
     private val restoreRepository: RestoreRepository? = null,
     private val scope: ViewerScope = ViewerScope.Global,
+    private val metadataReader: MediaMetadataReader? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ViewerUiState(initialSource))
@@ -84,6 +105,10 @@ class ViewerViewModel(
     /** Organization flags for the current local item; all-false for cloud items or when unwired. */
     private val _flags = MutableStateFlow(ViewerFlags())
     val flags: StateFlow<ViewerFlags> = _flags.asStateFlow()
+
+    /** Details for the current LOCAL item, or null when not requested/available. Reset on navigation. */
+    private val _details = MutableStateFlow<MediaDetails?>(null)
+    val details: StateFlow<MediaDetails?> = _details.asStateFlow()
 
     /** Restore-to-device state for the current cloud item (idle unless a restore is requested). */
     private val _restore = MutableStateFlow<RestoreState>(RestoreState.Idle)
@@ -105,6 +130,36 @@ class ViewerViewModel(
     fun open(newSource: MediaSource) {
         _uiState.value = ViewerUiState(newSource, ViewerStatus.LOADING)
         load(newSource)
+    }
+
+    /**
+     * Load Details for the current LOCAL item on demand — EXIF (capture/camera/GPS) is read off the
+     * main thread via [metadataReader] and merged with the MediaStore fields already on the item. Cloud
+     * items have no local file to read, so nothing loads; a missing reader yields MediaStore fields only.
+     */
+    fun loadDetails() {
+        val media = (_uiState.value.item as? ViewerItem.Local)?.media ?: return
+        viewModelScope.launch {
+            val metadata = runCatching { metadataReader?.read(media.contentUri) }
+                .getOrNull() ?: com.telepix.data.media.MediaMetadata()
+            _details.value = MediaDetails(
+                fileName = media.displayName,
+                mimeType = media.mimeType,
+                sizeBytes = media.sizeBytes,
+                width = media.width,
+                height = media.height,
+                captureMillis = metadata.captureMillis,
+                libraryDateMillis = media.dateMillis,
+                cameraMake = metadata.cameraMake,
+                cameraModel = metadata.cameraModel,
+                latitude = metadata.location?.latitude,
+                longitude = metadata.location?.longitude,
+            )
+        }
+    }
+
+    fun clearDetails() {
+        _details.value = null
     }
 
     // --- Phase 10 organization actions (local items only) ------------------------------------
@@ -191,6 +246,7 @@ class ViewerViewModel(
     private fun load(target: MediaSource) {
         viewModelScope.launch {
             _restore.value = RestoreState.Idle
+            _details.value = null // a different item never leaks the previous item's details
             val resolved = when (target) {
                 is MediaSource.Local -> resolveLocal(target)
                 is MediaSource.Cloud -> resolveCloud(target)

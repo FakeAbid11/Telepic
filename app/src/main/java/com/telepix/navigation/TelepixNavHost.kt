@@ -58,6 +58,8 @@ fun TelepixNavHost(
                             repository = container.localMediaRepository,
                             changeWatcher = container.mediaChangeWatcher,
                             backupStatusRepository = container.backupStatusRepository,
+                            organizationRepository = container.mediaOrganizationRepository,
+                            backupCoordinator = container.backupCoordinator,
                         )
                     }
                 },
@@ -204,6 +206,7 @@ fun TelepixNavHost(
                             cloudRepository = container.cloudRepository,
                             organizationRepository = container.mediaOrganizationRepository,
                             scope = ViewerRoute.scopeOf(bucketId, orgKind),
+                            metadataReader = container.mediaMetadataReader,
                         )
                     }
                 },

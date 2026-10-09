@@ -66,6 +66,10 @@ fun MediaGrid(
     onMediaSelected: (LocalMedia) -> Unit,
     modifier: Modifier = Modifier,
     gridState: LazyGridState = rememberLazyGridState(),
+    selectedIds: Set<Long> = emptySet(),
+    selectionActive: Boolean = false,
+    onToggleSelect: (LocalMedia) -> Unit = {},
+    onLongSelect: (LocalMedia) -> Unit = {},
 ) {
     val spacing = TelepixTokens.spacing
     val scope = rememberCoroutineScope()
@@ -118,7 +122,12 @@ fun MediaGrid(
                     is PhotosItem.Media -> MediaTile(
                         media = item.media,
                         backupState = backupStates[item.media.id] ?: MediaBackupVisualState.NONE,
-                        onClick = { onMediaSelected(item.media) },
+                        onClick = {
+                            if (selectionActive) onToggleSelect(item.media) else onMediaSelected(item.media)
+                        },
+                        onLongClick = { onLongSelect(item.media) },
+                        selected = item.media.id in selectedIds,
+                        selectionActive = selectionActive,
                     )
                     null -> Box(modifier = Modifier.aspectRatio(1f))
                 }

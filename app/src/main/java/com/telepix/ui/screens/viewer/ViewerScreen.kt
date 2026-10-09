@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.StarBorder
@@ -67,9 +68,12 @@ fun ViewerScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val flags by viewModel.flags.collectAsStateWithLifecycle()
     val restore by viewModel.restore.collectAsStateWithLifecycle()
+    val details by viewModel.details.collectAsStateWithLifecycle()
     var controlsVisible by remember { mutableStateOf(true) }
+    var showDetails by remember { mutableStateOf(false) }
     val backDesc = stringResource(R.string.viewer_back)
     val isCloudReady = state.source is MediaSource.Cloud && state.status == ViewerStatus.READY
+    val isLocalReady = state.source is MediaSource.Local && state.status == ViewerStatus.READY
 
     Surface(modifier = modifier.fillMaxSize(), color = Color.Black) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -95,6 +99,9 @@ fun ViewerScreen(
                     onToggleFavorite = viewModel::toggleFavorite,
                     onToggleArchive = { viewModel.toggleArchive(); onBack() },
                     onMoveToTrash = { viewModel.moveToTrash(); onBack() },
+                    onShowDetails = if (isLocalReady) {
+                        { viewModel.loadDetails(); showDetails = true }
+                    } else null,
                 )
             }
 
@@ -114,6 +121,13 @@ fun ViewerScreen(
                 AnimatedVisibility(visible = controlsVisible, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = TelepixTokens.spacing.md)) {
                     RestoreAction(onRestore = viewModel::restoreToLocal, restore = restore)
                 }
+            }
+
+            if (showDetails) {
+                MediaDetailsSheet(
+                    details = details,
+                    onDismiss = { showDetails = false; viewModel.clearDetails() },
+                )
             }
         }
     }
@@ -208,6 +222,7 @@ private fun ViewerTopBar(
     onToggleFavorite: () -> Unit,
     onToggleArchive: () -> Unit,
     onMoveToTrash: () -> Unit,
+    onShowDetails: (() -> Unit)? = null,
 ) {
     val spacing = TelepixTokens.spacing
     Row(
@@ -258,6 +273,15 @@ private fun ViewerTopBar(
                     contentDescription = stringResource(R.string.viewer_move_to_trash),
                     tint = Color.White,
                 )
+            }
+            onShowDetails?.let { showDetails ->
+                IconButton(onClick = showDetails) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = stringResource(R.string.viewer_details),
+                        tint = Color.White,
+                    )
+                }
             }
         }
     }

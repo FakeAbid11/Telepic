@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -34,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -65,67 +68,185 @@ fun PhotosScreen(
     val controller = rememberMediaPermissionState()
     val permissionState = permissionStateOverride ?: controller.state
     val backupStates by viewModel.backupStates.collectAsStateWithLifecycle()
+    val selectionActive by viewModel.selectionActive.collectAsStateWithLifecycle()
+    val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val selectionMessage by viewModel.selectionMessage.collectAsStateWithLifecycle()
 
     LaunchedEffect(permissionState) { viewModel.updatePermission(permissionState) }
     LaunchedEffect(permissionState.hasAccess) {
         if (permissionState.hasAccess) viewModel.refresh()
     }
+    // Back exits selection first, before leaving the Photos screen.
+    BackHandler(enabled = selectionActive) { viewModel.clearSelection() }
 
     val settingsDescription = stringResource(R.string.photos_settings)
     Surface(
         modifier = modifier.fillMaxSize(),
         color = TelepixTokens.colors.mediaBackdrop,
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = TelepixTokens.spacing.screenMargin,
-                        end = TelepixTokens.spacing.xs,
-                        top = TelepixTokens.spacing.lg,
-                        bottom = TelepixTokens.spacing.md,
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = stringResource(R.string.photos_title),
-                    style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                IconButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier.semantics { contentDescription = settingsDescription },
-                ) {
-                    Icon(Icons.Outlined.Settings, contentDescription = settingsDescription)
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (selectionActive) {
+                    SelectionTopBar(
+                        count = selectedIds.size,
+                        onCancel = viewModel::clearSelection,
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = TelepixTokens.spacing.screenMargin,
+                                end = TelepixTokens.spacing.xs,
+                                top = TelepixTokens.spacing.lg,
+                                bottom = TelepixTokens.spacing.md,
+                            ),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.photos_title),
+                            style = MaterialTheme.typography.displaySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.semantics { contentDescription = settingsDescription },
+                        ) {
+                            Icon(Icons.Outlined.Settings, contentDescription = settingsDescription)
+                        }
+                    }
+                }
+
+                when {
+                    permissionState.hasAccess -> MediaRegion(
+                        viewModel = viewModel,
+                        permissionState = permissionState,
+                        backupStates = backupStates,
+                        onMediaSelected = onMediaSelected,
+                    )
+                    permissionState == MediaPermissionState.PermanentlyDenied -> EmptyState(
+                        icon = Icons.Outlined.Lock,
+                        title = stringResource(R.string.photos_permission_blocked_title),
+                        description = stringResource(R.string.photos_permission_blocked_description),
+                        primaryAction = StateAction(
+                            label = stringResource(R.string.photos_open_settings),
+                            onClick = controller.openAppSettings,
+                        ),
+                    )
+                    else -> EmptyState(
+                        icon = Icons.Outlined.Lock,
+                        title = stringResource(R.string.photos_permission_title),
+                        description = stringResource(R.string.photos_permission_description),
+                        primaryAction = StateAction(
+                            label = stringResource(R.string.photos_allow_access),
+                            onClick = controller.requestPermission,
+                        ),
+                    )
                 }
             }
 
-            when {
-                permissionState.hasAccess -> MediaRegion(
-                    viewModel = viewModel,
-                    permissionState = permissionState,
-                    backupStates = backupStates,
-                    onMediaSelected = onMediaSelected,
+            // Contextual bulk-action bar for selection mode (§15). "Back up" routes through the existing
+            // engine (recognition + dedup + queue + schedule) — never a parallel uploader.
+            if (selectionActive) {
+                SelectionActionBar(
+                    count = selectedIds.size,
+                    canBackup = selectedIds.isNotEmpty(),
+                    onBackup = viewModel::backupSelected,
+                    onCancel = viewModel::clearSelection,
+                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
-                permissionState == MediaPermissionState.PermanentlyDenied -> EmptyState(
-                    icon = Icons.Outlined.Lock,
-                    title = stringResource(R.string.photos_permission_blocked_title),
-                    description = stringResource(R.string.photos_permission_blocked_description),
-                    primaryAction = StateAction(
-                        label = stringResource(R.string.photos_open_settings),
-                        onClick = controller.openAppSettings,
-                    ),
-                )
-                else -> EmptyState(
-                    icon = Icons.Outlined.Lock,
-                    title = stringResource(R.string.photos_permission_title),
-                    description = stringResource(R.string.photos_permission_description),
-                    primaryAction = StateAction(
-                        label = stringResource(R.string.photos_allow_access),
-                        onClick = controller.requestPermission,
-                    ),
+            }
+
+            // Transient feedback after a bulk enqueue; auto-cleared. Honest count of items handed to the queue.
+            selectionMessage?.let { count ->
+                LaunchedEffect(count) {
+                    kotlinx.coroutines.delay(2_500)
+                    viewModel.consumeSelectionMessage()
+                }
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(
+                            horizontal = TelepixTokens.spacing.screenMargin,
+                            vertical = TelepixTokens.spacing.lg,
+                        ),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.inverseSurface,
+                ) {
+                    Text(
+                        text = stringResource(R.string.photos_selection_queued, count),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.inverseOnSurface,
+                        modifier = Modifier.padding(horizontal = TelepixTokens.spacing.md, vertical = TelepixTokens.spacing.sm),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The selection-mode header: a close action and the live selected count in place of the title. */
+@Composable
+private fun SelectionTopBar(count: Int, onCancel: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = TelepixTokens.spacing.xs,
+                end = TelepixTokens.spacing.screenMargin,
+                top = TelepixTokens.spacing.lg,
+                bottom = TelepixTokens.spacing.md,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onCancel) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = stringResource(R.string.photos_selection_cancel),
+            )
+        }
+        Text(
+            text = stringResource(R.string.photos_selection_count, count),
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/** The bottom bulk-action bar shown while selecting: a Back up button (with count) and Cancel. */
+@Composable
+private fun SelectionActionBar(
+    count: Int,
+    canBackup: Boolean,
+    onBackup: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        tonalElevation = 3.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = TelepixTokens.spacing.md, vertical = TelepixTokens.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = stringResource(R.string.photos_selection_count, count),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.photos_selection_cancel))
+            }
+            TextButton(onClick = onBackup, enabled = canBackup) {
+                Icon(Icons.Outlined.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(
+                    text = stringResource(R.string.photos_selection_backup),
+                    modifier = Modifier.padding(start = TelepixTokens.spacing.xs),
                 )
             }
         }
@@ -145,6 +266,8 @@ private fun MediaRegion(
     val hasContent = paging.itemCount > 0
     val isInitialLoading = refresh is LoadState.Loading && !hasContent
     val refreshFailed = refresh is LoadState.Error
+    val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val selectionActive by viewModel.selectionActive.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
@@ -159,7 +282,7 @@ private fun MediaRegion(
                 ),
             )
             else -> PullToRefreshBox(
-                isRefreshing = refresh is LoadState.Loading && hasContent,
+                isRefreshing = refresh is LoadState.Loading && hasContent && !selectionActive,
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -167,6 +290,10 @@ private fun MediaRegion(
                     media = paging,
                     backupStates = backupStates,
                     onMediaSelected = onMediaSelected,
+                    selectedIds = selectedIds,
+                    selectionActive = selectionActive,
+                    onToggleSelect = viewModel::toggleSelection,
+                    onLongSelect = viewModel::beginSelection,
                 )
             }
         }
