@@ -94,7 +94,9 @@ class TelegramCloudRepository(
         try {
             val items = dataSource.loadNewestMedia(destination.chatId, PAGE_SIZE)
             val now = clock()
-            manifestDao.upsertAll(items.map { it.toEntity(now) })
+            // Preserve trusted local metadata (content hash, download state) across refresh; remote
+            // discovery cannot reconstruct it, so a null incoming hash must not clobber a stored one.
+            items.forEach { manifestDao.upsertPreservingTrusted(it.toEntity(now)) }
             _status.value = if (manifestDao.count() == 0) CloudStatus.Empty else CloudStatus.Ready
         } catch (network: CloudNetworkException) {
             _status.value = CloudStatus.Offline
@@ -172,8 +174,9 @@ class TelegramCloudRepository(
         mutex.withLock {
             val destination = currentDestination() ?: throw CloudDestinationInvalidException("No Telepix Backup destination")
             val result = dataSource.upload(destination.chatId, request, onProgress)
-            // Remote confirmation arrived: record it in the manifest under its stable identity.
-            manifestDao.upsertAll(listOf(fromUpload(request, result).toEntity(clock())))
+            // Remote confirmation arrived: record it in the manifest under its stable identity,
+            // preserving any existing trusted hash (upload rows carry a real hash; discovery null).
+            manifestDao.upsertPreservingTrusted(fromUpload(request, result).toEntity(clock()))
             result
         }
     }

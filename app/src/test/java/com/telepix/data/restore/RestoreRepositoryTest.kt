@@ -90,12 +90,25 @@ class RestoreRepositoryTest {
     }
 
     @Test
-    fun `a content-hash mismatch is rejected as verify failed`() = runBlocking {
+    fun `a differing original-file hash does not block a legitimate restore (lossy representation)`() = runBlocking {
         val bytes = byteArrayOf(9, 9, 9, 9)
         val file = fileWithBytes(bytes)
-        val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), FakePublisher(PublishResult.Inserted("x")))
-        val result = repository.restore(media(hash = sha(byteArrayOf(1, 2, 3, 4)))) // different expected hash
-        assertEquals(RestoreResult.Failed(RestoreFailure.VERIFY_FAILED), result)
+        val publisher = FakePublisher(PublishResult.Inserted("content://media/1"))
+        val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), publisher)
+        // The manifest carries the ORIGINAL file's hash, which differs from Telegram's stored photo
+        // bytes; restore must still succeed and report the restored bytes' hash for the record.
+        val result = repository.restore(media(hash = sha(byteArrayOf(1, 2, 3, 4))))
+        assertTrue(result is RestoreResult.Restored)
+        assertEquals(sha(bytes), (result as RestoreResult.Restored).restoredContentHash)
+    }
+
+    @Test
+    fun `a present non-empty download reports the restored bytes hash`() = runBlocking {
+        val bytes = byteArrayOf(5, 6, 7, 8)
+        val file = fileWithBytes(bytes)
+        val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), FakePublisher(PublishResult.Inserted("content://media/2")))
+        val result = repository.restore(media())
+        assertEquals(sha(bytes), (result as RestoreResult.Restored).restoredContentHash)
     }
 
     @Test

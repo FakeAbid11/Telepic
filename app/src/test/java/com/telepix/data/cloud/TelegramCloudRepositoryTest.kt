@@ -185,6 +185,18 @@ class TelegramCloudRepositoryTest {
     }
 
     @Test
+    fun `refresh preserves a trusted content hash the remote row does not carry`() = runBlocking {
+        val source = FakeDataSource(candidates = listOf(candidate()), media = listOf(mediaItem(1)))
+        val r = repo(source)
+        r.prepare()
+        // Simulate app-generated recognition metadata the remote scan cannot reconstruct.
+        db.cloudMediaManifestDao().setContentHash(100L, 1L, "trusted-hash", 2L)
+        r.refresh() // remote returns the same message with a null hash
+        val stored = db.cloudMediaManifestDao().observeAll().first().first { it.messageId == 1L }
+        assertEquals("trusted-hash", stored.contentHash)
+    }
+
+    @Test
     fun `successful original download marks the manifest item downloaded`() = runBlocking {
         val source = FakeDataSource(
             candidates = listOf(candidate()),
