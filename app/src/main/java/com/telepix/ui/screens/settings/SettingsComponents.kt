@@ -11,8 +11,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.disabled
-import androidx.compose.ui.semantics.semantics
 import com.telepix.ui.theme.TelepixTokens
 
 /** A titled group of settings rows. */
@@ -76,7 +74,7 @@ fun SettingsRow(
         ),
         modifier = modifier
             .fillMaxWidth()
-            .semantics { disabled = !enabled }
+            // clickable(enabled = false) already publishes the Disabled accessibility state.
             .clickable(enabled = clickable, onClick = { onClick?.invoke() }),
     )
 }
