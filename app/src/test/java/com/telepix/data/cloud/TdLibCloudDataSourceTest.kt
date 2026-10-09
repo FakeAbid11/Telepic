@@ -64,15 +64,6 @@ class TdLibCloudDataSourceTest {
         this.id = id; chatId = 100L; date = 1_700_000_000; this.content = content
     }
 
-    private fun photoContent(previewId: Int, originalId: Int) = TdApi.MessagePhoto().apply {
-        photo = TdApi.Photo().apply {
-            sizes = arrayOf(
-                TdApi.PhotoSize().apply { photo = TdApi.File().apply { id = previewId }; width = 90; height = 90 },
-                TdApi.PhotoSize().apply { photo = TdApi.File().apply { id = originalId }; width = 900; height = 900 },
-            )
-        }
-    }
-
     @Test
     fun `unauthenticated search throws an honest network error, never an empty success`() = runBlocking {
         val unauthorized = MutableStateFlow<TelegramAuthState>(TelegramAuthState.NotConnected)

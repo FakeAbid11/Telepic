@@ -37,7 +37,9 @@ import com.telepix.data.media.MediaStoreAlbumRepository
 import com.telepix.data.media.MediaStoreLocalLookup
 import com.telepix.data.media.MediaStoreMediaLoader
 import com.telepix.data.organization.DefaultMediaOrganizationRepository
+import com.telepix.data.organization.LocalMediaDeleter
 import com.telepix.data.organization.MediaOrganizationRepository
+import com.telepix.data.organization.MediaStoreLocalDeleter
 import com.telepix.onboarding.OnboardingRepository
 import com.telepix.onboarding.OnboardingRepositoryImpl
 import com.telepix.settings.SettingsRepository
@@ -71,6 +73,7 @@ interface AppContainer {
     val localMediaLookup: LocalMediaLookup
     val albumRepository: AlbumRepository
     val mediaOrganizationRepository: MediaOrganizationRepository
+    val mediaDeleter: LocalMediaDeleter
     val mediaChangeWatcher: MediaChangeWatcher
     val backupRepository: BackupRepository
     val backupStatusRepository: BackupStatusRepository
@@ -152,6 +155,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val mediaOrganizationRepository: MediaOrganizationRepository by lazy {
         DefaultMediaOrganizationRepository(mediaOrganizationDao)
     }
+
+    override val mediaDeleter: LocalMediaDeleter by lazy { MediaStoreLocalDeleter(appContext) }
 
     override val albumRepository: AlbumRepository by lazy {
         MediaStoreAlbumRepository(appContext) { mediaOrganizationRepository.hiddenIds() }

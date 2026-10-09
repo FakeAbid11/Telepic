@@ -51,6 +51,7 @@ class AlbumsUiTest {
                 AlbumsScreen(
                     viewModel = AlbumsViewModel(FakeAlbums(listOf(album(1, "Camera"), album(2, "Screenshots")))),
                     onOpenAlbum = { opened = it },
+                    onOpenOrganization = {},
                     permissionStateOverride = MediaPermissionState.Granted,
                 )
             }
@@ -75,6 +76,7 @@ class AlbumsUiTest {
                 AlbumsScreen(
                     viewModel = AlbumsViewModel(FakeAlbums(emptyList())),
                     onOpenAlbum = {},
+                    onOpenOrganization = {},
                     permissionStateOverride = MediaPermissionState.Denied,
                 )
             }

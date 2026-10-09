@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.telepix.R
 import com.telepix.domain.media.Album
+import com.telepix.navigation.OrganizationKind
 import com.telepix.permissions.MediaPermissionState
 import com.telepix.permissions.rememberMediaPermissionState
 import com.telepix.ui.components.EmptyState
@@ -56,6 +59,7 @@ import com.telepix.ui.theme.TelepixTokens
 fun AlbumsScreen(
     viewModel: AlbumsViewModel,
     onOpenAlbum: (Album) -> Unit,
+    onOpenOrganization: (OrganizationKind) -> Unit,
     modifier: Modifier = Modifier,
     permissionStateOverride: MediaPermissionState? = null,
 ) {
@@ -69,6 +73,9 @@ fun AlbumsScreen(
     Surface(modifier = modifier.fillMaxSize(), color = TelepixTokens.colors.mediaBackdrop) {
         Column(modifier = Modifier.fillMaxSize()) {
             ScreenHeader(title = stringResource(R.string.albums_title))
+            if (permissionState.hasAccess) {
+                LibraryShortcuts(onOpenOrganization)
+            }
             when {
                 !permissionState.hasAccess -> EmptyState(
                     icon = Icons.Outlined.Lock,
@@ -153,6 +160,29 @@ private fun AlbumCard(album: Album, onClick: () -> Unit) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * Contextual entry points to Favorites / Archive / Trash. These are deliberately reached from an
+ * existing screen rather than adding bottom-navigation destinations (per the PRD).
+ */
+@Composable
+private fun LibraryShortcuts(onOpenOrganization: (OrganizationKind) -> Unit) {
+    val spacing = TelepixTokens.spacing
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.md, vertical = spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        TextButton(onClick = { onOpenOrganization(OrganizationKind.FAVORITES) }) {
+            Text(stringResource(R.string.library_favorites))
+        }
+        TextButton(onClick = { onOpenOrganization(OrganizationKind.ARCHIVE) }) {
+            Text(stringResource(R.string.library_archive))
+        }
+        TextButton(onClick = { onOpenOrganization(OrganizationKind.TRASH) }) {
+            Text(stringResource(R.string.library_trash))
         }
     }
 }

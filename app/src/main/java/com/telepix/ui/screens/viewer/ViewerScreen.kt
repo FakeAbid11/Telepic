@@ -16,8 +16,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +64,7 @@ fun ViewerScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val flags by viewModel.flags.collectAsStateWithLifecycle()
     var controlsVisible by remember { mutableStateOf(true) }
     val backDesc = stringResource(R.string.viewer_back)
 
@@ -78,7 +83,16 @@ fun ViewerScreen(
             }
 
             AnimatedVisibility(visible = controlsVisible, modifier = Modifier.align(Alignment.TopCenter)) {
-                ViewerTopBar(state = state, onBack = onBack, backDesc = backDesc)
+                ViewerTopBar(
+                    state = state,
+                    flags = flags,
+                    onBack = onBack,
+                    backDesc = backDesc,
+                    showActions = state.source is MediaSource.Local && state.status == ViewerStatus.READY,
+                    onToggleFavorite = viewModel::toggleFavorite,
+                    onToggleArchive = { viewModel.toggleArchive(); onBack() },
+                    onMoveToTrash = { viewModel.moveToTrash(); onBack() },
+                )
             }
 
             if (state.status == ViewerStatus.READY && (state.previous != null || state.next != null)) {
@@ -175,7 +189,16 @@ internal fun CloudUnavailable(state: ViewerUiState, onDownload: () -> Unit) {
 }
 
 @Composable
-private fun ViewerTopBar(state: ViewerUiState, onBack: () -> Unit, backDesc: String) {
+private fun ViewerTopBar(
+    state: ViewerUiState,
+    flags: ViewerFlags,
+    onBack: () -> Unit,
+    backDesc: String,
+    showActions: Boolean,
+    onToggleFavorite: () -> Unit,
+    onToggleArchive: () -> Unit,
+    onMoveToTrash: () -> Unit,
+) {
     val spacing = TelepixTokens.spacing
     Row(
         modifier = Modifier
@@ -187,7 +210,7 @@ private fun ViewerTopBar(state: ViewerUiState, onBack: () -> Unit, backDesc: Str
         IconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backDesc, tint = Color.White)
         }
-        Column(modifier = Modifier.padding(start = spacing.xs)) {
+        Column(modifier = Modifier.padding(start = spacing.xs).weight(1f)) {
             state.dateMillis?.let {
                 Text(text = MediaDay.label(it), style = MaterialTheme.typography.titleSmall, color = Color.White)
             }
@@ -199,6 +222,33 @@ private fun ViewerTopBar(state: ViewerUiState, onBack: () -> Unit, backDesc: Str
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White.copy(alpha = 0.7f),
             )
+        }
+        if (showActions) {
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (flags.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    contentDescription = stringResource(
+                        if (flags.isFavorite) R.string.viewer_unfavorite else R.string.viewer_favorite,
+                    ),
+                    tint = if (flags.isFavorite) Color(0xFFFFC53D) else Color.White,
+                )
+            }
+            IconButton(onClick = onToggleArchive) {
+                Icon(
+                    imageVector = Icons.Outlined.Archive,
+                    contentDescription = stringResource(
+                        if (flags.isArchived) R.string.viewer_unarchive else R.string.viewer_archive,
+                    ),
+                    tint = Color.White,
+                )
+            }
+            IconButton(onClick = onMoveToTrash) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = stringResource(R.string.viewer_move_to_trash),
+                    tint = Color.White,
+                )
+            }
         }
     }
 }

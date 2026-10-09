@@ -83,6 +83,31 @@ fun TelepixNavHost(
             AlbumsScreen(
                 viewModel = albumsViewModel,
                 onOpenAlbum = { album -> navController.navigate(AlbumRoute.create(album.bucketId, album.title)) },
+                onOpenOrganization = { kind -> navController.navigate(OrganizationRoute.create(kind)) },
+            )
+        }
+        composable(
+            route = OrganizationRoute.PATTERN,
+            arguments = listOf(navArgument(OrganizationRoute.ARG_KIND) { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val kind = OrganizationRoute.kindOf(backStackEntry.arguments?.getString(OrganizationRoute.ARG_KIND))
+                ?: return@composable
+            val organizationViewModel: com.telepix.ui.screens.organization.OrganizationViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        com.telepix.ui.screens.organization.OrganizationViewModel(
+                            kind = kind,
+                            organizationRepository = container.mediaOrganizationRepository,
+                            localLookup = container.localMediaLookup,
+                            deleter = container.mediaDeleter,
+                        )
+                    }
+                },
+            )
+            com.telepix.ui.screens.organization.OrganizationScreen(
+                viewModel = organizationViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenMedia = { mediaId -> navController.navigate(ViewerRoute.local(mediaId)) },
             )
         }
         composable(
@@ -153,6 +178,7 @@ fun TelepixNavHost(
                             initialSource = MediaSource.Local(mediaId),
                             localLookup = container.localMediaLookup,
                             cloudRepository = container.cloudRepository,
+                            organizationRepository = container.mediaOrganizationRepository,
                         )
                     }
                 },

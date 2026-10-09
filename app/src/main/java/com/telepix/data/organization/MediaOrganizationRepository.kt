@@ -22,6 +22,7 @@ interface MediaOrganizationRepository {
     suspend fun hiddenIds(): Set<Long>
 
     suspend fun isFavorite(id: Long): Boolean
+    suspend fun isArchived(id: Long): Boolean
     suspend fun isTrashed(id: Long): Boolean
 
     suspend fun setFavorite(id: Long, favorite: Boolean)
@@ -48,6 +49,8 @@ class DefaultMediaOrganizationRepository(
     override suspend fun hiddenIds(): Set<Long> = dao.hiddenIds().toIdSet()
 
     override suspend fun isFavorite(id: Long): Boolean = dao.get(id.key())?.isFavorite == true
+
+    override suspend fun isArchived(id: Long): Boolean = dao.get(id.key())?.isArchived == true
 
     override suspend fun isTrashed(id: Long): Boolean = dao.get(id.key())?.isTrashed == true
 

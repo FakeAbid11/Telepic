@@ -21,6 +21,13 @@ interface LocalMediaLookup {
 
     /** The id of the adjacent item in [direction], or null at the ends of the collection. */
     suspend fun neighborId(id: Long, direction: NeighborDirection): Long?
+
+    /**
+     * Resolve many items in a single bounded `_ID IN (...)` query (used by Favorites / Archive /
+     * Trash, whose id-sets come from Room). Missing/inaccessible ids are simply absent from the
+     * result, so an item deleted outside the app never crashes a screen. Order is newest-first.
+     */
+    suspend fun byIdList(ids: Collection<Long>): List<LocalMedia>
 }
 
 class MediaStoreLocalLookup(context: Context) : LocalMediaLookup {
@@ -65,6 +72,33 @@ class MediaStoreLocalLookup(context: Context) : LocalMediaLookup {
         )?.id
     }
 
+    override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext emptyList()
+        val bounded = ids.take(MAX_LOOKUP_IDS)
+        val placeholders = bounded.joinToString(",") { "?" }
+        val selection = "$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} IN ($placeholders)"
+        try {
+            contentResolver.query(
+                MediaStore.Files.getContentUri("external"),
+                projection,
+                selection,
+                bounded.map { it.toString() }.toTypedArray(),
+                "${MediaStore.MediaColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns._ID} DESC",
+            )?.use { cursor ->
+                val out = ArrayList<LocalMedia>(bounded.size)
+                while (cursor.moveToNext()) {
+                    val row = CursorMediaRow(cursor)
+                    val id = row.long(MediaStore.MediaColumns._ID) ?: continue
+                    val mime = row.string(MediaStore.MediaColumns.MIME_TYPE)
+                    out += MediaStoreMediaMapper.map(row, MediaStoreMediaMapper.contentUriFor(id, mime))
+                }
+                out
+            } ?: emptyList()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
     private fun queryOne(selection: String, args: Array<String>, sortOrder: String?): LocalMedia? =
         try {
             contentResolver.query(
@@ -83,10 +117,15 @@ class MediaStoreLocalLookup(context: Context) : LocalMediaLookup {
         } catch (_: Throwable) {
             null
         }
+
+    private companion object {
+        const val MAX_LOOKUP_IDS = 500
+    }
 }
 
 /** A no-op lookup used when the caller cannot supply a real MediaStore source (keeps Viewer safe). */
 object EmptyLocalMediaLookup : LocalMediaLookup {
     override suspend fun byId(id: Long): LocalMedia? = null
     override suspend fun neighborId(id: Long, direction: NeighborDirection): Long? = null
+    override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = emptyList()
 }

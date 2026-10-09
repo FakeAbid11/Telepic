@@ -252,4 +252,54 @@
     <string name="viewer_download">Download</string>
     <string name="viewer_download_required">Download the original to view it in full quality.</string>
     <string name="viewer_download_unavailable">The original can\'t be downloaded on this build yet.</string>
+
+    <!-- ============================ Organization: Favorites / Archive / Trash (Phase 10) ============================ -->
+    <string name="viewer_favorite">Add to favorites</string>
+    <string name="viewer_unfavorite">Remove from favorites</string>
+    <string name="viewer_archive">Archive</string>
+    <string name="viewer_unarchive">Unarchive</string>
+    <string name="viewer_move_to_trash">Move to trash</string>
+
+    <string name="library_title">Library</string>
+    <string name="library_favorites">Favorites</string>
+    <string name="library_archive">Archive</string>
+    <string name="library_trash">Trash</string>
+
+    <string name="favorites_title">Favorites</string>
+    <string name="favorites_empty_title">No favorites yet</string>
+    <string name="favorites_empty_description">Tap the star in the viewer to keep an item here. Favoriting never changes its backup status.</string>
+
+    <string name="archive_title">Archive</string>
+    <string name="archive_empty_title">Nothing archived</string>
+    <string name="archive_empty_description">Archived items are hidden from your main timeline but stay on this device and can be restored.</string>
+
+    <string name="trash_title">Trash</string>
+    <string name="trash_empty_title">Trash is empty</string>
+    <string name="trash_empty_description">Items moved to trash are hidden from your library. They are only deleted from this device when you choose Delete forever and confirm.</string>
+
+    <string name="organization_unfavorite">Remove from favorites</string>
+    <string name="organization_unarchive">Restore to timeline</string>
+    <string name="organization_restore">Restore</string>
+    <string name="organization_delete_forever">Delete forever</string>
+    <string name="organization_cancel">Cancel</string>
+    <string name="organization_item_count">%1$d items</string>
+    <string name="organization_deleted_message">This item is still on your device. Telepix does not have permission to delete it from media storage.</string>
+
+    <string name="trash_delete_title">Delete permanently?</string>
+    <string name="trash_delete_body">This deletes the file from your device through the system. It cannot be undone. Your Telegram backup copy is not affected.</string>
+    <string name="trash_delete_confirm">Delete from device</string>
+    <string name="trash_delete_consent_needed">Android asked you to confirm this deletion.</string>
+    <string name="trash_delete_failed">Android didn\'t allow the deletion. The item stays in trash.</string>
+
+    <!-- ============================ Map (Phase 10) ============================ -->
+    <string name="map_title">Map</string>
+    <string name="map_empty_title">No locations yet</string>
+    <string name="map_empty_description">Photos and videos that contain GPS coordinates appear on the map. Telepix never invents a location for media without coordinates.</string>
+    <string name="map_permission_title">See your photo locations</string>
+    <string name="map_permission_description">Telepix needs photo &amp; video access to read the location data already stored in your media.</string>
+    <string name="map_marker_description">Photo taken at this location</string>
+    <string name="map_cluster_description">%1$d photos at this area</string>
+    <string name="map_attribution">© OpenStreetMap contributors</string>
+    <string name="map_offline">Map tiles are unavailable offline. Pinned media still shows; tiles load when you\'re connected.</string>
+    <string name="map_selected_open">Open</string>
 </resources>

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.telepix.data.cloud.CloudRepository
 import com.telepix.data.media.LocalMediaLookup
 import com.telepix.data.media.NeighborDirection
+import com.telepix.data.organization.MediaOrganizationRepository
 import com.telepix.domain.cloud.CloudMedia
 import com.telepix.domain.cloud.CloudMediaType
 import com.telepix.domain.media.LocalMedia
@@ -39,6 +40,13 @@ sealed interface ViewerItem {
     ) : ViewerItem
 }
 
+/** Organization flags for the current local item (Favorites / Archive / Trash). Independent of backup. */
+data class ViewerFlags(
+    val isFavorite: Boolean = false,
+    val isArchived: Boolean = false,
+    val isTrashed: Boolean = false,
+)
+
 data class ViewerUiState(
     val source: MediaSource,
     val status: ViewerStatus = ViewerStatus.LOADING,
@@ -61,10 +69,15 @@ class ViewerViewModel(
     initialSource: MediaSource,
     private val localLookup: LocalMediaLookup,
     private val cloudRepository: CloudRepository,
+    private val organizationRepository: MediaOrganizationRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ViewerUiState(initialSource))
     val uiState: StateFlow<ViewerUiState> = _uiState.asStateFlow()
+
+    /** Organization flags for the current local item; all-false for cloud items or when unwired. */
+    private val _flags = MutableStateFlow(ViewerFlags())
+    val flags: StateFlow<ViewerFlags> = _flags.asStateFlow()
 
     init {
         load(initialSource)
@@ -82,6 +95,47 @@ class ViewerViewModel(
     fun open(newSource: MediaSource) {
         _uiState.value = ViewerUiState(newSource, ViewerStatus.LOADING)
         load(newSource)
+    }
+
+    // --- Phase 10 organization actions (local items only) ------------------------------------
+
+    fun toggleFavorite() = mutateFlags { repo, id, current ->
+        val next = !current.isFavorite
+        repo.setFavorite(id, next)
+        current.copy(isFavorite = next)
+    }
+
+    fun toggleArchive() = mutateFlags { repo, id, current ->
+        val next = !current.isArchived
+        repo.setArchived(id, next)
+        current.copy(isArchived = next)
+    }
+
+    /** Move the current local item to Trash (app-level; the file is preserved until a delete). */
+    fun moveToTrash() = mutateFlags { repo, id, current ->
+        repo.moveToTrash(id)
+        current.copy(isTrashed = true)
+    }
+
+    private fun mutateFlags(action: suspend (MediaOrganizationRepository, Long, ViewerFlags) -> ViewerFlags) {
+        val repo = organizationRepository ?: return
+        val id = (_uiState.value.item as? ViewerItem.Local)?.media?.id ?: return
+        viewModelScope.launch {
+            _flags.value = action(repo, id, _flags.value)
+        }
+    }
+
+    private suspend fun loadFlags(id: Long) {
+        val repo = organizationRepository
+        _flags.value = if (repo == null) {
+            ViewerFlags()
+        } else {
+            ViewerFlags(
+                isFavorite = repo.isFavorite(id),
+                isArchived = repo.isArchived(id),
+                isTrashed = repo.isTrashed(id),
+            )
+        }
     }
 
     /** Explicitly fetch a cloud original. Never auto-invoked by merely opening the Viewer. */
@@ -109,7 +163,12 @@ class ViewerViewModel(
                 is MediaSource.Local -> resolveLocal(target)
                 is MediaSource.Cloud -> resolveCloud(target)
             }
-            // Preserve a download already completed for this source across reloads.
+            // Cloud items have no organization flags; reset so the flag bar never leaks across items.
+            if (resolved.item is ViewerItem.Local) {
+                loadFlags((resolved.item as ViewerItem.Local).media.id)
+            } else {
+                _flags.value = ViewerFlags()
+            }
             _uiState.value = resolved
         }
     }
