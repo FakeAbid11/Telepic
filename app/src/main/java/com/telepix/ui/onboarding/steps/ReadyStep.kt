@@ -77,11 +77,13 @@ fun ReadyStep(
         }
         SummaryRow(R.string.onboarding_ready_telegram, telegramValueRes, telegramAuthorized)
 
-        val backupConfigured = backupPreference == BackupPreference.BACKUP_ALL ||
-            backupPreference == BackupPreference.SELECT_FOLDER
+        // Only BACKUP_ALL corresponds to a real, wired backup. SELECT_FOLDER is not implemented, so it
+        // must not read as a configured/successful state (even if persisted by an older build). The
+        // value states the *intent* ("will back up"), never a completed backup the engine hasn't confirmed.
+        val backupConfigured = backupPreference == BackupPreference.BACKUP_ALL
         val backupValueRes = when (backupPreference) {
             BackupPreference.BACKUP_ALL -> R.string.onboarding_ready_value_backup_all
-            BackupPreference.SELECT_FOLDER -> R.string.onboarding_ready_value_backup_folder
+            BackupPreference.SELECT_FOLDER -> R.string.onboarding_backup_folder_unavailable_short
             else -> R.string.onboarding_ready_value_backup_none
         }
         SummaryRow(R.string.onboarding_ready_backup, backupValueRes, backupConfigured)
