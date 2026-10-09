@@ -68,8 +68,8 @@ fun PhotosScreen(
     val controller = rememberMediaPermissionState()
     val permissionState = permissionStateOverride ?: controller.state
     val backupStates by viewModel.backupStates.collectAsStateWithLifecycle()
-    val selectionActive by viewModel.selectionActive.collectAsStateWithLifecycle()
-    val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
+    val selectionActive = selectedItems.isNotEmpty()
     val selectionMessage by viewModel.selectionMessage.collectAsStateWithLifecycle()
 
     LaunchedEffect(permissionState) { viewModel.updatePermission(permissionState) }
@@ -88,7 +88,7 @@ fun PhotosScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 if (selectionActive) {
                     SelectionTopBar(
-                        count = selectedIds.size,
+                        count = selectedItems.size,
                         onCancel = viewModel::clearSelection,
                     )
                 } else {
@@ -150,8 +150,8 @@ fun PhotosScreen(
             // engine (recognition + dedup + queue + schedule) — never a parallel uploader.
             if (selectionActive) {
                 SelectionActionBar(
-                    count = selectedIds.size,
-                    canBackup = selectedIds.isNotEmpty(),
+                    count = selectedItems.size,
+                    canBackup = selectedItems.isNotEmpty(),
                     onBackup = viewModel::backupSelected,
                     onCancel = viewModel::clearSelection,
                     modifier = Modifier.align(Alignment.BottomCenter),
@@ -267,8 +267,9 @@ private fun MediaRegion(
     val hasContent = paging.itemCount > 0
     val isInitialLoading = refresh is LoadState.Loading && !hasContent
     val refreshFailed = refresh is LoadState.Error
-    val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
-    val selectionActive by viewModel.selectionActive.collectAsStateWithLifecycle()
+    val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
+    val selectedIds = selectedItems.keys
+    val selectionActive = selectedItems.isNotEmpty()
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {

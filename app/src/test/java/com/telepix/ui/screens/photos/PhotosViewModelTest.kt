@@ -168,10 +168,9 @@ class PhotosViewModelTest {
     @Test
     fun `long-press begins selection and selects that item`() = runTest {
         val vm = PhotosViewModel(FakeRepository(), FakeWatcher(), backupCoordinator = RecordingCoordinator())
-        assertFalse(vm.selectionActive.value)
+        assertTrue(vm.selectedItems.value.isEmpty())
         vm.beginSelection(photo(1))
-        assertTrue(vm.selectionActive.value)
-        assertEquals(setOf(1L), vm.selectedIds.value)
+        assertEquals(setOf(1L), vm.selectedItems.value.keys)
     }
 
     @Test
@@ -179,13 +178,12 @@ class PhotosViewModelTest {
         val vm = PhotosViewModel(FakeRepository(), FakeWatcher(), backupCoordinator = RecordingCoordinator())
         vm.beginSelection(photo(1))
         vm.toggleSelection(photo(2))
-        assertEquals(setOf(1L, 2L), vm.selectedIds.value)
+        assertEquals(setOf(1L, 2L), vm.selectedItems.value.keys)
         // Re-tapping an already-selected id removes only it.
         vm.toggleSelection(photo(1))
-        assertEquals(setOf(2L), vm.selectedIds.value)
-        assertTrue(vm.selectionActive.value)
+        assertEquals(setOf(2L), vm.selectedItems.value.keys)
         vm.toggleSelection(photo(2))
-        assertFalse(vm.selectionActive.value)
+        assertTrue(vm.selectedItems.value.isEmpty())
     }
 
     @Test
@@ -200,7 +198,7 @@ class PhotosViewModelTest {
         assertEquals(1, coordinator.bulk.size)
         assertEquals(setOf(1L, 2L), coordinator.bulk.first().map { it.id }.toSet())
         // Selection is cleared and a queued-count is surfaced for feedback.
-        assertFalse(vm.selectionActive.value)
+        assertTrue(vm.selectedItems.value.isEmpty())
         assertEquals(2, vm.selectionMessage.value?.queued)
     }
 
@@ -211,7 +209,7 @@ class PhotosViewModelTest {
         vm.backupSelected()
         runCurrent()
         // Still selected (nothing enqueued), no crash, no message.
-        assertTrue(vm.selectionActive.value)
+        assertEquals(setOf(1L), vm.selectedItems.value.keys)
         assertEquals(null, vm.selectionMessage.value)
     }
 }

@@ -72,10 +72,11 @@ class PhotosViewModel(
     //
     // Selection is keyed by the stable MediaStore id (never grid position), so it survives paging,
     // scrolling and recomposition; the LocalMedia captured at selection time is what gets enqueued,
-    // so an item scrolled out of the loaded window stays selected. Ordering is insertion order.
+    // so an item scrolled out of the loaded window stays selected. Ordering is insertion order. It is
+    // a plain StateFlow (updated synchronously) rather than a derived stateIn, so the selected set is
+    // always consistent with the UI on the same frame it changes.
     private val _selected = MutableStateFlow<Map<Long, LocalMedia>>(emptyMap())
-    val selectedIds: StateFlow<Set<Long>> = _selected.map { it.keys }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
-    val selectionActive: StateFlow<Boolean> = _selected.map { it.isNotEmpty() }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val selectedItems: StateFlow<Map<Long, LocalMedia>> = _selected.asStateFlow()
 
     /** Transient bulk-backup feedback for a snackbar; null when nothing to report. */
     private val _selectionMessage = MutableStateFlow<BulkBackupSummary?>(null)
