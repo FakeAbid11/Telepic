@@ -2,6 +2,8 @@ package com.telepix.ui.screens.backup
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -104,16 +106,20 @@ private fun statusLineRes(state: BackupUiState): Int = when {
     else -> R.string.backup_center_status_ready
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StatsRow(stats: BackupQueueStats, modifier: Modifier = Modifier) {
-    Row(
+    // FlowRow so the four stats reflow (4-across on wide, 2×2 on narrow / large font) instead of
+    // cramming into one fixed row with clipped labels.
+    FlowRow(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(TelepixTokens.spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(TelepixTokens.spacing.sm),
     ) {
-        StatCard(R.string.backup_stat_queued, stats.queued, Modifier.weight(1f))
-        StatCard(R.string.backup_stat_uploading, stats.uploading, Modifier.weight(1f))
-        StatCard(R.string.backup_stat_completed, stats.completed, Modifier.weight(1f))
-        StatCard(R.string.backup_stat_failed, stats.failed, Modifier.weight(1f))
+        StatCard(R.string.backup_stat_queued, stats.queued, Modifier.fillMaxWidth(0.47f))
+        StatCard(R.string.backup_stat_uploading, stats.uploading, Modifier.fillMaxWidth(0.47f))
+        StatCard(R.string.backup_stat_completed, stats.completed, Modifier.fillMaxWidth(0.47f))
+        StatCard(R.string.backup_stat_failed, stats.failed, Modifier.fillMaxWidth(0.47f))
     }
 }
 

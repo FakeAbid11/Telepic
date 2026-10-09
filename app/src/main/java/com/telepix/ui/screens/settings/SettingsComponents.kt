@@ -11,6 +11,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import com.telepix.ui.theme.TelepixTokens
 
 /** A titled group of settings rows. */
@@ -38,8 +40,10 @@ fun SettingsSection(
 }
 
 /**
- * A single settings row. Disabled rows are shown dimmed and are not clickable, used for
- * sections whose functionality arrives in later phases (no faked behavior).
+ * A single settings row. Disabled rows are dimmed, non-clickable, and announce themselves as
+ * disabled to accessibility services — used for features that arrive in later phases so a row
+ * never looks actionable but does nothing. The caller's [summary] should state the honest status
+ * (e.g. "coming soon"), not fake an outcome.
  */
 @Composable
 fun SettingsRow(
@@ -51,15 +55,28 @@ fun SettingsRow(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val clickable = enabled && onClick != null
+    val contentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    val supportingColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
     ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = summary?.let { { Text(it) } },
+        headlineContent = { Text(title, color = contentColor) },
+        supportingContent = summary?.let { { Text(it, color = supportingColor) } },
         trailingContent = trailing,
         colors = ListItemDefaults.colors(
             containerColor = MaterialTheme.colorScheme.surface,
+            headlineColor = contentColor,
+            supportingColor = supportingColor,
         ),
         modifier = modifier
             .fillMaxWidth()
+            .semantics { disabled = !enabled }
             .clickable(enabled = clickable, onClick = { onClick?.invoke() }),
     )
 }

@@ -59,3 +59,15 @@ data class LocalDownloadedMedia(
     val chatId: Long,
     val messageId: Long,
 )
+
+/**
+ * The per-item preview lifecycle for the Cloud grid. Kept explicit so the UI can distinguish a
+ * preview still being fetched ([Loading]) from one that genuinely cannot be shown ([Failed]).
+ * [Failed.retryable] is false when the item has no preview file at all — retrying would do nothing,
+ * so the tile shows an "unavailable" state without a retry affordance rather than a fake spinner.
+ */
+sealed class CloudPreviewState {
+    data object Loading : CloudPreviewState()
+    data class Loaded(val localPath: String) : CloudPreviewState()
+    data class Failed(val retryable: Boolean) : CloudPreviewState()
+}

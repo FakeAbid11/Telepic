@@ -24,6 +24,8 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +73,7 @@ fun ViewerScreen(
     val details by viewModel.details.collectAsStateWithLifecycle()
     var controlsVisible by remember { mutableStateOf(true) }
     var showDetails by remember { mutableStateOf(false) }
+    var showTrashConfirm by remember { mutableStateOf(false) }
     val backDesc = stringResource(R.string.viewer_back)
     val isCloudReady = state.source is MediaSource.Cloud && state.status == ViewerStatus.READY
     val isLocalReady = state.source is MediaSource.Local && state.status == ViewerStatus.READY
@@ -98,7 +101,7 @@ fun ViewerScreen(
                     showActions = state.source is MediaSource.Local && state.status == ViewerStatus.READY,
                     onToggleFavorite = viewModel::toggleFavorite,
                     onToggleArchive = { viewModel.toggleArchive(); onBack() },
-                    onMoveToTrash = { viewModel.moveToTrash(); onBack() },
+                    onMoveToTrash = { showTrashConfirm = true },
                     onShowDetails = if (isLocalReady) {
                         { viewModel.loadDetails(); showDetails = true }
                     } else null,
@@ -127,6 +130,26 @@ fun ViewerScreen(
                 MediaDetailsSheet(
                     details = details,
                     onDismiss = { showDetails = false; viewModel.clearDetails() },
+                )
+            }
+
+            if (showTrashConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showTrashConfirm = false },
+                    title = { Text(stringResource(R.string.viewer_trash_title)) },
+                    text = { Text(stringResource(R.string.viewer_trash_body)) },
+                    confirmButton = {
+                        Button(onClick = {
+                            showTrashConfirm = false
+                            viewModel.moveToTrash()
+                            onBack()
+                        }) { Text(stringResource(R.string.viewer_trash_confirm)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showTrashConfirm = false }) {
+                            Text(stringResource(R.string.organization_cancel))
+                        }
+                    },
                 )
             }
         }

@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepix.data.cloud.CloudRepository
 import com.telepix.domain.cloud.CloudMedia
+import com.telepix.domain.cloud.CloudPreviewState
 import com.telepix.domain.cloud.CloudStatus
 import com.telepix.domain.cloud.CloudUiState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -36,21 +38,51 @@ class CloudViewModel(
         viewModelScope.launch { repository.prepare() }
     }
 
-    // Locally available preview file paths, keyed by messageId. Populated lazily on scroll.
-    private val _previews = MutableStateFlow<Map<Long, String>>(emptyMap())
-    val previews: StateFlow<Map<Long, String>> = _previews.asStateFlow()
+    // Per-item preview lifecycle, keyed by messageId. Populated lazily on scroll; failures are
+    // tracked so the tile can offer a retry instead of a permanent placeholder.
+    private val _previews = MutableStateFlow<Map<Long, CloudPreviewState>>(emptyMap())
+    val previews: StateFlow<Map<Long, CloudPreviewState>> = _previews.asStateFlow()
 
+    /** Re-pulls the destination list and clears cached preview states so failed items retry. */
     fun refresh() {
+        _previews.value = emptyMap()
         viewModelScope.launch { repository.refresh() }
     }
 
-    /** Request a lightweight preview for [media] (never the original). Idempotent per item. */
+    /**
+     * Request a lightweight preview for [media] (never the original). Idempotent per item: an
+     * in-flight, loaded, or already-failed request is not re-issued here — a retryable failure is
+     * recovered via [retryPreview] so we never loop on a broken fetch.
+     */
     fun loadPreview(media: CloudMedia) {
-        if (_previews.value.containsKey(media.messageId) || media.previewFileId == null) return
+        if (_previews.value.containsKey(media.messageId)) return
+        if (media.previewFileId == null) {
+            _previews.update { it + (media.messageId to CloudPreviewState.Failed(retryable = false)) }
+            return
+        }
+        fetchPreview(media)
+    }
+
+    /** Re-attempts a preview whose prior fetch failed but which has a preview file to fetch. */
+    fun retryPreview(media: CloudMedia) {
+        if (media.previewFileId == null) return
+        _previews.update { it - media.messageId }
+        fetchPreview(media)
+    }
+
+    private fun fetchPreview(media: CloudMedia) {
+        _previews.update { it + (media.messageId to CloudPreviewState.Loading) }
         viewModelScope.launch {
-            repository.getPreview(media)?.let { preview ->
-                _previews.update { it + (media.messageId to preview.localPath) }
+            val state = try {
+                val preview = repository.getPreview(media)
+                if (preview != null) CloudPreviewState.Loaded(preview.localPath) else CloudPreviewState.Failed(retryable = true)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                // Surfaced as a visible Failed state (with retry), never swallowed silently.
+                CloudPreviewState.Failed(retryable = true)
             }
+            _previews.update { it + (media.messageId to state) }
         }
     }
 

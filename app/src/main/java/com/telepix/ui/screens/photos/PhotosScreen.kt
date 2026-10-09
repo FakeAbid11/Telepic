@@ -150,7 +150,6 @@ fun PhotosScreen(
             // engine (recognition + dedup + queue + schedule) — never a parallel uploader.
             if (selectionActive) {
                 SelectionActionBar(
-                    count = selectedItems.size,
                     canBackup = selectedItems.isNotEmpty(),
                     onBackup = viewModel::backupSelected,
                     onCancel = viewModel::clearSelection,
@@ -215,10 +214,10 @@ private fun SelectionTopBar(count: Int, onCancel: () -> Unit) {
     }
 }
 
-/** The bottom bulk-action bar shown while selecting: a Back up button (with count) and Cancel. */
+/** The bottom bulk-action bar shown while selecting: a Back up button and Cancel. The selected count
+ * lives only in the top bar to avoid a duplicated number. */
 @Composable
 private fun SelectionActionBar(
-    count: Int,
     canBackup: Boolean,
     onBackup: () -> Unit,
     onCancel: () -> Unit,
@@ -232,14 +231,8 @@ private fun SelectionActionBar(
         Row(
             modifier = Modifier.padding(horizontal = TelepixTokens.spacing.md, vertical = TelepixTokens.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(TelepixTokens.spacing.sm, Alignment.End),
         ) {
-            Text(
-                text = stringResource(R.string.photos_selection_count, count),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
             TextButton(onClick = onCancel) {
                 Text(stringResource(R.string.photos_selection_cancel))
             }
