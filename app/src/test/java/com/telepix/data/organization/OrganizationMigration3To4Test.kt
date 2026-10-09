@@ -93,5 +93,6 @@ class OrganizationMigration3To4Test {
 
         db.close()
         context.deleteDatabase(dbFile)
+        Unit
     }
 }
