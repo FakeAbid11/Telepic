@@ -11,13 +11,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.telepix.navigation.TelepixDestination
 import com.telepix.navigation.TelepixNavHost
 import com.telepix.navigation.icon
+import com.telepix.navigation.navigateToTopLevel
 import com.telepix.navigation.selectedIcon
 import com.telepix.di.AppContainer
 import com.telepix.settings.ThemeMode
@@ -72,19 +72,5 @@ fun TelepixApp(
                 .padding(innerPadding)
                 .fillMaxSize(),
         )
-    }
-}
-
-/**
- * Standard top-level destination navigation: single-top, restores prior state, and keeps the
- * start destination on the back stack so Back from any tab returns home instead of exiting.
- */
-private fun NavHostController.navigateToTopLevel(destination: TelepixDestination) {
-    navigate(destination.route) {
-        popUpTo(graph.findStartDestination().id) {
-            saveState = true
-        }
-        launchSingleTop = true
-        restoreState = true
     }
 }
