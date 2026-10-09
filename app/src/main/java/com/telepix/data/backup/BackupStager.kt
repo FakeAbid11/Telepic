@@ -8,20 +8,37 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Copies a MediaStore content URI into an app-private staging file for upload, streaming in fixed
- * chunks so a large video is never held fully in memory (memory-safety rule), and cleans the copy
- * up afterwards. It never writes outside the app's private storage and never mutates the original.
+ * Seam for copying a MediaStore content URI into an app-private staging file for upload, and cleaning
+ * that copy up afterwards. Abstracted so the backup repository's staging lifecycle (including cleanup
+ * on cancellation/failure) is unit-testable without a real ContentResolver.
  */
-class BackupStager(
-    private val contentResolver: ContentResolver,
-    private val stagingDir: File,
-) {
-
+interface BackupStager {
     /**
      * Stage the item at [contentUri]. Returns the staged file, or null when the source is gone or
      * unreadable (the caller turns that into a permanent failure). Throws nothing on missing media.
      */
-    suspend fun stage(localMediaId: String, contentUri: String): StagedFile? = withContext(Dispatchers.IO) {
+    suspend fun stage(localMediaId: String, contentUri: String): StagedFile?
+}
+
+/** A staged file handle; [cleanup] must run in a finally block after every upload attempt. */
+class StagedFile(val file: File) {
+    val path: String = file.absolutePath
+    fun cleanup() {
+        runCatching { file.delete() }
+    }
+}
+
+/**
+ * Copies a MediaStore content URI into an app-private staging file for upload, streaming in fixed
+ * chunks so a large video is never held fully in memory (memory-safety rule), and cleans the copy
+ * up afterwards. It never writes outside the app's private storage and never mutates the original.
+ */
+class MediaStoreBackupStager(
+    private val contentResolver: ContentResolver,
+    private val stagingDir: File,
+) : BackupStager {
+
+    override suspend fun stage(localMediaId: String, contentUri: String): StagedFile? = withContext(Dispatchers.IO) {
         stagingDir.mkdirs()
         val uri = Uri.parse(contentUri)
         // Confirm the source still exists and is readable before streaming.
@@ -51,14 +68,6 @@ class BackupStager(
         cursor?.use { it.count > 0 } ?: false
     } catch (throwable: Throwable) {
         false
-    }
-
-    /** A staged file handle; [cleanup] must run in a finally block after every upload attempt. */
-    class StagedFile(val file: File) {
-        val path: String = file.absolutePath
-        fun cleanup() {
-            runCatching { file.delete() }
-        }
     }
 
     private companion object {

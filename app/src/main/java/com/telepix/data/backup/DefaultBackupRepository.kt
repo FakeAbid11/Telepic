@@ -142,6 +142,9 @@ class DefaultBackupRepository(
             contentSizeBytes = item.contentSizeBytes ?: item.sizeBytes.takeIf { it > 0 },
         )
 
+        // cleanup() must run for EVERY attempt that staged a file — success, transient/permanent
+        // failure, OR cancellation. The previous code placed it after the try/catch, so the
+        // cooperative CancellationException path (rethrown below) skipped it and leaked the temp file.
         val outcome = try {
             val result = cloudRepository.uploadMedia(request)
             if (result == null || result.chatId != destination.chatId) {
@@ -166,8 +169,9 @@ class DefaultBackupRepository(
         } catch (throwable: Throwable) {
             dao.markFailed(item.id, safeError(throwable), clock())
             ProcessOutcome.PermanentFailure
+        } finally {
+            staged?.cleanup()
         }
-        staged?.cleanup()
         return outcome
     }
 

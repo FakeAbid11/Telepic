@@ -10,6 +10,7 @@ import com.telepix.data.backup.BackupCoordinator
 import com.telepix.data.backup.BackupRecognitionRepository
 import com.telepix.data.backup.BackupRepository
 import com.telepix.data.backup.BackupStager
+import com.telepix.data.backup.MediaStoreBackupStager
 import com.telepix.data.backup.BackupStatusRepository
 import com.telepix.data.backup.DefaultBackupCoordinator
 import com.telepix.data.backup.DefaultBackupRecognitionRepository
@@ -196,7 +197,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     private val backupStager: BackupStager by lazy {
         val staging = File(appContext.cacheDir, "telepix_backup_staging").apply { mkdirs() }
-        BackupStager(appContext.contentResolver, staging)
+        MediaStoreBackupStager(appContext.contentResolver, staging)
     }
 
     private val contentHasher: ContentHasher by lazy { AndroidContentHasher(appContext.contentResolver) }

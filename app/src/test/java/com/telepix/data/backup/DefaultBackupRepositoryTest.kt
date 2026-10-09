@@ -257,4 +257,65 @@ class DefaultBackupRepositoryTest {
         // ...and it is actionable again.
         assertEquals(1, r.processPendingWork(maxItems = 1).processed)
     }
+
+    // --- staging lifecycle (§5/§26: temp files must be cleaned safely on every path) ----------
+
+    /** A stager that materializes a real temp file so cleanup can be observed on disk. */
+    private class RecordingStager(private val stagingDir: java.io.File) : BackupStager {
+        override suspend fun stage(localMediaId: String, contentUri: String): StagedFile {
+            val file = java.io.File(stagingDir, "staging_$localMediaId.tmp")
+            file.writeText("staged bytes")
+            return StagedFile(file)
+        }
+    }
+
+    @Test
+    fun `staging file is cleaned up after a successful upload`() = runBlocking {
+        val stagingDir = java.io.File(System.getProperty("java.io.tmpdir"), "telepix-stage-${System.nanoTime()}")
+            .apply { mkdirs() }
+        try {
+            val r = DefaultBackupRepository(
+                dao = db.backupQueueDao(),
+                cloudRepository = FakeCloud(),
+                authState = authorized,
+                dispatcher = Dispatchers.Unconfined,
+                stager = RecordingStager(stagingDir),
+            )
+            r.enqueue(media(1))
+            assertEquals(1, r.processPendingWork(maxItems = 1).uploaded)
+            // The staged temp file must be removed once the upload completes.
+            assertTrue("staging left behind: ${stagingDir.listFiles()?.map { it.name }}", stagingDir.listFiles().isNullOrEmpty())
+        } finally {
+            stagingDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `staging file is cleaned up even when the upload is cancelled`() = runBlocking {
+        val stagingDir = java.io.File(System.getProperty("java.io.tmpdir"), "telepix-stage-${System.nanoTime()}")
+            .apply { mkdirs() }
+        try {
+            val cloud = FakeCloud(uploadError = kotlinx.coroutines.CancellationException("worker cancelled"))
+            val r = DefaultBackupRepository(
+                dao = db.backupQueueDao(),
+                cloudRepository = cloud,
+                authState = authorized,
+                dispatcher = Dispatchers.Unconfined,
+                stager = RecordingStager(stagingDir),
+            )
+            r.enqueue(media(1))
+            // The cooperative cancellation is rethrown (so recovery can return the row to QUEUED)...
+            var thrown: Throwable? = null
+            try {
+                r.processPendingWork(maxItems = 1)
+            } catch (t: Throwable) {
+                thrown = t
+            }
+            assertTrue("expected CancellationException to propagate", thrown is kotlinx.coroutines.CancellationException)
+            // ...but the staged temp file must STILL be cleaned up — the bug this guards.
+            assertTrue("staging leaked on cancellation: ${stagingDir.listFiles()?.map { it.name }}", stagingDir.listFiles().isNullOrEmpty())
+        } finally {
+            stagingDir.deleteRecursively()
+        }
+    }
 }
