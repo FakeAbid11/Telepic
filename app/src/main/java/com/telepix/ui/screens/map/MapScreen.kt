@@ -1,6 +1,5 @@
 package com.telepix.ui.screens.map
 
-import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -12,6 +11,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
@@ -94,7 +94,6 @@ private fun OsmMap(pins: List<MapClusterer.MapPin>, onOpenMedia: (Long) -> Unit,
             MapView(context).apply {
                 setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
-                zoomController.setVisibility(android.view.View.GONE)
                 controller.setZoom(2.0)
                 setExpectedCenter(GeoPoint(20.0, 0.0))
             }
@@ -103,18 +102,15 @@ private fun OsmMap(pins: List<MapClusterer.MapPin>, onOpenMedia: (Long) -> Unit,
             mapView.overlays.clear()
             pins.forEach { pin ->
                 val marker = Marker(mapView)
-                marker.position = GeoPoint(pin.latitude, pin.longitude)
+                marker.setPosition(GeoPoint(pin.latitude, pin.longitude))
                 marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                marker.infoWindow = null
-                if (pin is MapClusterer.MapPin.Single) {
-                    val id = pin.mediaId
-                    marker.onMarkerClickListener = Marker.OnMarkerClickListener { _, _ -> onOpenMedia(id); true }
-                    marker.title = null
-                } else {
-                    marker.onMarkerClickListener = Marker.OnMarkerClickListener { _, _ ->
-                        mapView.controller.zoomTo(pin.latitude, pin.longitude, 12.0, 300L)
-                        true
+                marker.setOnMarkerClickListener { _, _ ->
+                    when (pin) {
+                        is MapClusterer.MapPin.Single -> onOpenMedia(pin.mediaId)
+                        is MapClusterer.MapPin.Cluster ->
+                            mapView.controller.setZoom(mapView.zoomLevelDouble + 2.0)
                     }
+                    true
                 }
                 mapView.overlays.add(marker)
             }

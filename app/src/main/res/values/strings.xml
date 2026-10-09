@@ -247,6 +247,9 @@
     <string name="viewer_download">Download</string>
     <string name="viewer_download_required">Download the original to view it in full quality.</string>
     <string name="viewer_download_unavailable">The original can\'t be downloaded on this build yet.</string>
+    <string name="viewer_save_device">Save to device</string>
+    <string name="viewer_saved">Saved to device</string>
+    <string name="viewer_save_failed">Couldn\'t save to device</string>
 
     <!-- ============================ Organization: Favorites / Archive / Trash (Phase 10) ============================ -->
     <string name="viewer_favorite">Add to favorites</string>

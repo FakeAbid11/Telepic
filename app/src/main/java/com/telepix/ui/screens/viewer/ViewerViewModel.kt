@@ -6,6 +6,8 @@ import com.telepix.data.cloud.CloudRepository
 import com.telepix.data.media.LocalMediaLookup
 import com.telepix.data.media.NeighborDirection
 import com.telepix.data.organization.MediaOrganizationRepository
+import com.telepix.data.restore.RestoreRepository
+import com.telepix.data.restore.RestoreResult
 import com.telepix.domain.cloud.CloudMedia
 import com.telepix.domain.cloud.CloudMediaType
 import com.telepix.domain.media.LocalMedia
@@ -70,6 +72,7 @@ class ViewerViewModel(
     private val localLookup: LocalMediaLookup,
     private val cloudRepository: CloudRepository,
     private val organizationRepository: MediaOrganizationRepository? = null,
+    private val restoreRepository: RestoreRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ViewerUiState(initialSource))
@@ -78,6 +81,10 @@ class ViewerViewModel(
     /** Organization flags for the current local item; all-false for cloud items or when unwired. */
     private val _flags = MutableStateFlow(ViewerFlags())
     val flags: StateFlow<ViewerFlags> = _flags.asStateFlow()
+
+    /** Restore-to-device state for the current cloud item (idle unless a restore is requested). */
+    private val _restore = MutableStateFlow<RestoreState>(RestoreState.Idle)
+    val restore: StateFlow<RestoreState> = _restore.asStateFlow()
 
     init {
         load(initialSource)
@@ -157,8 +164,30 @@ class ViewerViewModel(
         }
     }
 
+    /**
+     * Restore the current cloud original into the device's public media storage — download, verify,
+     * publish. Explicit user action only; success is reported only after a verified publication. A
+     * device-gated or failed step leaves an honest failure, never a false "saved" state.
+     */
+    fun restoreToLocal() {
+        val repo = restoreRepository ?: return
+        val cloud = (_uiState.value.item as? ViewerItem.Cloud) ?: return
+        if (_restore.value is RestoreState.Restoring) return
+        _restore.value = RestoreState.Restoring
+        viewModelScope.launch {
+            val result = runCatching { repo.restore(cloud.media) }.getOrElse {
+                RestoreResult.Failed(com.telepix.data.restore.RestoreFailure.DOWNLOAD_UNAVAILABLE)
+            }
+            _restore.value = when (result) {
+                is RestoreResult.Restored -> RestoreState.Restored(result.localUri)
+                is RestoreResult.Failed -> RestoreState.Failed(result.reason.name)
+            }
+        }
+    }
+
     private fun load(target: MediaSource) {
         viewModelScope.launch {
+            _restore.value = RestoreState.Idle
             val resolved = when (target) {
                 is MediaSource.Local -> resolveLocal(target)
                 is MediaSource.Cloud -> resolveCloud(target)
@@ -217,4 +246,12 @@ private fun CloudMediaType.toViewerKind(): ViewerKind = when (this) {
     CloudMediaType.IMAGE -> ViewerKind.PHOTO
     CloudMediaType.VIDEO -> ViewerKind.VIDEO
     CloudMediaType.GIF -> ViewerKind.GIF
+}
+
+/** Restore-to-device state for the current cloud item. */
+sealed interface RestoreState {
+    data object Idle : RestoreState
+    data object Restoring : RestoreState
+    data class Restored(val localUri: String) : RestoreState
+    data class Failed(val reasonName: String) : RestoreState
 }

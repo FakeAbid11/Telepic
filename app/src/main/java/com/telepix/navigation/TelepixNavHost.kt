@@ -209,6 +209,7 @@ fun TelepixNavHost(
                             initialSource = MediaSource.Cloud(chatId, messageId),
                             localLookup = container.localMediaLookup,
                             cloudRepository = container.cloudRepository,
+                            restoreRepository = container.restoreRepository,
                         )
                     }
                 },

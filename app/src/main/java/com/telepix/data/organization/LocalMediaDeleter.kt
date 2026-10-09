@@ -47,7 +47,7 @@ class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
             val rows = resolver.delete(media.contentUri, null, null)
             if (rows > 0) DeleteRequest.Deleted else DeleteRequest.Failed
         }
-    } catch (_: android.content.SecurityException) {
+    } catch (_: SecurityException) {
         DeleteRequest.Failed
     } catch (_: Throwable) {
         DeleteRequest.Failed

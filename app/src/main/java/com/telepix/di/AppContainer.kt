@@ -43,6 +43,9 @@ import com.telepix.data.organization.DefaultMediaOrganizationRepository
 import com.telepix.data.organization.LocalMediaDeleter
 import com.telepix.data.organization.MediaOrganizationRepository
 import com.telepix.data.organization.MediaStoreLocalDeleter
+import com.telepix.data.restore.AndroidMediaStorePublisher
+import com.telepix.data.restore.DefaultRestoreRepository
+import com.telepix.data.restore.RestoreRepository
 import com.telepix.onboarding.OnboardingRepository
 import com.telepix.onboarding.OnboardingRepositoryImpl
 import com.telepix.settings.SettingsRepository
@@ -78,6 +81,7 @@ interface AppContainer {
     val mediaOrganizationRepository: MediaOrganizationRepository
     val mediaDeleter: LocalMediaDeleter
     val mapLocationRepository: MapLocationRepository
+    val restoreRepository: RestoreRepository
     val mediaChangeWatcher: MediaChangeWatcher
     val backupRepository: BackupRepository
     val backupStatusRepository: BackupStatusRepository
@@ -170,6 +174,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             dao = mediaLocationDao,
             pageLoader = mediaLoader,
             extractor = AndroidLocationExtractor(appContext),
+        )
+    }
+
+    override val restoreRepository: RestoreRepository by lazy {
+        DefaultRestoreRepository(
+            cloudRepository = cloudRepository,
+            publisher = AndroidMediaStorePublisher(appContext),
         )
     }
 

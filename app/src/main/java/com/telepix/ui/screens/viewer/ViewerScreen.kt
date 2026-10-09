@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -65,8 +66,10 @@ fun ViewerScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val flags by viewModel.flags.collectAsStateWithLifecycle()
+    val restore by viewModel.restore.collectAsStateWithLifecycle()
     var controlsVisible by remember { mutableStateOf(true) }
     val backDesc = stringResource(R.string.viewer_back)
+    val isCloudReady = state.source is MediaSource.Cloud && state.status == ViewerStatus.READY
 
     Surface(modifier = modifier.fillMaxSize(), color = Color.Black) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -102,7 +105,14 @@ fun ViewerScreen(
                         onPrevious = viewModel::showPrevious,
                         onNext = viewModel::showNext,
                         onDownload = viewModel::downloadOriginal,
+                        onRestore = if (isCloudReady) viewModel::restoreToLocal else null,
+                        restore = restore,
                     )
+                }
+            } else if (isCloudReady) {
+                // A lone cloud item has no nav bar; offer Save-to-device on its own.
+                AnimatedVisibility(visible = controlsVisible, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = TelepixTokens.spacing.md)) {
+                    RestoreAction(onRestore = viewModel::restoreToLocal, restore = restore)
                 }
             }
         }
@@ -259,6 +269,8 @@ private fun ViewerBottomBar(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onDownload: () -> Unit,
+    onRestore: (() -> Unit)? = null,
+    restore: RestoreState = RestoreState.Idle,
 ) {
     val spacing = TelepixTokens.spacing
     val showDownload = state.source is MediaSource.Cloud && state.download !is CloudDownload.Available
@@ -277,17 +289,19 @@ private fun ViewerBottomBar(
                 tint = if (state.previous != null) Color.White else Color.White.copy(alpha = 0.3f),
             )
         }
-        if (showDownload) {
-            if (state.download == CloudDownload.Downloading) {
-                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
-            } else {
-                TextButton(onClick = onDownload) {
-                    Icon(Icons.Outlined.CloudDownload, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    Text(stringResource(R.string.viewer_download), color = Color.White, modifier = Modifier.padding(start = spacing.xs))
+        when {
+            onRestore != null -> RestoreAction(onRestore = onRestore, restore = restore)
+            showDownload -> {
+                if (state.download == CloudDownload.Downloading) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
+                } else {
+                    TextButton(onClick = onDownload) {
+                        Icon(Icons.Outlined.CloudDownload, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Text(stringResource(R.string.viewer_download), color = Color.White, modifier = Modifier.padding(start = spacing.xs))
+                    }
                 }
             }
-        } else {
-            Box(modifier = Modifier.size(48.dp))
+            else -> Box(modifier = Modifier.size(48.dp))
         }
         IconButton(onClick = onNext, enabled = state.next != null) {
             Icon(
@@ -295,6 +309,29 @@ private fun ViewerBottomBar(
                 contentDescription = stringResource(R.string.viewer_next),
                 tint = if (state.next != null) Color.White else Color.White.copy(alpha = 0.3f),
             )
+        }
+    }
+}
+
+@Composable
+private fun RestoreAction(onRestore: () -> Unit, restore: RestoreState) {
+    when (restore) {
+        RestoreState.Restoring -> CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
+        is RestoreState.Restored -> Text(
+            text = stringResource(R.string.viewer_saved),
+            color = Color.White,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = TelepixTokens.spacing.sm),
+        )
+        is RestoreState.Failed -> Text(
+            text = stringResource(R.string.viewer_save_failed),
+            color = Color(0xFFFF8A80),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = TelepixTokens.spacing.xs),
+        )
+        RestoreState.Idle -> TextButton(onClick = onRestore) {
+            Icon(Icons.Outlined.SaveAlt, null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Text(stringResource(R.string.viewer_save_device), color = Color.White, modifier = Modifier.padding(start = TelepixTokens.spacing.xs))
         }
     }
 }
