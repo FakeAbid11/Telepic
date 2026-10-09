@@ -49,9 +49,11 @@ class TelepixApplication : Application(), ImageLoaderFactory, Configuration.Prov
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
             .components {
-                // Animated GIFs: ImageDecoderDecoder on API 28+, Coil's GifDecoder for API 26–27,
-                // so GIFs animate in the grid and Viewer (registering both covers minSdk 26).
-                add(ImageDecoderDecoder.Factory())
+                // Animated GIFs: ImageDecoderDecoder (which requires API 28) on newer devices, and
+                // Coil's GifDecoder as the fallback that also covers API 26–27, so GIFs animate in the
+                // grid and Viewer across the whole minSdk range. Registering ImageDecoderDecoder below
+                // 28 would be an unsupported-API call, so it is version-gated.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) add(ImageDecoderDecoder.Factory())
                 add(GifDecoder.Factory())
                 add(VideoFrameDecoder.Factory())
             }
