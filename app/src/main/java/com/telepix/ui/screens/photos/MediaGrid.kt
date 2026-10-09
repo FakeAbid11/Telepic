@@ -1,6 +1,9 @@
 package com.telepix.ui.screens.photos
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -191,6 +196,7 @@ fun DayHeader(epochDay: Long, absoluteLabel: String, today: LocalDate, modifier:
  * emphasized. Tapping an entry scrolls the grid to that already-loaded day. Kept narrow and
  * unobtrusive; its column meets the Material touch-target width.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DateRail(
     anchors: List<DateAnchor>,
@@ -202,18 +208,28 @@ private fun DateRail(
     if (anchors.size < 2) return
     val spacing = TelepixTokens.spacing
     val railDescription = stringResource(R.string.photos_date_rail)
+    val selectedLabel = stringResource(R.string.date_rail_selected)
+    val notSelectedLabel = stringResource(R.string.date_rail_not_selected)
     val locale = Locale.getDefault()
     val shortFormatter = remember(locale) { DateTimeFormatter.ofPattern("MMM d", locale) }
+
+    // Newest-first; show a bounded window that defaults to the recent days and slides to keep the
+    // currently-active day visible as the user scrolls into older dates.
+    val activePos = anchors.indexOfFirst { it.epochDay == activeEpochDay }.coerceAtLeast(0)
+    val window = remember(anchors.size, activePos) {
+        DateRailWindow.window(anchors.size, activePos, RAIL_MAX_ENTRIES)
+    }
+    if (window.isEmpty()) return
 
     Column(
         modifier = modifier
             .width(spacing.railWidth)
-            .padding(top = spacing.lg, bottom = spacing.lg)
+            .padding(top = spacing.sm, bottom = spacing.sm)
             .semantics { contentDescription = railDescription },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
-        anchors.takeLast(RAIL_MAX_ENTRIES).forEach { anchor ->
+        anchors.subList(window.first, window.last + 1).forEach { anchor ->
             val isActive = anchor.epochDay == activeEpochDay
             val short = when (today.toEpochDay() - anchor.epochDay) {
                 0L -> stringResource(R.string.date_today)
@@ -222,16 +238,36 @@ private fun DateRail(
             }
             Box(
                 modifier = Modifier
+                    .heightIn(min = 48.dp, max = 48.dp)
+                    .fillMaxWidth()
                     .clip(RoundedCornerShape(6.dp))
-                    .clickable { onAnchorClick(anchor.index) }
-                    .padding(horizontal = spacing.xs, vertical = 3.dp),
+                    .combinedClickable(
+                        onClick = { onAnchorClick(anchor.index) },
+                        onLongClick = { onAnchorClick(anchor.index) },
+                    )
+                    .semantics {
+                        contentDescription = "$short, ${if (isActive) selectedLabel else notSelectedLabel}"
+                        if (isActive) { this.selected = true }
+                    },
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = short,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Active is signalled by more than color: a leading bar plus bold weight.
+                    if (isActive) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = spacing.xs)
+                                .size(width = 3.dp, height = 16.dp)
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)),
+                        )
+                    }
+                    Text(
+                        text = short,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

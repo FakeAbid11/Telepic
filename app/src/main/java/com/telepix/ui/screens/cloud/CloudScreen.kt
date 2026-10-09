@@ -23,11 +23,13 @@ import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +41,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -46,6 +49,7 @@ import coil.compose.AsyncImage
 import com.telepix.R
 import com.telepix.domain.cloud.CloudMedia
 import com.telepix.domain.cloud.CloudMediaType
+import com.telepix.domain.cloud.CloudPreviewState
 import com.telepix.domain.cloud.CloudStatus
 import com.telepix.domain.cloud.CloudUiState
 import com.telepix.ui.components.EmptyState
@@ -95,6 +99,7 @@ fun CloudScreen(
                     uiState = uiState,
                     previews = previews,
                     onLoadPreview = viewModel::loadPreview,
+                    onRetryPreview = viewModel::retryPreview,
                     onOpen = onOpenMedia,
                     onRetry = viewModel::refresh,
                 )
@@ -127,8 +132,9 @@ private fun DestinationStatusBar(uiState: CloudUiState) {
 @Composable
 private fun CloudContent(
     uiState: CloudUiState,
-    previews: Map<Long, String>,
+    previews: Map<Long, CloudPreviewState>,
     onLoadPreview: (CloudMedia) -> Unit,
+    onRetryPreview: (CloudMedia) -> Unit,
     onOpen: (CloudMedia) -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -170,19 +176,20 @@ private fun CloudContent(
             description = stringResource(R.string.cloud_empty_body),
         )
         CloudStatus.Refreshing -> if (uiState.hasMedia) {
-            CloudGrid(uiState.media, previews, onLoadPreview, onOpen)
+            CloudGrid(uiState.media, previews, onLoadPreview, onRetryPreview, onOpen)
         } else {
             LoadingState()
         }
-        CloudStatus.Ready -> CloudGrid(uiState.media, previews, onLoadPreview, onOpen)
+        CloudStatus.Ready -> CloudGrid(uiState.media, previews, onLoadPreview, onRetryPreview, onOpen)
     }
 }
 
 @Composable
 private fun CloudGrid(
     media: List<CloudMedia>,
-    previews: Map<Long, String>,
+    previews: Map<Long, CloudPreviewState>,
     onLoadPreview: (CloudMedia) -> Unit,
+    onRetryPreview: (CloudMedia) -> Unit,
     onOpen: (CloudMedia) -> Unit,
 ) {
     val spacing = TelepixTokens.spacing
@@ -196,8 +203,9 @@ private fun CloudGrid(
         items(media, key = { "${it.chatId}_${it.messageId}" }) { item ->
             CloudTile(
                 media = item,
-                previewPath = previews[item.messageId],
+                previewState = previews[item.messageId],
                 onLoadPreview = { onLoadPreview(item) },
+                onRetryPreview = { onRetryPreview(item) },
                 onClick = { onOpen(item) },
             )
         }
@@ -207,8 +215,9 @@ private fun CloudGrid(
 @Composable
 private fun CloudTile(
     media: CloudMedia,
-    previewPath: String?,
+    previewState: CloudPreviewState?,
     onLoadPreview: () -> Unit,
+    onRetryPreview: () -> Unit,
     onClick: () -> Unit,
 ) {
     val spacing = TelepixTokens.spacing
@@ -219,32 +228,48 @@ private fun CloudTile(
             CloudMediaType.IMAGE -> R.string.cloud_media_image
         },
     )
-    LaunchedEffect(media.messageId, previewPath) {
-        if (previewPath == null) onLoadPreview()
+    // Announce the item with its type plus a preview state only when the state is informative.
+    val statusLabel: String? = when (previewState) {
+        is CloudPreviewState.Loading -> stringResource(R.string.cloud_preview_loading)
+        is CloudPreviewState.Failed -> stringResource(R.string.cloud_preview_failed)
+        else -> null
+    }
+    LaunchedEffect(media.messageId, previewState) {
+        if (previewState == null) onLoadPreview()
     }
     Box(
         modifier = Modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(spacing.gridItemRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .semantics { contentDescription = tileLabel }
+            .semantics {
+                contentDescription = tileLabel
+                statusLabel?.let { stateDescription = it }
+            }
             .clickable(onClick = onClick),
     ) {
-        if (previewPath != null) {
-            AsyncImage(
-                model = File(previewPath),
+        when (previewState) {
+            is CloudPreviewState.Loaded -> AsyncImage(
+                model = File(previewState.localPath),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),
             )
-        } else {
-            Icon(
+            is CloudPreviewState.Loading -> CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center).size(26.dp),
+                color = MaterialTheme.colorScheme.primary,
+            )
+            is CloudPreviewState.Failed -> FailedPreviewContent(
+                retryable = previewState.retryable,
+                onRetry = onRetryPreview,
+                modifier = Modifier.align(Alignment.Center),
+            )
+            // Not yet requested: show the neutral cloud placeholder while the load effect fires.
+            null -> Icon(
                 imageVector = Icons.Outlined.Cloud,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(28.dp),
+                modifier = Modifier.align(Alignment.Center).size(28.dp),
             )
         }
 
@@ -283,6 +308,36 @@ private fun CloudTile(
                     .padding(horizontal = spacing.xs, vertical = 1.dp),
             )
             CloudMediaType.IMAGE -> Unit
+        }
+    }
+}
+
+@Composable
+private fun FailedPreviewContent(
+    retryable: Boolean,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.CloudOff,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(24.dp),
+        )
+        if (retryable) {
+            TextButton(onClick = onRetry) {
+                Text(stringResource(R.string.cloud_preview_retry))
+            }
+        } else {
+            Text(
+                text = stringResource(R.string.cloud_preview_unavailable),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

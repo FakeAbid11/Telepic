@@ -12,17 +12,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepix.R
+import com.telepix.data.media.MapCameraPlan
 import com.telepix.data.media.MapClusterer
 import com.telepix.permissions.MediaPermissionState
 import com.telepix.permissions.rememberMediaPermissionState
 import com.telepix.ui.components.EmptyState
 import com.telepix.ui.components.LoadingState
 import com.telepix.ui.components.ScreenHeader
+import com.telepix.ui.components.StateAction
 import com.telepix.ui.theme.TelepixTokens
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -63,6 +68,14 @@ fun MapScreen(
                     icon = Icons.Outlined.Lock,
                     title = stringResource(R.string.map_permission_title),
                     description = stringResource(R.string.map_permission_description),
+                    primaryAction = StateAction(
+                        label = stringResource(
+                            if (permissionState == MediaPermissionState.PermanentlyDenied)
+                                R.string.photos_open_settings else R.string.photos_allow_access,
+                        ),
+                        onClick = if (permissionState == MediaPermissionState.PermanentlyDenied)
+                            controller.openAppSettings else controller.requestPermission,
+                    ),
                 )
                 // Distinguish an in-progress scan from a genuinely empty result so the empty state
                 // does not flash before the first markers land.
@@ -89,6 +102,15 @@ fun MapScreen(
 
 @Composable
 private fun OsmMap(pins: List<MapClusterer.MapPin>, onOpenMedia: (Long) -> Unit, modifier: Modifier = Modifier) {
+    // Fit the camera to the actual photo coordinates once per distinct data set — opening the map
+    // frames the user's photos instead of a fixed world view. A stable key prevents the repeated
+    // camera animation the old per-recomposition rebuild caused; an empty/plan-less set keeps the
+    // neutral factory view (never a fabricated center).
+    val plan = remember(pins) {
+        MapCameraPlan.forPoints(pins.map { it.latitude to it.longitude })
+    }
+    var fittedKey by remember { mutableStateOf<String?>(null) }
+
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
@@ -112,15 +134,29 @@ private fun OsmMap(pins: List<MapClusterer.MapPin>, onOpenMedia: (Long) -> Unit,
                 marker.setOnMarkerClickListener { _, _ ->
                     when (pin) {
                         is MapClusterer.MapPin.Single -> onOpenMedia(pin.mediaId)
-                        is MapClusterer.MapPin.Cluster ->
-                            mapView.controller.setZoom(mapView.zoomLevelDouble + 2.0)
+                        is MapClusterer.MapPin.Cluster -> {
+                            // Center on the cluster, then zoom in — instead of zooming at the current view.
+                            mapView.controller.setCenter(GeoPoint(pin.latitude, pin.longitude))
+                            mapView.controller.setZoom((mapView.zoomLevelDouble + 2.0).coerceAtMost(MAX_ZOOM))
+                        }
                     }
                     true
                 }
                 mapView.overlays.add(marker)
+            }
+            // Apply the fit only when the coordinate set actually changes (not on every recomposition).
+            plan?.let {
+                val key = "${it.centerLat},${it.centerLon},${it.zoom}"
+                if (key != fittedKey) {
+                    mapView.controller.setCenter(GeoPoint(it.centerLat, it.centerLon))
+                    mapView.controller.setZoom(it.zoom)
+                    fittedKey = key
+                }
             }
             mapView.invalidate()
         },
         onRelease = { mapView -> mapView.onDetach() },
     )
 }
+
+private const val MAX_ZOOM = 19.0

@@ -36,6 +36,10 @@
     <string name="cloud_media_image">Cloud photo</string>
     <string name="cloud_media_video">Cloud video</string>
     <string name="cloud_media_gif">Cloud GIF</string>
+    <string name="cloud_preview_loading">loading preview</string>
+    <string name="cloud_preview_failed">preview unavailable</string>
+    <string name="cloud_preview_unavailable">No preview</string>
+    <string name="cloud_preview_retry">Retry preview</string>
 
     <!-- Albums -->
     <string name="albums_title">Albums</string>
@@ -132,6 +136,8 @@
     <string name="onboarding_backup_folder_title">Select a folder</string>
     <string name="onboarding_backup_folder_body">Choose a specific source or folder for backup.</string>
     <string name="onboarding_backup_folder_pending">Folder selection becomes available with the media library phase.</string>
+    <string name="onboarding_backup_folder_unavailable">Not available yet — folder backup isn\'t set up, so it can\'t be chosen here. Pick "Back up all photos" or "Not now".</string>
+    <string name="onboarding_backup_folder_unavailable_short">Unavailable</string>
     <string name="onboarding_backup_not_now_title">Not now</string>
     <string name="onboarding_backup_not_now_body">Continue without configuring backup. You can set it up anytime from Settings.</string>
 
@@ -171,6 +177,8 @@
     <string name="media_type_gif">GIF</string>
     <string name="media_gif_badge">GIF</string>
     <string name="photos_date_rail">Jump to date</string>
+    <string name="date_rail_selected">current section</string>
+    <string name="date_rail_not_selected">tap to jump</string>
 
     <!-- Viewer (placeholder navigation contract) -->
     <string name="viewer_title">Viewer</string>
@@ -267,6 +275,9 @@
     <string name="viewer_archive">Archive</string>
     <string name="viewer_unarchive">Unarchive</string>
     <string name="viewer_move_to_trash">Move to trash</string>
+    <string name="viewer_trash_title">Move to trash?</string>
+    <string name="viewer_trash_body">This hides the photo from your timeline. You can restore it later from Trash — it is not deleted from your device.</string>
+    <string name="viewer_trash_confirm">Move to trash</string>
 
     <string name="library_title">Library</string>
     <string name="library_favorites">Favorites</string>

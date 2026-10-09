@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -16,6 +18,7 @@ import com.telepix.telegram.TelegramAuthState
 import com.telepix.ui.onboarding.components.TAG_ONBOARDING_PRIMARY
 import com.telepix.ui.onboarding.components.TAG_ONBOARDING_SECONDARY
 import com.telepix.ui.onboarding.steps.TAG_BACKUP_ALL
+import com.telepix.ui.onboarding.steps.TAG_BACKUP_FOLDER
 import com.telepix.ui.theme.TelepixTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -93,6 +96,30 @@ class OnboardingUiTest {
 
         composeRule.onNodeWithTag(TAG_BACKUP_ALL).performClick()
         assertTrue(chosen == BackupPreference.BACKUP_ALL)
+    }
+
+    @Test
+    fun `folder backup is disabled and never selectable`() {
+        var chosen: BackupPreference? = null
+        composeRule.setContent {
+            TelepixTheme(darkTheme = true) {
+                OnboardingScreen(
+                    backupPreference = null,
+                    telegramController = FakeTelegramController(),
+                    onBackupPreferenceChange = { chosen = it },
+                    onComplete = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick() // -> How
+        composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick() // -> Permissions
+        composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Telegram (skip)
+        composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Backup
+
+        // The unimplemented folder choice must not present as an actionable, active preference.
+        composeRule.onNodeWithTag(TAG_BACKUP_ALL).assertIsEnabled()
+        composeRule.onNodeWithTag(TAG_BACKUP_FOLDER).assertIsNotEnabled()
+        assertTrue(chosen == null)
     }
 
     @Test
