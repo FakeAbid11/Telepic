@@ -51,35 +51,20 @@ class BackupWorker(
         // Repair anything a previous process left mid-flight before touching new work.
         repo.recoverInterruptedWork()
 
-        var uploaded = 0
-        var processedThisRun = 0
-        var waiting = false
-        var foregroundStarted = false
-        while (processedThisRun < MAX_ITEMS_PER_RUN) {
-            if (isStopped) break
-            val summary = repo.processPendingWork(maxItems = BATCH_SIZE)
-            if (summary.processed == 0) break // queue drained of actionable items
-            processedThisRun += summary.processed
-            uploaded += summary.uploaded
-            waiting = summary.hasRetryableWork
-            // Only promote to a foreground notification once there is genuinely work to report —
-            // an empty/queue-drained run shouldn't show a backup notification at all.
-            if (!foregroundStarted) {
-                foregroundStarted = true
-                runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(uploaded, processedThisRun))) }
-            } else {
-                updateNotification(uploaded, processedThisRun)
-            }
+        // One pass over the queue: processPendingWork attempts each actionable item at most once, so
+        // the retry budget of a transiently failing item cannot be burned repeatedly inside a single
+        // run — WorkManager's backoff, not a tighter loop here, provides the retry delay. State is
+        // aggregated from that one summary, so an empty tail can never overwrite an earlier waiting
+        // condition and silently report success.
+        val summary = repo.processPendingWork(maxItems = MAX_ITEMS_PER_RUN)
+
+        if (summary.processed > 0) {
+            runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(summary.uploaded, summary.processed))) }
         }
 
-        // If the only progress this run was parking items to wait, ask WorkManager to retry later
-        // (its backoff handles the wait); otherwise the queue is drained and the run is done. A
-        // cancellation is communicated through isStopped, which WorkManager honors over the result.
-        return if (waiting) Result.retry() else Result.success()
-    }
-
-    private suspend fun updateNotification(uploaded: Int, processed: Int) {
-        runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(uploaded, processed))) }
+        // Retryable (waiting) work asks WorkManager to run again after backoff; a drained or purely
+        // permanently-failed queue is a normal success. A cancellation is honored via isStopped.
+        return if (summary.hasRetryableWork) Result.retry() else Result.success()
     }
 
     private fun buildNotification(uploaded: Int, processed: Int): Notification {
@@ -117,7 +102,6 @@ class BackupWorker(
     private companion object {
         const val NOTIFICATION_ID = 4201
         const val CHANNEL_ID = "telepix_backup"
-        const val BATCH_SIZE = 5
         const val MAX_ITEMS_PER_RUN = 25
     }
 }

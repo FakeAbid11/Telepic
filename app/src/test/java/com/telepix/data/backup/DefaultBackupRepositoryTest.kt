@@ -226,4 +226,35 @@ class DefaultBackupRepositoryTest {
         val summary = r.processPendingWork(maxItems = 1)
         assertEquals(0, summary.processed)
     }
+
+    @Test
+    fun `a single transient failure consumes only one retry per run regardless of batch size`() = runBlocking {
+        val cloud = FakeCloud(uploadError = CloudNetworkException())
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        // Old behaviour re-selected the same WAITING_FOR_NETWORK item until its whole budget was gone.
+        val summary = r.processPendingWork(maxItems = 5)
+        assertEquals(1, summary.processed)
+        assertEquals(1, summary.waiting)
+        val row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(1, row.retryCount)
+        assertEquals(BackupState.WAITING_FOR_NETWORK.name, row.state)
+    }
+
+    @Test
+    fun `manual retry revives a retry-exhausted item`() = runBlocking {
+        val cloud = FakeCloud(uploadError = CloudNetworkException())
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        val id = db.backupQueueDao().observeAll().first().first().id
+        repeat(5) { r.processPendingWork(maxItems = 1) } // exhaust the automatic budget
+        assertEquals(0, r.processPendingWork(maxItems = 1).processed) // no longer actionable
+
+        r.retry(id) // explicit user retry
+        val after = db.backupQueueDao().observeAll().first().first()
+        assertEquals(BackupState.QUEUED.name, after.state)
+        assertEquals(0, after.retryCount)
+        // ...and it is actionable again.
+        assertEquals(1, r.processPendingWork(maxItems = 1).processed)
+    }
 }

@@ -85,8 +85,15 @@ class DefaultBackupRepository(
                 var waiting = 0
                 var failed = 0
                 var processed = 0
+                // Attempt each actionable item at most once per call. A transiently failing item is
+                // parked in WAITING_FOR_NETWORK (still "actionable"), so without this guard the same
+                // item would be re-selected in the same run and burn its whole retry budget in one
+                // invocation; WorkManager's backoff, not this loop, provides the retry delay.
+                val attempted = HashSet<Long>()
                 while (processed < maxItems) {
-                    val item = dao.fetchActionable(maxRetries, 1).firstOrNull() ?: break
+                    val item = dao.fetchActionable(maxRetries, maxItems).firstOrNull { it.id !in attempted }
+                        ?: break
+                    attempted += item.id
                     processed++
                     when (processOne(item)) {
                         ProcessOutcome.Uploaded -> uploaded++

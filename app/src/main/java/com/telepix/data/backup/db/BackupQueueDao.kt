@@ -92,7 +92,14 @@ interface BackupQueueDao {
     @Query("UPDATE backup_queue SET state = 'FAILED', lastError = :error, updatedAt = :now WHERE id = :id")
     suspend fun markFailed(id: Long, error: String, now: Long)
 
-    @Query("UPDATE backup_queue SET state = 'QUEUED', retryCount = retryCount + 1, lastError = NULL, updatedAt = :now WHERE id = :id")
+    /**
+     * A user-requested (manual) retry: returns the item to QUEUED and RESETS the retry budget so a
+     * previously exhausted item becomes actionable again. Automatic retries stay bounded by
+     * [maxRetries] via [recordTransientFailure]; this deliberate reset is the manual path's policy,
+     * so an item stuck at `retryCount >= maxRetries` can never be permanently ineligible after the
+     * UI reports it was retried. The PK on localMediaId keeps a row unique (no duplicate entries).
+     */
+    @Query("UPDATE backup_queue SET state = 'QUEUED', retryCount = 0, lastError = NULL, updatedAt = :now WHERE id = :id")
     suspend fun requeueForRetry(id: Long, now: Long)
 
     @Query("UPDATE backup_queue SET state = 'CANCELLED', updatedAt = :now WHERE id = :id")
