@@ -38,7 +38,7 @@ class CloudViewModelTest {
     ) : CloudRepository {
         var previewCalls = 0
         override val status: StateFlow<CloudStatus> = MutableStateFlow(CloudStatus.Ready).asStateFlow()
-        override val destinationTitle: StateFlow<String?> = MutableStateFlow("Telepix Backup").asStateFlow()
+        override val destinationTitle: StateFlow<String?> = MutableStateFlow("Telepic Backup").asStateFlow()
         override val media: Flow<List<CloudMedia>> = flowOf(emptyList())
         override suspend fun prepare() = Unit
         override suspend fun refresh() = Unit

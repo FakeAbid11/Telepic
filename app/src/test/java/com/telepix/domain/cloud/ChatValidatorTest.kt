@@ -11,7 +11,7 @@ class ChatValidatorTest {
         canPost: Boolean = true,
         accessible: Boolean = true,
         owned: Boolean = true,
-        title: String = "Telepix Backup",
+        title: String = "Telepic Backup",
     ) = ChatCandidate(
         chatId = 1L,
         title = title,
@@ -51,7 +51,7 @@ class ChatValidatorTest {
 
     @Test
     fun `same-name non-channel impersonation is invalid`() {
-        val imposter = candidate(isChannel = false, title = "Telepix Backup")
+        val imposter = candidate(isChannel = false, title = "Telepic Backup")
         assertTrue(ChatValidator.validate(imposter) is DestinationVerdict.Invalid)
     }
 

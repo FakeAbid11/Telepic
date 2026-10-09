@@ -1,8 +1,8 @@
-# Telepix
+# Telepic
 
 A modern, standalone Android photo & video library with Telegram-powered cloud backup — built with **Kotlin**, **Jetpack Compose**, and **Material 3 / Material You**.
 
-Telepix organizes your local media into a fast, beautiful timeline and (in later phases) backs it up to a private Telegram channel, letting you browse cloud media by preview without automatically downloading originals.
+Telepic organizes your local media into a fast, beautiful timeline and (in later phases) backs it up to a private Telegram channel, letting you browse cloud media by preview without automatically downloading originals.
 
 > **Local-first photo management with Telegram-powered cloud backup.**
 
@@ -31,9 +31,9 @@ Telepix organizes your local media into a fast, beautiful timeline and (in later
 
 ---
 
-## Building Telepix (no local build required)
+## Building Telepic (no local build required)
 
-**You do not need Android Studio, Gradle, or the Android SDK on your machine.** Telepix is built entirely by **GitHub Actions**.
+**You do not need Android Studio, Gradle, or the Android SDK on your machine.** Telepic is built entirely by **GitHub Actions**.
 
 Every push to `main` and every pull request runs the [`Android CI`](.github/workflows/android-ci.yml) workflow, which:
 
@@ -54,7 +54,7 @@ build still compiles and runs (login is simply unavailable), so CI stays green.
 1. Open the repository's **Actions** tab.
 2. Select the latest run on `main` (or your pull request).
 3. Scroll to **Artifacts**.
-4. Download **`telepix-debug-apk`** and install the APK on your device.
+4. Download **`telepic-debug-apk`** and install the APK on your device.
 
 You can also trigger a build manually via **Run workflow** (`workflow_dispatch`).
 
@@ -84,8 +84,8 @@ restart the app (the session should persist), and test logout/re-login.
 ### ✅ Phase 1 — Foundation & Material You Design System *(complete)*
 
 - Valid Android Kotlin project using Jetpack Compose + Material 3
-- Telepix branding (app name, blue/black/white identity, adaptive launcher icon)
-- Centralized **Telepix design system**: colors, typography, shapes, spacing tokens
+- Telepic branding (app name, blue/black/white identity, adaptive launcher icon)
+- Centralized **Telepic design system**: colors, typography, shapes, spacing tokens
 - **Dark (default)**, **Light**, and **System default** themes with persisted preference
 - Five primary navigation destinations with a Material 3 bottom navigation bar:
   **Photos · Cloud · Albums · Map · Settings**
@@ -97,7 +97,7 @@ restart the app (the session should persist), and test logout/re-login.
 
 ### ✅ Phase 2 — Onboarding & Permissions *(complete)*
 
-- **Six-screen first-run onboarding**: Welcome · How Telepix Works · Permissions ·
+- **Six-screen first-run onboarding**: Welcome · How Telepic Works · Permissions ·
   Telegram Login · Backup Preferences · Ready
 - Persistent onboarding state (completion + backup preference) via the existing DataStore
   architecture; completed users launch straight into the main app, fresh installs start onboarding

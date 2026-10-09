@@ -147,7 +147,7 @@ class TdApiCloudMapperTest {
     fun `a channel supergroup maps to an accessible postable candidate`() {
         val chat = TdApi.Chat().apply {
             id = 7L
-            title = "Telepix Backup"
+            title = "Telepic Backup"
             type = TdApi.ChatTypeSupergroup().apply { isChannel = true }
         }
         val candidate = TdApiCloudMapper.chatToCandidate(chat, canPost = true, isOwnedByAccount = true, accessible = true)
@@ -158,7 +158,7 @@ class TdApiCloudMapperTest {
 
         val group = TdApi.Chat().apply {
             id = 8L
-            title = "Telepix Backup"
+            title = "Telepic Backup"
             type = TdApi.ChatTypeSupergroup().apply { isChannel = false }
         }
         assertFalse(TdApiCloudMapper.chatToCandidate(group, canPost = true, isOwnedByAccount = true, accessible = true).isChannel)

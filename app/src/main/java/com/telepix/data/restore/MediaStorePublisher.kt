@@ -106,7 +106,7 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
     }
 
     private fun relativeDir(mime: String): String =
-        if (mime.startsWith("video/")) "Movies/Telepix/" else "Pictures/Telepix/"
+        if (mime.startsWith("video/")) "Movies/Telepic/" else "Pictures/Telepic/"
 
     private fun guessMime(name: String?): String? = name?.substringAfterLast('.', "")?.lowercase(Locale.US)?.let { ext ->
         when (ext) {

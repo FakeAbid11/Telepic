@@ -1,9 +1,9 @@
-Telepix
+Telepic
 
 Master Product Requirements Document (PRD)
 
 Repository: https://github.com/FakeAbid11/Telepix.git
-Product: Telepix
+Product: Telepic
 Platform: Android
 Language: Kotlin
 UI: Jetpack Compose + Material 3 / Material You
@@ -16,7 +16,7 @@ Initial release target: Debug APK for real-device testing
 
 1. Product Vision
 
-Telepix is a modern Android photo and video management application inspired by the usability of Google Photos.
+Telepic is a modern Android photo and video management application inspired by the usability of Google Photos.
 
 Its core purpose is to:
 
@@ -34,17 +34,17 @@ Restore/download backed-up media when requested.
 
 Provide albums, favorites, archive, trash, metadata, maps, and a powerful media viewer.
 
-Telepix should feel like a polished personal photo library while using Telegram as its cloud-storage layer.
+Telepic should feel like a polished personal photo library while using Telegram as its cloud-storage layer.
 
 Product principle
 
 Local-first photo management with Telegram-powered cloud backup.
 
-Telepix is a standalone product with its own visual identity, architecture, implementation, and UX.
+Telepic is a standalone product with its own visual identity, architecture, implementation, and UX.
 
 2. Important Development Constraint
 
-The developer has a low-end laptop and should not be required to build Telepix locally.
+The developer has a low-end laptop and should not be required to build Telepic locally.
 
 All Android builds must happen through GitHub Actions.
 
@@ -152,7 +152,7 @@ Immutable UI state where practical
 
 5. Telegram / TDLib
 
-Telepix uses Telegram as its cloud storage backend.
+Telepic uses Telegram as its cloud storage backend.
 
 The Telegram implementation must use the Java TDLib interface:
 
@@ -205,15 +205,15 @@ The Telegram API ID and API Hash must never be hard-coded into source control.
 
 They must be supplied through GitHub Secrets/build configuration.
 
-7. Telepix Backup Channel
+7. Telepic Backup Channel
 
-Telepix uses a Telegram channel named:
+Telepic uses a Telegram channel named:
 
-Telepix Backup
+Telepic Backup
 
 On first cloud setup:
 
-Search for the Telepix Backup channel.
+Search for the Telepic Backup channel.
 
 Determine whether the authenticated user owns/controls an appropriate channel.
 
@@ -223,15 +223,15 @@ If it does not exist, create it where Telegram permissions/API capabilities allo
 
 Store the selected channel ID locally.
 
-Use that channel for Telepix backup operations.
+Use that channel for Telepic backup operations.
 
 The app must not blindly use an arbitrary channel with the same name.
 
-A channel should be validated using Telepix-specific metadata/protocol information where practical.
+A channel should be validated using Telepic-specific metadata/protocol information where practical.
 
 8. Cloud Philosophy
 
-The Cloud screen represents the user's Telegram-backed Telepix media library.
+The Cloud screen represents the user's Telegram-backed Telepic media library.
 
 Browsing Cloud should prioritize:
 
@@ -261,7 +261,7 @@ This prevents unnecessary phone storage usage.
 
 9. Media Quality
 
-Telepix should preserve the highest practical media quality.
+Telepic should preserve the highest practical media quality.
 
 However, Telegram media APIs can transform/recompress certain media types depending on how they are uploaded.
 
@@ -303,7 +303,7 @@ The media layer must be extensible.
 
 11. Main Navigation
 
-Telepix will use five primary destinations:
+Telepic will use five primary destinations:
 
 Photos
 
@@ -323,7 +323,7 @@ Additional functionality such as Favorites, Archive, Trash, Backup Center, Detai
 
 Main screens
 
-Telepix has 11 primary application screens:
+Telepic has 11 primary application screens:
 
 1. Photos
 
@@ -371,11 +371,11 @@ Detailed media information.
 
 13. Onboarding
 
-Telepix has six onboarding screens.
+Telepic has six onboarding screens.
 
 Screen 1 — Welcome
 
-Introduce Telepix.
+Introduce Telepic.
 
 Explain:
 
@@ -389,17 +389,17 @@ Primary action:
 
 Get Started
 
-Screen 2 — How Telepix Works
+Screen 2 — How Telepic Works
 
 Explain the basic architecture:
 
 Phone Photos
      ↓
-Telepix
+Telepic
      ↓
 Telegram Cloud
 
-Explain that Telepix does not automatically download every cloud original.
+Explain that Telepic does not automatically download every cloud original.
 
 Screen 3 — Permissions
 
@@ -439,7 +439,7 @@ The user can change this later.
 
 Screen 6 — Ready
 
-Show that Telepix is ready.
+Show that Telepic is ready.
 
 Possible information:
 
@@ -453,13 +453,13 @@ Backup preference
 
 Primary action:
 
-Start Using Telepix
+Start Using Telepic
 
 14. Photos Screen
 
 The Photos screen is the primary experience.
 
-It should be visually inspired by modern photo applications while maintaining Telepix's own design language.
+It should be visually inspired by modern photo applications while maintaining Telepic's own design language.
 
 Features:
 
@@ -485,7 +485,7 @@ Selection mode
 
 Example:
 
-                 Telepix
+                 Telepic
 
 Today
 
@@ -530,7 +530,7 @@ The selection UI should follow Material 3 conventions.
 
 16. Cloud Screen
 
-Cloud displays media stored in the Telepix Backup Telegram channel.
+Cloud displays media stored in the Telepic Backup Telegram channel.
 
 The Cloud UI should clearly distinguish:
 
@@ -736,7 +736,7 @@ Do not create uncontrolled background threads/services.
 
 23. Backup Recognition
 
-Telepix must recognize media that has already been backed up.
+Telepic must recognize media that has already been backed up.
 
 Use multiple levels of identification.
 
@@ -760,7 +760,7 @@ SHA-256 content hash
 
 Remote identity
 
-Use Telepix cloud manifest information.
+Use Telepic cloud manifest information.
 
 24. Deduplication
 
@@ -782,7 +782,7 @@ Hash exists remotely?
   ↓            ↓
 Associate     Upload
 
-This is especially important after reinstalling Telepix.
+This is especially important after reinstalling Telepic.
 
 25. Reinstall Recovery
 
@@ -790,7 +790,7 @@ A clean reinstall should not necessarily cause every photo to be uploaded again.
 
 After Telegram authentication:
 
-Locate Telepix Backup.
+Locate Telepic Backup.
 
 Scan remote manifest.
 
@@ -888,7 +888,7 @@ Trash provides a safer deletion workflow.
 
 The implementation must clearly distinguish:
 
-Remove from Telepix/local view
+Remove from Telepic/local view
 
 Move to Trash
 
@@ -964,7 +964,7 @@ Version
 
 Open-source licenses
 
-Telepix information
+Telepic information
 
 32. Design System
 
@@ -980,7 +980,7 @@ White
 
 Avoid creating an overly generic Material app.
 
-Material 3 should provide the component foundation, while Telepix's blue/black/white identity should define the visual personality.
+Material 3 should provide the component foundation, while Telepic's blue/black/white identity should define the visual personality.
 
 33. Dark Theme
 
@@ -1064,7 +1064,7 @@ Do not over-animate the photo grid.
 
 38. Accessibility
 
-Telepix must support:
+Telepic must support:
 
 Content descriptions
 
@@ -1206,7 +1206,7 @@ Unable to access photo library
 
 42. Offline Behavior
 
-Telepix should remain useful without internet.
+Telepic should remain useful without internet.
 
 Offline:
 
@@ -1244,7 +1244,7 @@ Original media should not be permanently cached unless the user explicitly downl
 
 44. Performance
 
-Telepix must be designed for ordinary Android phones.
+Telepic must be designed for ordinary Android phones.
 
 Important requirements:
 
@@ -1415,7 +1415,7 @@ The database should never claim an item is backed up before the remote operation
 
 50. UX Principle: No Surprises
 
-Telepix must avoid destructive or expensive actions without user understanding.
+Telepic must avoid destructive or expensive actions without user understanding.
 
 Examples:
 
@@ -1436,7 +1436,7 @@ Clearly distinguish local and cloud media.
 Recommended structure:
 
 ┌─────────────────────────────────────────┐
-│                Telepix                  │
+│                Telepic                  │
 ├─────────────────────────────────────────┤
 │                                         │
 │              Current Screen             │
@@ -1450,7 +1450,7 @@ The navigation should adapt gracefully to smaller screens.
 
 52. No Search Initially
 
-Telepix will not implement a dedicated Search feature in the initial version.
+Telepic will not implement a dedicated Search feature in the initial version.
 
 Search can be added in a future roadmap phase.
 
@@ -1464,7 +1464,7 @@ Onboarding
 
 Telegram login
 
-Telepix Backup channel
+Telepic Backup channel
 
 Local media scanning
 
@@ -1512,7 +1512,7 @@ Compose
 
 Material 3
 
-Telepix theme
+Telepic theme
 
 Navigation foundation
 
@@ -1570,7 +1570,7 @@ Phase 5 — Telegram Cloud
 
 Implement:
 
-Telepix Backup channel discovery
+Telepic Backup channel discovery
 
 Channel creation/validation
 
@@ -1722,7 +1722,7 @@ Debug APK validation
 
 55. Definition of Done
 
-Telepix is considered ready for its first serious test milestone when:
+Telepic is considered ready for its first serious test milestone when:
 
 App installs successfully.
 
@@ -1730,7 +1730,7 @@ GitHub Actions builds successfully.
 
 Telegram authentication works.
 
-Telepix Backup channel can be found/created.
+Telepic Backup channel can be found/created.
 
 Local photos appear.
 
@@ -1804,7 +1804,7 @@ These are not required for the initial implementation.
 
 57. Product Success Criteria
 
-Telepix succeeds if a user can install the app and confidently understand:
+Telepic succeeds if a user can install the app and confidently understand:
 
 Where their local photos are.
 
@@ -1822,7 +1822,7 @@ The application should make backup feel automatic without making the underlying 
 
 58. Final Product Principle
 
-Telepix should feel like:
+Telepic should feel like:
 
 Google Photos-style usability
 

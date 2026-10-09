@@ -63,7 +63,7 @@ import java.io.File
 
 /** Single DataStore instance for the whole process, shared by all preference repositories. */
 private val Context.telepixDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "telepix_settings",
+    name = "telepic_settings",
 )
 
 /**
@@ -203,7 +203,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     private val backupStager: BackupStager by lazy {
-        val staging = File(appContext.cacheDir, "telepix_backup_staging").apply { mkdirs() }
+        val staging = File(appContext.cacheDir, "telepic_backup_staging").apply { mkdirs() }
         MediaStoreBackupStager(appContext.contentResolver, staging)
     }
 

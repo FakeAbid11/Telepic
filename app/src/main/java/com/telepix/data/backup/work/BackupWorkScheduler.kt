@@ -23,7 +23,7 @@ interface BackupWorkScheduler {
     fun isScheduled(): Boolean
 }
 
-const val BACKUP_WORK_NAME = "telepix_backup"
+const val BACKUP_WORK_NAME = "telepic_backup"
 
 class WorkManagerBackupScheduler(private val context: Context) : BackupWorkScheduler {
 

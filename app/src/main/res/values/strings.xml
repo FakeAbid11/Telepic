@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Telepix</string>
+    <string name="app_name">Telepic</string>
 
     <!-- Primary navigation -->
     <string name="nav_photos">Photos</string>
@@ -10,9 +10,9 @@
     <string name="nav_settings">Settings</string>
 
     <!-- Photos -->
-    <string name="photos_title">Telepix</string>
+    <string name="photos_title">Telepic</string>
     <string name="photos_empty_title">Your photos will appear here</string>
-    <string name="photos_empty_description">This is your local media timeline. Telepix will organize your photos and videos here in a fast, beautiful grid — coming in a later phase.</string>
+    <string name="photos_empty_description">This is your local media timeline. Telepic will organize your photos and videos here in a fast, beautiful grid — coming in a later phase.</string>
 
     <!-- Cloud -->
     <string name="cloud_title">Cloud</string>
@@ -24,11 +24,11 @@
     <string name="cloud_offline_title">Telegram is unavailable</string>
     <string name="cloud_offline_body">You appear to be offline. Local photos still work; your cloud will refresh once the connection returns.</string>
     <string name="cloud_notconnected_title">Telegram is not connected</string>
-    <string name="cloud_notconnected_body">Sign in to Telegram during setup to browse your Telepix cloud.</string>
+    <string name="cloud_notconnected_body">Sign in to Telegram during setup to browse your Telepic cloud.</string>
     <string name="cloud_settingup_title">Setting up your cloud</string>
-    <string name="cloud_settingup_body">Telepix is preparing your Telepix Backup destination. Try again in a moment.</string>
+    <string name="cloud_settingup_body">Telepic is preparing your Telepic Backup destination. Try again in a moment.</string>
     <string name="cloud_empty_title">Your cloud is empty</string>
-    <string name="cloud_empty_body">Backed-up photos and videos will appear here once media is added to Telepix Backup.</string>
+    <string name="cloud_empty_body">Backed-up photos and videos will appear here once media is added to Telepic Backup.</string>
     <string name="cloud_error_title">Couldn\'t load your cloud</string>
     <string name="cloud_error_body">Something went wrong while reading Telegram. Please try again.</string>
     <string name="cloud_retry">Try again</string>
@@ -60,7 +60,7 @@
     <string name="settings_storage_cache">Cache and storage</string>
     <string name="settings_storage_cache_summary">Coming in a later phase</string>
     <string name="settings_section_about">About</string>
-    <string name="settings_about_version">Telepix version</string>
+    <string name="settings_about_version">Telepic version</string>
 
     <!-- Theme options -->
     <string name="theme_system">System default</string>
@@ -73,39 +73,39 @@
     <string name="onboarding_continue">Continue</string>
     <string name="onboarding_back">Back</string>
     <string name="onboarding_progress">Step %1$d of %2$d</string>
-    <string name="onboarding_loading">Loading Telepix…</string>
+    <string name="onboarding_loading">Loading Telepic…</string>
 
     <!-- Screen 1 — Welcome -->
     <string name="onboarding_welcome_tagline">A modern personal photo and video library with Telegram-powered cloud backup.</string>
-    <string name="onboarding_welcome_illustration">Telepix: local photos backed up to the cloud</string>
+    <string name="onboarding_welcome_illustration">Telepic: local photos backed up to the cloud</string>
 
-    <!-- Screen 2 — How Telepix Works -->
-    <string name="onboarding_how_title">How Telepix works</string>
+    <!-- Screen 2 — How Telepic Works -->
+    <string name="onboarding_how_title">How Telepic works</string>
     <string name="onboarding_how_local_title">Local first</string>
-    <string name="onboarding_how_local_body">Your phone stays your primary photo library. Telepix organizes what is already on your device.</string>
+    <string name="onboarding_how_local_body">Your phone stays your primary photo library. Telepic organizes what is already on your device.</string>
     <string name="onboarding_how_backup_title">You choose what backs up</string>
-    <string name="onboarding_how_backup_body">Telepix recognizes your media and queues backup only for what you select — nothing uploads before you decide.</string>
+    <string name="onboarding_how_backup_body">Telepic recognizes your media and queues backup only for what you select — nothing uploads before you decide.</string>
     <string name="onboarding_how_cloud_title">Cloud on Telegram</string>
     <string name="onboarding_how_cloud_body">Backed-up media is stored in your private Telegram channel, so you can browse it later without re-downloading originals.</string>
 
     <!-- Screen 3 — Permissions -->
     <string name="onboarding_permissions_title">Media permissions</string>
-    <string name="onboarding_permissions_body">Telepix needs access to your photos and videos to show your local library and back up the media you choose.</string>
+    <string name="onboarding_permissions_body">Telepic needs access to your photos and videos to show your local library and back up the media you choose.</string>
     <string name="onboarding_permissions_grant">Allow photo &amp; video access</string>
     <string name="onboarding_permissions_try_again">Try again</string>
     <string name="onboarding_permissions_open_settings">Open settings</string>
     <string name="onboarding_permissions_state_granted">Full access granted</string>
-    <string name="onboarding_permissions_state_granted_body">Telepix can see your photos and videos.</string>
+    <string name="onboarding_permissions_state_granted_body">Telepic can see your photos and videos.</string>
     <string name="onboarding_permissions_state_partial">Limited access</string>
-    <string name="onboarding_permissions_state_partial_body">You chose specific photos. Telepix can see only those. You can change this anytime in settings.</string>
+    <string name="onboarding_permissions_state_partial_body">You chose specific photos. Telepic can see only those. You can change this anytime in settings.</string>
     <string name="onboarding_permissions_state_denied">Access denied</string>
-    <string name="onboarding_permissions_state_denied_body">Without access, Telepix can\'t show your library. You can still continue and grant access later.</string>
+    <string name="onboarding_permissions_state_denied_body">Without access, Telepic can\'t show your library. You can still continue and grant access later.</string>
     <string name="onboarding_permissions_state_blocked">Access blocked</string>
     <string name="onboarding_permissions_state_blocked_body">Android is blocking the request. Enable photo access in app settings, then continue.</string>
 
     <!-- Screen 4 — Telegram Login -->
     <string name="onboarding_telegram_title">Connect Telegram</string>
-    <string name="onboarding_telegram_body">Telepix uses Telegram as the cloud storage layer for your backed-up media, kept in a private channel only you control.</string>
+    <string name="onboarding_telegram_body">Telepic uses Telegram as the cloud storage layer for your backed-up media, kept in a private channel only you control.</string>
     <string name="onboarding_telegram_connect">Connect Telegram</string>
     <string name="onboarding_telegram_not_connected">Not connected</string>
     <string name="onboarding_telegram_not_connected_body">Telegram sign-in arrives in the Telegram integration phase. You can continue now and connect later from Settings — cloud backup stays off until then.</string>
@@ -123,16 +123,16 @@
     <string name="telegram_password_label">Two-factor password</string>
     <string name="telegram_password_hint">This account has a cloud password</string>
     <string name="telegram_other_device">Approve the login request on your other Telegram device.</string>
-    <string name="telegram_registration">This phone number doesn\'t have a Telegram account yet. Telepix backs up to an existing account — please create one in the official Telegram app first, then sign in here.</string>
+    <string name="telegram_registration">This phone number doesn\'t have a Telegram account yet. Telepic backs up to an existing account — please create one in the official Telegram app first, then sign in here.</string>
     <string name="telegram_connected_as">Connected as %1$s</string>
     <string name="telegram_retry">Retry</string>
     <string name="telegram_change_account">Use a different account</string>
 
     <!-- Screen 5 — Backup Preferences -->
     <string name="onboarding_backup_title">Choose your backup</string>
-    <string name="onboarding_backup_subtitle">Pick how Telepix should back up your media. You can change this later in Settings.</string>
+    <string name="onboarding_backup_subtitle">Pick how Telepic should back up your media. You can change this later in Settings.</string>
     <string name="onboarding_backup_all_title">Back up all photos</string>
-    <string name="onboarding_backup_all_body">Telepix can back up your photo library according to your backup settings.</string>
+    <string name="onboarding_backup_all_body">Telepic can back up your photo library according to your backup settings.</string>
     <string name="onboarding_backup_folder_title">Select a folder</string>
     <string name="onboarding_backup_folder_body">Choose a specific source or folder for backup.</string>
     <string name="onboarding_backup_folder_pending">Folder selection becomes available with the media library phase.</string>
@@ -142,7 +142,7 @@
     <string name="onboarding_backup_not_now_body">Continue without configuring backup. You can set it up anytime from Settings.</string>
 
     <!-- Screen 6 — Ready -->
-    <string name="onboarding_ready_title">You\'re ready to use Telepix</string>
+    <string name="onboarding_ready_title">You\'re ready to use Telepic</string>
     <string name="onboarding_ready_subtitle">Here\'s your setup. You can change any of this later.</string>
     <string name="onboarding_ready_photo_access">Photo access</string>
     <string name="onboarding_ready_telegram">Telegram</string>
@@ -155,14 +155,14 @@
     <string name="onboarding_ready_value_backup_all">All photos</string>
     <string name="onboarding_ready_value_backup_folder">Selected folder</string>
     <string name="onboarding_ready_value_backup_none">Not configured</string>
-    <string name="onboarding_ready_start">Start using Telepix</string>
+    <string name="onboarding_ready_start">Start using Telepic</string>
 
     <!-- Photos — real local library (Phase 3) -->
     <string name="photos_no_media_title">No photos or videos yet</string>
-    <string name="photos_no_media_description">Telepix could not find any photos or videos available to the app on this device.</string>
+    <string name="photos_no_media_description">Telepic could not find any photos or videos available to the app on this device.</string>
     <string name="photos_refresh">Refresh</string>
     <string name="photos_permission_title">See your photos</string>
-    <string name="photos_permission_description">Telepix needs photo &amp; video access to show your local library. Your media stays on your device.</string>
+    <string name="photos_permission_description">Telepic needs photo &amp; video access to show your local library. Your media stays on your device.</string>
     <string name="photos_permission_blocked_title">Access is blocked</string>
     <string name="photos_permission_blocked_description">Android is blocking photo access. Enable it in app settings, then refresh.</string>
     <string name="photos_allow_access">Allow access</string>
@@ -185,7 +185,7 @@
     <string name="viewer_placeholder_description">The full-screen viewer arrives in a later phase. This media item\'s identifier was passed for navigation.</string>
 
     <!-- ============================ Backup engine (Phase 6) ============================ -->
-    <string name="backup_notification_title">Telepix backup</string>
+    <string name="backup_notification_title">Telepic backup</string>
     <string name="backup_notification_starting">Preparing your backup…</string>
     <string name="backup_notification_progress">Uploading %1$d of %2$d</string>
     <string name="backup_channel_name">Backup</string>
@@ -195,7 +195,7 @@
     <string name="backup_center_status_waiting">Waiting for Telegram…</string>
     <string name="backup_center_status_offline">Waiting for a connection…</string>
     <string name="backup_center_empty_title">Nothing to back up yet</string>
-    <string name="backup_center_empty_body">Media you add to the backup queue will appear here. Backed-up photos are stored in your Telepix Backup channel.</string>
+    <string name="backup_center_empty_body">Media you add to the backup queue will appear here. Backed-up photos are stored in your Telepic Backup channel.</string>
     <string name="backup_stat_queued">Queued</string>
     <string name="backup_stat_uploading">Uploading</string>
     <string name="backup_stat_completed">Completed</string>
@@ -236,7 +236,7 @@
 
     <!-- ============================ Albums (Phase 9) ============================ -->
     <string name="albums_permission_title">See your albums</string>
-    <string name="albums_permission_description">Telepix needs photo &amp; video access to group your library into albums.</string>
+    <string name="albums_permission_description">Telepic needs photo &amp; video access to group your library into albums.</string>
     <string name="albums_error_title">Couldn\'t load your albums</string>
     <string name="albums_error_description">Something went wrong while reading your library. Please try again.</string>
     <string name="albums_item_count">%1$d items</string>
@@ -303,7 +303,7 @@
     <string name="organization_cancel">Cancel</string>
     <string name="organization_item_description">Photo or video %1$s</string>
     <string name="organization_item_count">%1$d items</string>
-    <string name="organization_deleted_message">This item is still on your device. Telepix does not have permission to delete it from media storage.</string>
+    <string name="organization_deleted_message">This item is still on your device. Telepic does not have permission to delete it from media storage.</string>
 
     <string name="trash_delete_title">Delete permanently?</string>
     <string name="trash_delete_body">This deletes the file from your device through the system. It cannot be undone. Your Telegram backup copy is not affected.</string>
@@ -314,9 +314,9 @@
     <!-- ============================ Map (Phase 10) ============================ -->
     <string name="map_title">Map</string>
     <string name="map_empty_title">No locations yet</string>
-    <string name="map_empty_description">Photos and videos that contain GPS coordinates appear on the map. Telepix never invents a location for media without coordinates.</string>
+    <string name="map_empty_description">Photos and videos that contain GPS coordinates appear on the map. Telepic never invents a location for media without coordinates.</string>
     <string name="map_permission_title">See your photo locations</string>
-    <string name="map_permission_description">Telepix needs photo &amp; video access to read the location data already stored in your media.</string>
+    <string name="map_permission_description">Telepic needs photo &amp; video access to read the location data already stored in your media.</string>
     <string name="map_marker_description">Photo taken at this location</string>
     <string name="map_cluster_description">%1$d photos at this area</string>
     <string name="map_attribution">© OpenStreetMap contributors</string>

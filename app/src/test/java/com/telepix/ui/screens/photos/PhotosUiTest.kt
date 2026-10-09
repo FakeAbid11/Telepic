@@ -165,7 +165,7 @@ class PhotosUiTest {
         val repository = LocalMediaRepositoryImpl(ListMediaLoader(emptyList()))
         photosScreen(PhotosViewModel(repository, NoopWatcher), MediaPermissionState.Granted, onOpenSettings = { opened = true })
 
-        composeRule.onNodeWithText("Telepix").assertIsDisplayed()
+        composeRule.onNodeWithText("Telepic").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Settings").performClick()
         assertTrue(opened)
     }

@@ -170,7 +170,7 @@ class TelegramCloudRepository(
             throw CloudNetworkException("Not authenticated")
         }
         mutex.withLock {
-            val destination = currentDestination() ?: throw CloudDestinationInvalidException("No Telepix Backup destination")
+            val destination = currentDestination() ?: throw CloudDestinationInvalidException("No Telepic Backup destination")
             val result = dataSource.upload(destination.chatId, request, onProgress)
             // Remote confirmation arrived: record it under its stable identity, preserving any
             // existing trusted hash (upload rows carry a real hash; discovery rows carry none).

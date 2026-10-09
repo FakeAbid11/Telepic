@@ -101,7 +101,7 @@ class BackupWorker(
 
     private companion object {
         const val NOTIFICATION_ID = 4201
-        const val CHANNEL_ID = "telepix_backup"
+        const val CHANNEL_ID = "telepic_backup"
         const val MAX_ITEMS_PER_RUN = 25
     }
 }

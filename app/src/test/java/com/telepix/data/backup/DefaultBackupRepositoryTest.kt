@@ -60,13 +60,13 @@ class DefaultBackupRepositoryTest {
     fun tearDown() = db.close()
 
     private class FakeCloud(
-        var destination: TelepixCloudDestination? = TelepixCloudDestination(100L, "Telepix Backup", true, true, true),
+        var destination: TelepixCloudDestination? = TelepixCloudDestination(100L, "Telepic Backup", true, true, true),
         var uploadResult: CloudUploadResult? = CloudUploadResult(100L, 500L, 7, CloudMediaType.IMAGE),
         var uploadError: Throwable? = null,
     ) : CloudRepository {
         override val status = MutableStateFlow<CloudStatus>(CloudStatus.Ready)
         override val media = kotlinx.coroutines.flow.flowOf<List<CloudMedia>>(emptyList())
-        override val destinationTitle = MutableStateFlow<String?>("Telepix Backup")
+        override val destinationTitle = MutableStateFlow<String?>("Telepic Backup")
         var uploadCalls = 0
 
         override suspend fun prepare() = Unit

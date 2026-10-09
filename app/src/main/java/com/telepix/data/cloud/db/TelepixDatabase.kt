@@ -42,7 +42,7 @@ abstract class TelepixDatabase : RoomDatabase() {
     abstract fun mediaLocationDao(): MediaLocationDao
 
     companion object {
-        const val NAME = "telepix.db"
+        const val NAME = "telepic.db"
 
         /** Phase 5 → Phase 6: adds only the `backup_queue` table + indices. */
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
