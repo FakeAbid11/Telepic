@@ -51,7 +51,11 @@ class TdLibCloudDataSource(
         val response = gateway.request(TdApiCloudRequests.searchChannels(destinationTitle, SEARCH_LIMIT))
         if (response is TdApi.Error) throw CloudNetworkException("Chat search failed: ${response.message}")
         val chats = response as? TdApi.Chats ?: return emptyList()
-        return chats.chatIds.mapNotNull { chatId -> candidateFor(chatId) }
+        val candidates = ArrayList<ChatCandidate>(chats.chatIds.size)
+        for (chatId in chats.chatIds) {
+            candidateFor(chatId)?.let { candidates += it }
+        }
+        return candidates
     }
 
     override suspend fun createDestination(): ChatCandidate? {

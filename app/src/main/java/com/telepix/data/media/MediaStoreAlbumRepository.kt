@@ -20,7 +20,10 @@ import kotlinx.coroutines.withContext
  * reuse the exact Photos paging pipeline ([MediaPagingSource] + [MediaStoreMediaMapper]), filtered
  * by bucket, so an album grid behaves identically to the timeline.
  */
-class MediaStoreAlbumRepository(context: Context) : AlbumRepository {
+class MediaStoreAlbumRepository(
+    context: Context,
+    private val hiddenIdsProvider: suspend () -> Set<Long> = { emptySet() },
+) : AlbumRepository {
 
     private val appContext = context.applicationContext
     private val contentResolver = appContext.contentResolver
@@ -84,7 +87,7 @@ class MediaStoreAlbumRepository(context: Context) : AlbumRepository {
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false,
         ),
-        pagingSourceFactory = { MediaPagingSource(MediaStoreBucketLoader(appContext, bucketId)) },
+        pagingSourceFactory = { MediaPagingSource(MediaStoreBucketLoader(appContext, bucketId, hiddenIdsProvider)) },
     ).flow
 
     private companion object {
@@ -95,7 +98,11 @@ class MediaStoreAlbumRepository(context: Context) : AlbumRepository {
 }
 
 /** A bucket-scoped [MediaPageLoader] — the same projection/order as the timeline, filtered to one bucket. */
-class MediaStoreBucketLoader(context: Context, private val bucketId: Long) : MediaPageLoader {
+class MediaStoreBucketLoader(
+    context: Context,
+    private val bucketId: Long,
+    private val hiddenIdsProvider: suspend () -> Set<Long> = { emptySet() },
+) : MediaPageLoader {
 
     private val contentResolver = context.applicationContext.contentResolver
 
@@ -116,16 +123,20 @@ class MediaStoreBucketLoader(context: Context, private val bucketId: Long) : Med
 
     override suspend fun load(offset: Int, limit: Int): List<LocalMedia> = withContext(Dispatchers.IO) {
         val scope: CoroutineScope = this
-        val realSelection =
+        val base =
             "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (" +
                 "${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE}, ${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})" +
                 " AND ${MediaStore.MediaColumns.BUCKET_ID} = ?"
+        val hidden = hiddenIdsProvider().take(MAX_EXCLUDED_IDS)
+        val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { "?" }})"
+        val realSelection = base + exclusion
+        val args = (listOf(bucketId.toString()) + hidden.map { it.toString() }).toTypedArray()
         val results = ArrayList<LocalMedia>(limit)
         contentResolver.query(
             MediaStore.Files.getContentUri("external"),
             projection,
             realSelection,
-            arrayOf(bucketId.toString()),
+            args,
             "${MediaStore.MediaColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns._ID} DESC",
         )?.use { cursor ->
             if (!cursor.moveToPosition(offset - 1)) return@use
@@ -140,5 +151,9 @@ class MediaStoreBucketLoader(context: Context, private val bucketId: Long) : Med
             }
         }
         results
+    }
+
+    private companion object {
+        const val MAX_EXCLUDED_IDS = 500
     }
 }

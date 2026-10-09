@@ -2,6 +2,7 @@ package com.telepix.data.cloud
 
 import com.telepix.domain.cloud.ChatCandidate
 import com.telepix.domain.cloud.CloudMedia
+import com.telepix.domain.cloud.CloudMediaKind
 import com.telepix.domain.cloud.CloudMediaType
 import com.telepix.domain.cloud.CloudUploadRequest
 import org.drinkless.tdlib.TdApi

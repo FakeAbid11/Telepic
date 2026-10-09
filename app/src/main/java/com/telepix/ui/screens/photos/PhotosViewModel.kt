@@ -7,6 +7,7 @@ import androidx.paging.cachedIn
 import com.telepix.data.backup.BackupStatusRepository
 import com.telepix.data.media.LocalMediaRepository
 import com.telepix.data.media.MediaChangeWatcher
+import com.telepix.data.organization.MediaOrganizationRepository
 import com.telepix.domain.backup.MediaBackupVisualState
 import com.telepix.domain.media.PhotosItem
 import com.telepix.permissions.MediaPermissionState
@@ -15,8 +16,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /**
  * Owns Photos screen state: permission-aware loading, the paged media stream, backup status (from
@@ -24,11 +27,16 @@ import kotlinx.coroutines.flow.stateIn
  * lifecycle-safe media change watcher. No MediaStore/ContentResolver/Room/hash work lives in the UI,
  * and the UI never infers backup success itself: `BACKED_UP` here means the backup layer already
  * confirmed remote success.
+ *
+ * Phase 10: when an [MediaOrganizationRepository] is wired, archived/trashed items are excluded at
+ * the MediaStore query itself, and the favorite set is surfaced as one batched snapshot for tile
+ * badges — so favorites are independent of, and never alter, backup state.
  */
 class PhotosViewModel(
     private val repository: LocalMediaRepository,
     private val changeWatcher: MediaChangeWatcher,
     backupStatusRepository: BackupStatusRepository? = null,
+    organizationRepository: MediaOrganizationRepository? = null,
 ) : ViewModel() {
 
     private val _permissionState = MutableStateFlow(MediaPermissionState.NotRequested)
@@ -50,9 +58,21 @@ class PhotosViewModel(
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    /** Favorited ids for the tile badge — one batched snapshot, no per-tile query. */
+    val favoriteIds: StateFlow<Set<Long>> =
+        (organizationRepository?.favoriteIds ?: kotlinx.coroutines.flow.flowOf(emptySet()))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     init {
         // Re-read the library when MediaStore changes while the screen is alive.
         changeWatcher.start { repository.refresh() }
+        // When organization state changes (archive/trash), re-read so the timeline hides/shows items.
+        if (organizationRepository != null) {
+            viewModelScope.launch {
+                combine(organizationRepository.archivedIds, organizationRepository.trashedIds) { a, t -> a + t }
+                    .collect { repository.refresh() }
+            }
+        }
     }
 
     fun updatePermission(state: MediaPermissionState) {

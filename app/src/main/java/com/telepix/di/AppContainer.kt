@@ -36,6 +36,8 @@ import com.telepix.data.media.MediaChangeWatcher
 import com.telepix.data.media.MediaStoreAlbumRepository
 import com.telepix.data.media.MediaStoreLocalLookup
 import com.telepix.data.media.MediaStoreMediaLoader
+import com.telepix.data.organization.DefaultMediaOrganizationRepository
+import com.telepix.data.organization.MediaOrganizationRepository
 import com.telepix.onboarding.OnboardingRepository
 import com.telepix.onboarding.OnboardingRepositoryImpl
 import com.telepix.settings.SettingsRepository
@@ -68,6 +70,7 @@ interface AppContainer {
     val localMediaRepository: LocalMediaRepository
     val localMediaLookup: LocalMediaLookup
     val albumRepository: AlbumRepository
+    val mediaOrganizationRepository: MediaOrganizationRepository
     val mediaChangeWatcher: MediaChangeWatcher
     val backupRepository: BackupRepository
     val backupStatusRepository: BackupStatusRepository
@@ -89,13 +92,18 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     private val database: TelepixDatabase by lazy {
         Room.databaseBuilder(appContext, TelepixDatabase::class.java, TelepixDatabase.NAME)
-            .addMigrations(TelepixDatabase.MIGRATION_1_2, TelepixDatabase.MIGRATION_2_3)
+            .addMigrations(
+                TelepixDatabase.MIGRATION_1_2,
+                TelepixDatabase.MIGRATION_2_3,
+                TelepixDatabase.MIGRATION_3_4,
+            )
             .build()
     }
 
     private val cloudDestinationDao: CloudDestinationDao by lazy { database.cloudDestinationDao() }
     private val cloudManifestDao: CloudMediaManifestDao by lazy { database.cloudMediaManifestDao() }
     private val backupQueueDao: com.telepix.data.backup.db.BackupQueueDao by lazy { database.backupQueueDao() }
+    private val mediaOrganizationDao: com.telepix.data.organization.db.MediaOrganizationDao by lazy { database.mediaOrganizationDao() }
 
     // One shared TDLib client for both authentication and cloud.
     private val tdLibClientGateway: TdLibClientGateway by lazy { TdLibClientGatewayImpl() }
@@ -131,7 +139,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
 
-    private val mediaLoader: MediaStoreMediaLoader by lazy { MediaStoreMediaLoader(appContext) }
+    private val mediaLoader: MediaStoreMediaLoader by lazy {
+        MediaStoreMediaLoader(appContext) { mediaOrganizationRepository.hiddenIds() }
+    }
 
     override val localMediaRepository: LocalMediaRepository by lazy {
         LocalMediaRepositoryImpl(mediaLoader)
@@ -139,7 +149,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val localMediaLookup: LocalMediaLookup by lazy { MediaStoreLocalLookup(appContext) }
 
-    override val albumRepository: AlbumRepository by lazy { MediaStoreAlbumRepository(appContext) }
+    override val mediaOrganizationRepository: MediaOrganizationRepository by lazy {
+        DefaultMediaOrganizationRepository(mediaOrganizationDao)
+    }
+
+    override val albumRepository: AlbumRepository by lazy {
+        MediaStoreAlbumRepository(appContext) { mediaOrganizationRepository.hiddenIds() }
+    }
 
     override val mediaChangeWatcher: MediaChangeWatcher by lazy {
         AndroidMediaChangeWatcher(appContext)
