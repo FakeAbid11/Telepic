@@ -50,6 +50,7 @@ class ViewerUiTest {
         override suspend fun byId(id: Long): LocalMedia? = items[id]
         override suspend fun neighborId(id: Long, direction: NeighborDirection): Long? =
             if (direction == NeighborDirection.OLDER) older else null
+        override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = ids.toList().mapNotNull { items[it] }
     }
 
     private object NoCloud : CloudRepository {

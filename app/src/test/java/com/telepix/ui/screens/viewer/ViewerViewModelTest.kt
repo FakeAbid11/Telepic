@@ -52,6 +52,7 @@ class ViewerViewModelTest {
         override suspend fun byId(id: Long): LocalMedia? = items[id]
         override suspend fun neighborId(id: Long, direction: NeighborDirection): Long? =
             if (direction == NeighborDirection.NEWER) newer[id] else older[id]
+        override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = ids.toList().mapNotNull { items[it] }
     }
 
     private class FakeCloud(private val manifest: List<CloudMedia>) : CloudRepository {

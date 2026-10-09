@@ -90,7 +90,7 @@ class RestoreRepositoryTest {
     }
 
     @Test
-    fun `a content-hash mismatch is rejected as VERIFY_FAILED (corrupt / wrong bytes)`() = runBlocking {
+    fun `a content-hash mismatch is rejected as verify failed`() = runBlocking {
         val bytes = byteArrayOf(9, 9, 9, 9)
         val file = fileWithBytes(bytes)
         val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), FakePublisher(PublishResult.Inserted("x")))

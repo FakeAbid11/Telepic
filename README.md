@@ -22,10 +22,11 @@ Telepix organizes your local media into a fast, beautiful timeline and (in later
 | Persistence (app data) | Room (cloud destination, media manifest, backup queue) |
 | Image loading | Coil (thumbnail-first, video-frame decoding, animated GIFs) |
 | Video playback | Media3 ExoPlayer (`PlayerView`), device-gated |
+| Map | **osmdroid** + OpenStreetMap tiles (Apache-2.0, no API key); EXIF GPS via `androidx.exifinterface` |
 | Recognition / dedup | Streaming SHA-256 content identity (no third-party hashing lib) |
 | Cloud backend | Telegram via **Java TDLib** (`org.drinkless.tdlib`), ARM-only |
 | Background work | **WorkManager** (network-constrained, foreground backup worker) |
-| Map | OpenStreetMap *(later phases)* |
+| Map | OpenStreetMap tiles via **osmdroid**; EXIF GPS, marker clustering |
 | Build system | **GitHub Actions only** |
 
 ---
@@ -356,11 +357,82 @@ an authorized session on an ARM device; until then the data source returns hones
 and the UI shows truthful states. ExoPlayer playback (local and downloaded) is likewise
 device-validated — **no real-device test was performed for this phase**.
 
-### 🔜 Later phases
+### ✅ Phase 10 — Map, Media Organization, Restore & Real Telegram Integration *(code + CI complete; live Telegram, map rendering, MediaStore write/delete pending device validation)*
 
-Media Details · Map/Restore · Media management · Settings & security hardening · Full integration.
+This phase attacks the long-standing device-gated Telegram blocker first, then completes the
+interactive map, Favorites/Archive/Trash, and restore.
 
-See [`PRD.md`](PRD.md) for the complete product specification and the 12-phase plan.
+**Part A — Real Telegram cloud (request shapes finalized against the resolved API)**
+- The defensive stubs are replaced with **actual TDLib calls** built against the exact
+  `io.github.tdlib-android:core:0.1.1` (TDLib 1.8.x) `TdApi` surface — verified by inspecting the
+  bundled generated classes, not guessed from another version: `SearchChatsOnServer` (+ a channel
+  type filter), `GetChat`/`GetChatMember`, `CreateNewSupergroupChat` (a channel), `GetChatHistory`
+  (newest-first paging), synchronous `DownloadFile` with a verified local path, and `SendMessage`
+  with media-appropriate `InputMessagePhoto`/`InputMessageVideo`/`InputMessageAnimation` over
+  `InputFileLocal` from the staged file.
+- Destination posting rights come from the account's **real chat membership** (creator, or admin with
+  the post right) — never the channel title. The single shared TDLib client is reused (no second
+  client). An upload is reported as a confirmed remote identity **only after the sent message's
+  sending state clears to success** (polled, not raced); a rejected send is permanent, a flood-wait/
+  5xx is transient, and a confirmation timeout is treated as transient so the queue can retry — a
+  queue item is never marked `BACKED_UP` on a guess.
+- JVM unit tests construct/mapping real `TdApi` value objects (no native library) and drive the data
+  source through a **fake gateway** — request construction, response mapping, discovery→membership,
+  history paging, download verification, and upload confirm/reject/flood/timeout.
+- **Live Telegram behaviour is device-gated and NOT PERFORMED here** (no ARM device/authenticated
+  session was used). What is done: the concrete requests and response mapping are implemented and
+  unit-tested; what is missing: a real authorized round-trip on a device. Nothing is claimed to work
+  live.
+
+**Part B — Interactive OpenStreetMap photo map**
+- osmdroid (Apache-2.0, no API key) rendered via a Compose `AndroidView`, with proper OSM attribution
+  and a public MAPNIK tile source; documented as not suitable for unlimited production traffic.
+- Photo positions come **only from embedded EXIF GPS**, parsed by a pure, unit-tested `GpsCoordinates`
+  (DMS + hemisphere → decimal, range-validated, malformed/non-finite rejected). **No coordinate is
+  ever fabricated** — media without valid GPS simply never gets a pin; non-geotagged photos stay in
+  Photos. **No device-location permission is requested and no coordinates/EXIF are uploaded.**
+- Extracted coordinates are cached in a new `media_location` Room table (explicit, non-destructive
+  migration 4→5) so full-resolution EXIF is not re-read on every render; a pure `MapClusterer` groups
+  nearby markers while preserving every item id. Selecting a marker opens the shared Viewer by that
+  MediaStore id. `INTERNET` / `ACCESS_NETWORK_STATE` added for tiles.
+- GPS parsing, clustering and the cache are CI-tested with fakes; **map pan/zoom/tiles/marker
+  rendering are device-only and NOT TESTED**, and **no offline tile caching is implemented** (tiles
+  require connectivity).
+
+**Part C — Favorites, Archive & Trash**
+- Durable per-item state in a new `media_organization` Room table (explicit migration 3→4), keyed by
+  the MediaStore id — **independent of backup state** (favoriting/archiving/trashing never touches the
+  queue, remote identity, or cloud status; unit-tested).
+- **Favorite** stays visible in the library; **Archive** is removed from the primary timeline via
+  **DB-side** filtering (`_ID NOT IN (...)` in the MediaStore and album-bucket queries) but is stored
+  and restorable; **Trash** is hidden from normal browsing until recovered or permanently deleted.
+- Viewer favorite/archive/trash actions; contextual Favorites / Archive / Trash collections reached
+  from Albums (no new bottom-navigation destinations), with undo (unfavorite / unarchive / restore).
+- **Permanent delete** goes through the Android-sanctioned **`MediaStore.createDeleteRequest`** system
+  consent (API 30+), is confirmation-gated, and only forgets an item after a consented success. The
+  app-level trash flag is kept **distinct** from an actual file removal (`deletedFromStore`), and the
+  legacy Q-per-file consent is documented as unsupported rather than faked. Repository persistence,
+  migration, timeline hidden-id computation and the collection ViewModel are CI-tested; the **system
+  delete consent is device-only and NOT TESTED**.
+
+**Part D — Restore / download original to device**
+- `RestoreRepository`: explicit download of a cloud original → **SHA-256 verification** of the bytes
+  (against the trusted manifest hash when present) → publish into public media storage via a
+  `MediaStore` `ContentResolver` insert + streamed copy (correct MIME, scoped
+  `Pictures|Movies/Telepix` path, `IS_PENDING` commit, no overwrite of unrelated files, partial-write
+  cleanup). A **"Save to device"** action lives in the Viewer for cloud items; success is reported
+  only after a committed publication, and every earlier step is a distinct honest failure.
+- CI-tested with a fake cloud source + fake publisher (success, unavailable/missing, verify mismatch,
+  low-storage, publish failure). **Real Telegram download + the MediaStore write are device-gated and
+  NOT TESTED**; byte-for-byte preservation of a restored *image* is not claimed (Telegram's photo
+  pipeline may recompress), consistent with the upload note.
+
+Phases 1–9 are preserved; the new tables are additive (non-destructive migrations), ARM-only packaging
+and `minSdk 26` are unchanged, and GitHub Secrets remain the only credential source.
+
+### 🔜 Remaining
+
+Media Details · Settings & security hardening · full-device integration & hardening (Phases 11–12).
 
 ---
 
