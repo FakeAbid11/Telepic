@@ -54,23 +54,29 @@ class TelegramSessionManager(
     fun initialize() {
         _state.value = TelegramAuthState.Initializing
         scope.launch {
+            val isRetry = collectorJob != null
             if (collectorJob == null) {
                 // Subscribe to updates BEFORE opening the client, so the initial authorization update
                 // (emitted during/right after open()) is received, not lost. The gateway also replays the
                 // latest update as a second guard against the open/subscribe ordering race.
                 collectorJob = launch { gateway.updates.collect { update -> handle(update) } }
+                try {
+                    gateway.open()
+                } catch (throwable: Throwable) {
+                    collectorJob?.cancel()
+                    collectorJob = null
+                    _state.value = TelegramAuthState.Failed(
+                        TelegramError.Initialization("Telegram engine could not start."),
+                    )
+                    return@launch
+                }
+                // First start: opening makes TDLib emit the initial authorization state, which the
+                // collector handles. No need (and no race) from also querying it here.
+            } else if (isRetry) {
+                // Retry after a failure: the client is already open and TDLib will NOT re-announce the
+                // current wait (e.g. after a rejected SetTdlibParameters), so re-drive from its state.
+                driveFromCurrentState()
             }
-            try {
-                if (!gateway.isOpen) gateway.open()
-            } catch (throwable: Throwable) {
-                collectorJob?.cancel()
-                collectorJob = null
-                _state.value = TelegramAuthState.Failed(
-                    TelegramError.Initialization("Telegram engine could not start."),
-                )
-                return@launch
-            }
-            driveFromCurrentState()
         }
     }
 
@@ -93,10 +99,13 @@ class TelegramSessionManager(
 
     private suspend fun onAuthorizationState(state: TdApi.AuthorizationState) {
         lastAuthorizationState = state
+        // Publish the state we are now in BEFORE acting on it. If acting fails (e.g. a rejected
+        // SetTdlibParameters), fail() writes Failed as the terminal update; publishing first means that
+        // failure is not overwritten back to Initializing by a later map of the same wait state.
+        publishMappedState()
         if (state is TdApi.AuthorizationStateWaitTdlibParameters) {
             sendParameters()
         }
-        publishMappedState()
         if (state is TdApi.AuthorizationStateReady && authorizedUser.value == null) {
             fetchAccount()
         }
