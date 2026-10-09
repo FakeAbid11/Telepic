@@ -35,25 +35,30 @@ fun TelepixApp(
     navController: NavHostController = rememberNavController(),
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = TelepixDestination.fromRoute(backStackEntry?.destination?.route)
+    val route = backStackEntry?.destination?.route
+    // Only a top-level tab route selects a tab; detail/immersive screens (viewer, album contents,
+    // organization, backup) resolve to null so the bar neither mis-highlights Photos nor overlays them.
+    val currentTab = TelepixDestination.topLevelOf(route)
 
     Scaffold(
         modifier = modifier,
         bottomBar = {
-            NavigationBar {
-                TelepixDestination.entries.forEach { destination ->
-                    val selected = destination == currentDestination
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = { navController.navigateToTopLevel(destination) },
-                        icon = {
-                            Icon(
-                                imageVector = if (selected) destination.selectedIcon else destination.icon,
-                                contentDescription = null,
-                            )
-                        },
-                        label = { Text(stringResource(destination.labelRes)) },
-                    )
+            if (currentTab != null) {
+                NavigationBar {
+                    TelepixDestination.entries.forEach { destination ->
+                        val selected = destination == currentTab
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { navController.navigateToTopLevel(destination) },
+                            icon = {
+                                Icon(
+                                    imageVector = if (selected) destination.selectedIcon else destination.icon,
+                                    contentDescription = null,
+                                )
+                            },
+                            label = { Text(stringResource(destination.labelRes)) },
+                        )
+                    }
                 }
             }
         },

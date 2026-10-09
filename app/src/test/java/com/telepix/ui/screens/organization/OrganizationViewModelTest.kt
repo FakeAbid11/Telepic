@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,8 +108,19 @@ class OrganizationViewModelTest {
             store[2L] = media(2L)
         }
         val vm = OrganizationViewModel(OrganizationKind.FAVORITES, repo, lookup, FakeDeleter(DeleteRequest.Failed))
-        val items = vm.items.first { it.isNotEmpty() }
-        assertEquals(setOf(1L, 2L), items.map { it.id }.toSet())
+        val items = vm.items.first { it != null && it.isNotEmpty() }
+        assertEquals(setOf(1L, 2L), items!!.map { it.id }.toSet())
+    }
+
+    @Test
+    fun `items start as null (loading) until the collection is observed`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo().apply { favs.value = setOf(1L) }
+        val lookup = FakeLookup().apply { store[1L] = media(1L) }
+        val vm = OrganizationViewModel(OrganizationKind.FAVORITES, repo, lookup, FakeDeleter(DeleteRequest.Failed))
+        // WhileSubscribed with no observer keeps the initial value = null, so a slow load is never
+        // mistaken for an empty collection on screen.
+        assertNull(vm.items.value)
     }
 
     @Test

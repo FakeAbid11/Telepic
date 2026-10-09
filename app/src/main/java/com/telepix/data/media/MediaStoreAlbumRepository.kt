@@ -102,6 +102,7 @@ class MediaStoreAlbumRepository(
         const val PAGE_SIZE = 60
         const val PREFETCH_DISTANCE = 30
         const val INITIAL_LOAD_SIZE = 90
+        const val MAX_EXCLUDED_IDS = 500
     }
 }
 

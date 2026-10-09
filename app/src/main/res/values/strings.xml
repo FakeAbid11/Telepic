@@ -235,6 +235,16 @@
     <string name="albums_open_album">Open album %1$s</string>
     <string name="albums_back">Back to albums</string>
 
+    <!-- Album contents (one album\'s media grid) -->
+    <string name="album_contents_empty_title">Nothing to show in this album</string>
+    <string name="album_contents_empty_description">This album has no visible photos or videos. Archived and trashed items are hidden here too.</string>
+    <string name="album_contents_error_title">Couldn\'t load this album</string>
+    <string name="album_contents_error_description">Something went wrong while reading the album. Please try again.</string>
+
+    <!-- Shared state components -->
+    <string name="common_retry">Try again</string>
+    <string name="common_loading">Loading</string>
+
     <!-- ============================ Viewer (Phase 9) ============================ -->
     <string name="viewer_back">Back</string>
     <string name="viewer_previous">Previous item</string>
@@ -280,6 +290,7 @@
     <string name="organization_restore">Restore</string>
     <string name="organization_delete_forever">Delete forever</string>
     <string name="organization_cancel">Cancel</string>
+    <string name="organization_item_description">Photo or video %1$s</string>
     <string name="organization_item_count">%1$d items</string>
     <string name="organization_deleted_message">This item is still on your device. Telepix does not have permission to delete it from media storage.</string>
 

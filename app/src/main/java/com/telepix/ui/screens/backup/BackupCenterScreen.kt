@@ -42,13 +42,14 @@ import com.telepix.ui.theme.TelepixTokens
 fun BackupCenterScreen(
     viewModel: BackupViewModel,
     modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val spacing = TelepixTokens.spacing
 
     Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ScreenHeader(title = stringResource(R.string.backup_center_title))
+            ScreenHeader(title = stringResource(R.string.backup_center_title), onBack = onBack)
 
             if (state.isEmpty) {
                 EmptyState(

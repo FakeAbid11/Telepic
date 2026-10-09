@@ -54,6 +54,7 @@ import com.telepix.data.organization.DeleteRequest
 import com.telepix.domain.media.LocalMedia
 import com.telepix.navigation.OrganizationKind
 import com.telepix.ui.components.EmptyState
+import com.telepix.ui.components.LoadingState
 import com.telepix.ui.theme.TelepixTokens
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Archive
@@ -110,50 +111,54 @@ fun OrganizationScreen(
                     Text(stringResource(titleRes(viewModel.kind)), style = MaterialTheme.typography.titleLarge)
                 }
 
-                if (items.isEmpty()) {
-                    EmptyState(
+                // null means the id-set has not resolved yet — show loading, not a false "empty".
+                val list = items
+                when {
+                    list == null -> LoadingState(modifier = Modifier.weight(1f))
+                    list.isEmpty() -> EmptyState(
                         icon = emptyIcon(viewModel.kind),
                         title = stringResource(emptyTitleRes(viewModel.kind)),
                         description = stringResource(emptyDescRes(viewModel.kind)),
                         modifier = Modifier.weight(1f),
                     )
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 110.dp),
-                        contentPadding = PaddingValues(spacing.gridGutter),
-                        horizontalArrangement = Arrangement.spacedBy(spacing.gridGutter),
-                        verticalArrangement = Arrangement.spacedBy(spacing.gridGutter),
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    ) {
-                        items(items, key = { it.id }) { media ->
-                            val isSelected = selected?.id == media.id
-                            Box(
-                                modifier = Modifier
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(spacing.gridItemRadius))
-                                    .background(
-                                        if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                        else MaterialTheme.colorScheme.surfaceVariant,
+                    else -> {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = 110.dp),
+                            contentPadding = PaddingValues(spacing.gridGutter),
+                            horizontalArrangement = Arrangement.spacedBy(spacing.gridGutter),
+                            verticalArrangement = Arrangement.spacedBy(spacing.gridGutter),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        ) {
+                            items(list, key = { it.id }) { media ->
+                                val isSelected = selected?.id == media.id
+                                Box(
+                                    modifier = Modifier
+                                        .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(spacing.gridItemRadius))
+                                        .background(
+                                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                            else MaterialTheme.colorScheme.surfaceVariant,
+                                        )
+                                        .clickable { selected = media },
+                                ) {
+                                    AsyncImage(
+                                        model = media.contentUri,
+                                        contentDescription = stringResource(R.string.organization_item_description, media.displayName),
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.matchParentSize(),
                                     )
-                                    .clickable { selected = media },
-                            ) {
-                                AsyncImage(
-                                    model = media.contentUri,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.matchParentSize(),
-                                )
+                                }
                             }
                         }
-                    }
 
-                    selected?.let { media ->
-                        ActionRow(
-                            kind = viewModel.kind,
-                            onOpen = { onOpenMedia(media.id) },
-                            onUndo = { viewModel.undo(media.id); selected = null },
-                            onDelete = { showDeleteConfirm = true },
-                        )
+                        selected?.let { media ->
+                            ActionRow(
+                                kind = viewModel.kind,
+                                onOpen = { onOpenMedia(media.id) },
+                                onUndo = { viewModel.undo(media.id); selected = null },
+                                onDelete = { showDeleteConfirm = true },
+                            )
+                        }
                     }
                 }
             }

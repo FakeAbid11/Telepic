@@ -40,9 +40,10 @@ class OrganizationViewModel(
         OrganizationKind.TRASH -> organizationRepository.trashedIds
     }
 
-    val items: StateFlow<List<LocalMedia>> = idsFlow
+    // null = the id-set has not resolved yet (loading); an empty list is a genuinely empty collection.
+    val items: StateFlow<List<LocalMedia>?> = idsFlow
         .map { ids -> localLookup.byIdList(ids) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Undo the collection membership for an item (unfavorite / unarchive / restore). */
     fun undo(id: Long) = viewModelScope.launch {

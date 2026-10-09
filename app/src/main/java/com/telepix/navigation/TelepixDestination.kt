@@ -38,6 +38,14 @@ enum class TelepixDestination(
 
         fun fromRoute(route: String?): TelepixDestination =
             entries.firstOrNull { it.route == route } ?: Start
+
+        /**
+         * The top-level tab a route belongs to, or null when the route is a pushed/detail screen
+         * (viewer, album contents, organization, backup). Used to highlight the correct tab and hide
+         * the bottom bar on detail screens instead of defaulting every route to [Start].
+         */
+        fun topLevelOf(route: String?): TelepixDestination? =
+            entries.firstOrNull { it.route == route }
     }
 }
 

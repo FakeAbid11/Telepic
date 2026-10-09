@@ -27,6 +27,7 @@ import com.telepix.ui.screens.photos.PhotosViewModel
 import com.telepix.ui.screens.settings.SettingsScreen
 import com.telepix.ui.screens.viewer.ViewerScreen
 import com.telepix.ui.screens.viewer.ViewerViewModel
+import kotlinx.coroutines.flow.combine
 
 /**
  * Hosts the five primary destinations plus the contextual Viewer, Album contents and Backup Center.
@@ -146,7 +147,15 @@ fun TelepixNavHost(
         composable(TelepixDestination.Map.route) {
             val mapViewModel: com.telepix.ui.screens.map.MapViewModel = viewModel(
                 factory = viewModelFactory {
-                    initializer { com.telepix.ui.screens.map.MapViewModel(container.mapLocationRepository) }
+                    initializer {
+                        com.telepix.ui.screens.map.MapViewModel(
+                            mapLocationRepository = container.mapLocationRepository,
+                            hiddenIds = combine(
+                                container.mediaOrganizationRepository.archivedIds,
+                                container.mediaOrganizationRepository.trashedIds,
+                            ) { archived, trashed -> archived + trashed },
+                        )
+                    }
                 },
             )
             com.telepix.ui.screens.map.MapScreen(
@@ -172,7 +181,7 @@ fun TelepixNavHost(
                     }
                 },
             )
-            BackupCenterScreen(viewModel = backupViewModel)
+            BackupCenterScreen(viewModel = backupViewModel, onBack = { navController.popBackStack() })
         }
         composable(
             route = ViewerRoute.LOCAL,

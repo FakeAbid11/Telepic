@@ -21,6 +21,7 @@ import com.telepix.data.media.MapClusterer
 import com.telepix.permissions.MediaPermissionState
 import com.telepix.permissions.rememberMediaPermissionState
 import com.telepix.ui.components.EmptyState
+import com.telepix.ui.components.LoadingState
 import com.telepix.ui.components.ScreenHeader
 import com.telepix.ui.theme.TelepixTokens
 import org.osmdroid.config.Configuration
@@ -49,6 +50,7 @@ fun MapScreen(
     val controller = rememberMediaPermissionState()
     val permissionState = permissionStateOverride ?: controller.state
     val pins by viewModel.pins.collectAsStateWithLifecycle()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val spacing = TelepixTokens.spacing
 
     LaunchedEffect(permissionState.hasAccess) { if (permissionState.hasAccess) viewModel.refresh() }
@@ -62,6 +64,9 @@ fun MapScreen(
                     title = stringResource(R.string.map_permission_title),
                     description = stringResource(R.string.map_permission_description),
                 )
+                // Distinguish an in-progress scan from a genuinely empty result so the empty state
+                // does not flash before the first markers land.
+                isScanning && pins.isEmpty() -> LoadingState(modifier = Modifier.weight(1f))
                 pins.isEmpty() -> EmptyState(
                     icon = Icons.Outlined.LocationOff,
                     title = stringResource(R.string.map_empty_title),

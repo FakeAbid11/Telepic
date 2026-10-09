@@ -10,8 +10,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.telepix.R
 import com.telepix.ui.theme.TelepixTokens
 
 /**
@@ -26,6 +28,7 @@ fun LoadingState(
     message: String? = null,
 ) {
     val spacing = TelepixTokens.spacing
+    val fallbackDescription = stringResource(R.string.common_loading)
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
@@ -37,7 +40,7 @@ fun LoadingState(
             CircularProgressIndicator(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.semantics {
-                    contentDescription = message ?: "Loading"
+                    contentDescription = message ?: fallbackDescription
                 },
             )
             if (message != null) {
