@@ -29,12 +29,17 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Verifies the Photos ViewModel's permission state, refresh delegation, and lifecycle-safe change
  * watcher wiring — with a fake repository and watcher (no MediaStore).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class PhotosViewModelTest {
 
     private class FakeRepository : LocalMediaRepository {
