@@ -139,7 +139,9 @@ class MediaStoreBucketLoader(
             args,
             "${MediaStore.MediaColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns._ID} DESC",
         )?.use { cursor ->
-            if (!cursor.moveToPosition(offset - 1)) return@use
+            // offset 0 is the newest page read directly via moveToNext(); only a positive offset
+            // seeks, and an offset at/past the end yields an empty page (end of the bucket).
+            if (!cursor.seekToPageStart(offset)) return@use
             var count = 0
             while (count < limit && cursor.moveToNext()) {
                 scope.ensureActive()

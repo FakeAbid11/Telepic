@@ -68,9 +68,9 @@ class MediaStoreMediaLoader(
                 sortOrder,
                 cancellation,
             )?.use { cursor ->
-                // moveToPosition(offset - 1) lands just before the target page; for offset 0 it
-                // sits before the first row so the next moveNext() yields the newest item.
-                if (!cursor.moveToPosition(offset - 1)) return@use
+                // The cursor starts before the first row, so the newest-first first page (offset 0)
+                // is read directly with moveToNext(); only a positive offset seeks (see seekToPageStart).
+                if (!cursor.seekToPageStart(offset)) return@use
                 var count = 0
                 while (count < limit && cursor.moveToNext()) {
                     scope.ensureActive()
