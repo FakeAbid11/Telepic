@@ -8,7 +8,7 @@ package com.telepix.ui.screens.photos
  */
 object DateRailWindow {
 
-    /** Inclusive-first / exclusive-last index range into a newest-first [anchorCount] list. */
+    /** Fully inclusive index range (`first`..`last`) into a newest-first [anchorCount] list. */
     fun window(anchorCount: Int, activeIndex: Int, windowSize: Int): IntRange {
         if (anchorCount <= 0 || windowSize <= 0) return 0 until 0
         val size = minOf(windowSize, anchorCount)

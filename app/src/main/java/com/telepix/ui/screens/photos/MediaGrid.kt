@@ -229,7 +229,7 @@ private fun DateRail(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
-        anchors.subList(window.first, window.last).forEach { anchor ->
+        anchors.subList(window.first, window.last + 1).forEach { anchor ->
             val isActive = anchor.epochDay == activeEpochDay
             val short = when (today.toEpochDay() - anchor.epochDay) {
                 0L -> stringResource(R.string.date_today)
