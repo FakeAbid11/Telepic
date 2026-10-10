@@ -17,6 +17,10 @@ class DateAnchorScanTest {
     /** A stand-in pager: [cells] holds the day headers (null = media/absent cell), [visited] records reads. */
     private class FakePager(val cells: List<PhotosItem.Day?>) {
         val visited = mutableListOf<Int>()
+
+        /** The head cell's stable key — what the composable uses to spot a new Paging generation. */
+        val firstKey: String? get() = cells.firstOrNull()?.key
+
         val dayAt: (Int) -> PhotosItem.Day? = { index ->
             visited += index
             cells.getOrNull(index)
@@ -99,23 +103,42 @@ class DateAnchorScanTest {
     }
 
     @Test
-    fun `the holder recomputes only when the loaded count changes`() {
+    fun `the holder recomputes only when the count or the generation changes`() {
         val pager = FakePager(layout)
         val holder = AnchorScanHolder()
 
-        val first = holder.update(3, pager.dayAt)
+        val first = holder.update(3, pager.firstKey, pager.dayAt)
         pager.visited.clear()
 
-        assertSame(first, holder.update(3, pager.dayAt))
+        // Same count, same head key: nothing is re-read at all.
+        assertSame(first, holder.update(3, pager.firstKey, pager.dayAt))
         assertEquals(emptyList<Int>(), pager.visited)
 
-        val grown = holder.update(5, pager.dayAt)
+        val grown = holder.update(5, pager.firstKey, pager.dayAt)
         assertEquals(listOf(0, 3), grown.map { it.index })
         assertEquals(listOf(0, 3, 4), pager.visited)
 
         pager.visited.clear()
-        val shrunk = holder.update(2, pager.dayAt)
+        val shrunk = holder.update(2, pager.firstKey, pager.dayAt)
         assertEquals(listOf(0), shrunk.map { it.index })
         assertEquals(listOf(0, 1), pager.visited)
+    }
+
+    @Test
+    fun `a same-count refresh with a new head key rebuilds from zero`() {
+        val holder = AnchorScanHolder()
+        val before = FakePager(layout)
+        holder.update(5, before.firstKey, before.dayAt)
+
+        // A refresh that swaps in a different first day but the very same loaded count.
+        val after = FakePager(listOf(day(77), null, day(9), null, null))
+        after.visited.clear()
+
+        val rebuilt = holder.update(5, after.firstKey, after.dayAt)
+
+        assertEquals(listOf(0, 2), rebuilt.map { it.index })
+        assertEquals(listOf(77L, 9L), rebuilt.map { it.epochDay })
+        // The rebuild really restarted at index 0 rather than trusting the old generation.
+        assertEquals(listOf(0, 1, 2, 3, 4), after.visited)
     }
 }

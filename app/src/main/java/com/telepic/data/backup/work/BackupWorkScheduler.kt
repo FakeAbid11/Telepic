@@ -7,13 +7,17 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 /**
  * The WorkManager orchestration seam. Keeping it behind an interface lets the coordinator be tested
  * with a fake scheduler, while the real one drives a network-constrained, resumable [BackupWorker].
+ *
+ * There is deliberately no cancel/isScheduled pair: opting out of backup is enforced by the
+ * preference gate inside [BackupDiscoveryWorker] on every tick, and killing the unique one-time work
+ * from here would cancel an in-flight upload mid-TDLib-send and strand rows in UPLOADING. Do not
+ * reintroduce a cancel path without handling that.
  */
 interface BackupWorkScheduler {
     /** Ensure a run is scheduled (unique; won't stack duplicate workers). */
@@ -21,11 +25,6 @@ interface BackupWorkScheduler {
 
     /** Ensure the recurring discovery+processing cadence is installed (unique; idempotent). */
     fun schedulePeriodic()
-
-    /** Stop active work cooperatively; queued rows stay QUEUED. */
-    fun cancel()
-
-    fun isScheduled(): Boolean
 }
 
 const val BACKUP_WORK_NAME = "telepic_backup"
@@ -59,14 +58,6 @@ class WorkManagerBackupScheduler(private val context: Context) : BackupWorkSched
         // only risk interrupting an in-flight discovery run for zero benefit.
         workManager.enqueueUniquePeriodicWork(BACKUP_PERIODIC_WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
     }
-
-    override fun cancel() {
-        workManager.cancelUniqueWork(BACKUP_WORK_NAME)
-    }
-
-    override fun isScheduled(): Boolean =
-        workManager.getWorkInfosForUniqueWork(BACKUP_WORK_NAME).get()
-            .orEmpty().any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
 
     private companion object {
         const val BACKOFF_MILLIS = 10_000L

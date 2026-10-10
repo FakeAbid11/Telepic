@@ -46,8 +46,6 @@ class BackupCoordinatorTest {
         var periodicScheduled = 0
         override fun schedule() { scheduled++ }
         override fun schedulePeriodic() { periodicScheduled++ }
-        override fun cancel() = Unit
-        override fun isScheduled() = false
     }
 
     private class FakeOnboarding(

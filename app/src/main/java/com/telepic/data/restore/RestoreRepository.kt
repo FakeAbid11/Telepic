@@ -5,6 +5,7 @@ import com.telepic.data.backup.hash.hashContent
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.domain.cloud.CloudMedia
 import java.io.File
+import kotlinx.coroutines.CancellationException
 
 sealed interface RestoreResult {
     /** The original was downloaded and committed to public media storage. */
@@ -44,7 +45,11 @@ class DefaultRestoreRepository(
 ) : RestoreRepository {
 
     override suspend fun restore(media: CloudMedia): RestoreResult {
-        val downloaded = runCatching { cloudRepository.downloadOriginal(media) }.getOrNull()
+        // `onFailure { throw }` keeps cancellation flowing: without it a cancelled scope would be
+        // reported to the user as "download unavailable".
+        val downloaded = runCatching { cloudRepository.downloadOriginal(media) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
             ?: return RestoreResult.Failed(RestoreFailure.DOWNLOAD_UNAVAILABLE)
 
         // A completed download must be present and non-empty; an absent/zero-length file is treated
@@ -58,7 +63,9 @@ class DefaultRestoreRepository(
         // failure (VERIFY_FAILED); this is NOT a comparison against the lossy-representation original.
         val restoredHash = runCatching {
             hashContent(ContentStreamSource { file.inputStream() }, expectedSize = null).sha256
-        }.getOrNull() ?: return RestoreResult.Failed(RestoreFailure.VERIFY_FAILED)
+        }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull() ?: return RestoreResult.Failed(RestoreFailure.VERIFY_FAILED)
 
         return when (val published = publisher.publish(downloaded.localPath, media.mimeType, media.fileName)) {
             is PublishResult.Inserted -> RestoreResult.Restored(published.uri, restoredHash)

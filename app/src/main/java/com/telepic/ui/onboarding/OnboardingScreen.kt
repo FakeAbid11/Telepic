@@ -20,6 +20,7 @@ import com.telepic.R
 import com.telepic.onboarding.BackupPreference
 import com.telepic.permissions.MediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
+import com.telepic.permissions.rememberNotificationPermissionState
 import com.telepic.telegram.TelegramAuthController
 import com.telepic.ui.onboarding.components.OnboardingScaffold
 import com.telepic.ui.onboarding.components.TAG_ONBOARDING_PRIMARY
@@ -54,6 +55,7 @@ fun OnboardingScreen(
 ) {
     var step by rememberSaveable { mutableIntStateOf(0) }
     val permission = rememberMediaPermissionState()
+    val notifications = rememberNotificationPermissionState()
     val telegramState by telegramController.state.collectAsStateWithLifecycle()
 
     // System back walks one step at a time; on the first step it falls through to the
@@ -166,9 +168,19 @@ fun OnboardingScreen(
                         selected = backupPreference,
                         selectedBucketIds = backupBucketIds,
                         folders = folders,
-                        onSelect = onBackupPreferenceChange,
+                        // Choosing a backup scope is the moment upload progress becomes useful, so
+                        // ask here — the request no-ops below API 33 or once notifications are on.
+                        onSelect = { pref ->
+                            onBackupPreferenceChange(pref)
+                            if (pref != BackupPreference.NOT_NOW) notifications.request()
+                        },
                         onNeedFolders = onNeedFolders,
-                        onPickFolders = onPickFolders,
+                        onPickFolders = { ids ->
+                            onPickFolders(ids)
+                            // The picker confirm is the real enable edge for SELECT_FOLDER; an empty
+                            // choice persists nothing, so it must not trigger a prompt.
+                            if (ids.isNotEmpty()) notifications.request()
+                        },
                     )
                     5 -> ReadyStep(permission.state, telegramState, backupPreference)
                 }

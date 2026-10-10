@@ -12,6 +12,7 @@ import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.cloud.LocalDownloadedMedia
 import com.telepic.telegram.TelegramAuthState
 import com.telepic.telegram.TelegramUser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -59,6 +60,9 @@ class TelegramCloudRepositoryTest {
         var preview: CloudPreview? = null,
         var download: LocalDownloadedMedia? = null,
         var searchError: Throwable? = null,
+        var mediaError: Throwable? = null,
+        var previewError: Throwable? = null,
+        var downloadError: Throwable? = null,
         var uploadResult: com.telepic.domain.cloud.CloudUploadResult? = null,
         var uploadError: Throwable? = null,
     ) : CloudDataSource {
@@ -79,9 +83,20 @@ class TelegramCloudRepositoryTest {
             return created
         }
 
-        override suspend fun loadNewestMedia(chatId: Long, limit: Int) = media
-        override suspend fun downloadPreview(media: CloudMedia) = preview
-        override suspend fun downloadOriginal(media: CloudMedia) = download
+        override suspend fun loadNewestMedia(chatId: Long, limit: Int): List<CloudMedia> {
+            mediaError?.let { throw it }
+            return media
+        }
+
+        override suspend fun downloadPreview(media: CloudMedia): CloudPreview? {
+            previewError?.let { throw it }
+            return preview
+        }
+
+        override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? {
+            downloadError?.let { throw it }
+            return download
+        }
 
         override suspend fun upload(
             chatId: Long,
@@ -234,6 +249,37 @@ class TelegramCloudRepositoryTest {
         r.prepare()
         val item = r.media.first().first()
         assertNull(r.downloadOriginal(item))
+    }
+
+    @Test
+    fun `cancellation during an original download propagates instead of claiming no file`() = runBlocking {
+        val source = FakeDataSource(
+            candidates = listOf(candidate()),
+            media = listOf(mediaItem(1)),
+            downloadError = CancellationException("viewer navigated away"),
+        )
+        val r = repo(source)
+        r.prepare()
+        val item = r.media.first().first()
+        val failure = runCatching { r.downloadOriginal(item) }.exceptionOrNull()
+        assertTrue(
+            "a cancelled download must surface as cancellation, not a null 'unavailable' file",
+            failure is CancellationException,
+        )
+    }
+
+    @Test
+    fun `a cancelled refresh leaves the status alone instead of publishing Failed`() = runBlocking {
+        val source = FakeDataSource(
+            candidates = listOf(candidate()),
+            mediaError = CancellationException("screen gone"),
+        )
+        val r = repo(source)
+        runCatching { r.prepare() }
+        assertTrue(
+            "cancellation is not a cloud failure, but was reported as ${r.status.value}",
+            r.status.value !is CloudStatus.Failed,
+        )
     }
 
     @Test

@@ -82,6 +82,7 @@ fun AlbumsScreen(
             if (permissionState.hasAccess) {
                 LibraryShortcuts(onOpenOrganization)
             }
+            val currentStatus = status
             when {
                 !permissionState.hasAccess -> EmptyState(
                     icon = Icons.Outlined.Lock,
@@ -93,19 +94,19 @@ fun AlbumsScreen(
                         StateAction(stringResource(R.string.photos_allow_access), controller.requestPermission)
                     },
                 )
-                status is AlbumsStatus.Loading -> LoadingState()
-                status is AlbumsStatus.Error -> ErrorState(
+                currentStatus is AlbumsStatus.Loading -> LoadingState()
+                currentStatus is AlbumsStatus.Error -> ErrorState(
                     title = stringResource(R.string.albums_error_title),
                     explanation = stringResource(R.string.albums_error_description),
                     onRetry = viewModel::refresh,
                 )
-                status is AlbumsStatus.Empty -> EmptyState(
+                currentStatus is AlbumsStatus.Empty -> EmptyState(
                     icon = Icons.Outlined.Collections,
                     title = stringResource(R.string.albums_empty_title),
                     description = stringResource(R.string.albums_empty_description),
                     primaryAction = StateAction(stringResource(R.string.photos_refresh), viewModel::refresh),
                 )
-                status is AlbumsStatus.Ready -> AlbumGrid((status as AlbumsStatus.Ready).albums, onOpenAlbum)
+                currentStatus is AlbumsStatus.Ready -> AlbumGrid(currentStatus.albums, onOpenAlbum)
             }
         }
     }

@@ -52,6 +52,7 @@ import com.telepic.domain.cloud.CloudMediaType
 import com.telepic.domain.cloud.CloudPreviewState
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.cloud.CloudUiState
+import com.telepic.domain.media.DurationLabel
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.LoadingState
@@ -138,7 +139,10 @@ private fun CloudContent(
     onOpen: (CloudMedia) -> Unit,
     onRetry: () -> Unit,
 ) {
-    when (uiState.status) {
+    // Read the status once: the branches below smart-cast this local instead of re-reading
+    // `uiState.status` and casting (a re-read could observe a different value than the check did).
+    val cloudStatus = uiState.status
+    when (cloudStatus) {
         CloudStatus.Initializing, CloudStatus.Connecting -> LoadingState()
         CloudStatus.NotAuthenticated -> EmptyState(
             icon = Icons.Outlined.Lock,
@@ -160,12 +164,12 @@ private fun CloudContent(
         is CloudStatus.DestinationInvalid -> EmptyState(
             icon = Icons.Outlined.CloudOff,
             title = stringResource(R.string.cloud_settingup_title),
-            description = (uiState.status as CloudStatus.DestinationInvalid).reason,
+            description = cloudStatus.reason,
             primaryAction = StateAction(stringResource(R.string.cloud_retry), onRetry),
         )
         is CloudStatus.Failed -> ErrorState(
             title = stringResource(R.string.cloud_error_title),
-            explanation = (uiState.status as CloudStatus.Failed).message.ifBlank {
+            explanation = cloudStatus.message.ifBlank {
                 stringResource(R.string.cloud_error_body)
             },
             onRetry = onRetry,
@@ -286,9 +290,9 @@ private fun CloudTile(
                         .padding(spacing.xs)
                         .size(18.dp),
                 )
-                media.durationMs?.let {
+                DurationLabel.format(media.durationMs)?.let { label ->
                     Text(
-                        text = formatDuration(it),
+                        text = label,
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
                         modifier = Modifier
@@ -354,14 +358,4 @@ private fun CloudBadge(modifier: Modifier = Modifier) {
             .background(TelepicTokens.colors.scrim)
             .padding(4.dp),
     )
-}
-
-// These two small helpers keep the retry callbacks wired to a refresh without threading the
-// ViewModel into every leaf composable.
-private fun formatDuration(millis: Long): String {
-    if (millis <= 0L) return ""
-    val total = millis / 1000
-    val m = total / 60
-    val s = total % 60
-    return String.format(Locale.US, "%d:%02d", m, s)
 }

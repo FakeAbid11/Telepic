@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import com.telepic.R
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupRepository
+import kotlinx.coroutines.flow.first
 
 /**
  * Process-wide handle the container installs so the WorkManager-created workers can reach their
@@ -28,7 +29,8 @@ object BackupWorkerDependencies {
 /**
  * The single backup [CoroutineWorker]. It never depends on an Activity, Composable, or screen being
  * alive. It runs the resumable queue loop off the main thread, reports an honest foreground
- * notification ("Uploading n of m"), and cooperatively stops on cancel.
+ * notification ("Preparing your backup…", then "Uploading n of m" for this run) that is raised before
+ * the upload pass whenever the queue has work, and cooperatively stops on cancel.
  *
  * WorkManager only starts this when a network connection is available (the scheduler's constraint),
  * so an offline device simply leaves rows QUEUED until connectivity returns — nothing is failed for
@@ -55,6 +57,19 @@ class BackupWorker(
         // Repair anything a previous process left mid-flight before touching new work.
         repo.recoverInterruptedWork()
 
+        // Promote to foreground BEFORE the upload pass, and only when the queue actually has
+        // something to do: the notification has to cover the slow part (TDLib sends), and an empty
+        // tick must not flash a "Preparing your backup…" line every 12 hours. It stays best-effort —
+        // a denied notification permission or an Android 14 background-FGS refusal is swallowed here,
+        // the upload itself continues, and the Backup Center remains the in-app source of truth.
+        val pending = runCatching { repo.observeStats().first() }
+            .getOrNull()
+            ?.let { it.queued + it.uploading }
+            ?: 0
+        if (pending > 0) {
+            runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(uploaded = 0, processed = 0))) }
+        }
+
         // One pass over the queue: processPendingWork attempts each actionable item at most once, so
         // the retry budget of a transiently failing item cannot be burned repeatedly inside a single
         // run — WorkManager's backoff, not a tighter loop here, provides the retry delay. State is
@@ -63,6 +78,8 @@ class BackupWorker(
         val summary = repo.processPendingWork(maxItems = MAX_ITEMS_PER_RUN)
 
         if (summary.processed > 0) {
+            // Same notification id, so this updates the in-place foreground line with real counts
+            // rather than posting a second one WorkManager does not own.
             runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(summary.uploaded, summary.processed))) }
         }
 

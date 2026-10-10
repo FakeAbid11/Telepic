@@ -24,6 +24,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -133,7 +134,10 @@ private fun AuthContent(
             )
         }
         is TelegramAuthState.WaitingForPassword -> {
-            var password by rememberSaveable { mutableStateOf("") }
+            // Deliberately NOT rememberSaveable: saved instance state is persisted to disk on
+            // process death, which would leave the 2FA password behind long after the in-memory
+            // clear below. Phone/code stay saveable — they are identity, not a standing secret.
+            var password by remember { mutableStateOf("") }
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },

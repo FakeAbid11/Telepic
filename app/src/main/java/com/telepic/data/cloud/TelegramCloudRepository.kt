@@ -19,6 +19,7 @@ import com.telepic.domain.cloud.LocalDownloadedMedia
 import com.telepic.domain.cloud.TelepicCloudDestination
 import com.telepic.telegram.TelegramAuthState
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -113,6 +114,10 @@ class TelegramCloudRepository(
             _status.value = CloudStatus.Offline
         } catch (invalid: CloudDestinationInvalidException) {
             _status.value = CloudStatus.DestinationInvalid(invalid.reason)
+        } catch (cancellation: CancellationException) {
+            // A cancelled refresh is not a failure: publishing Failed here would overwrite the
+            // status a newer run just set, and the scope is already tearing down.
+            throw cancellation
         } catch (throwable: Throwable) {
             _status.value = CloudStatus.Failed(safeMessage(throwable))
         }
@@ -141,6 +146,8 @@ class TelegramCloudRepository(
             return persistDestination(found)
         } catch (network: CloudNetworkException) {
             _status.value = CloudStatus.Offline
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (throwable: Throwable) {
             _status.value = CloudStatus.Failed(safeMessage(throwable))
         }
@@ -150,6 +157,8 @@ class TelegramCloudRepository(
     override suspend fun getPreview(media: CloudMedia): CloudPreview? = withContext(dispatcher) {
         try {
             dataSource.downloadPreview(media)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (throwable: Throwable) {
             null
         }
@@ -163,6 +172,10 @@ class TelegramCloudRepository(
                     manifestDao.setDownloaded(media.chatId, media.messageId, true)
                 }
                 result
+            } catch (cancellation: CancellationException) {
+                // Returning null here would read as "the file is unavailable" to the Viewer and
+                // mark a perfectly good cloud item undownloadable.
+                throw cancellation
             } catch (throwable: Throwable) {
                 null
             }

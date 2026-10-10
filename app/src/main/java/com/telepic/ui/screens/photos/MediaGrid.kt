@@ -91,17 +91,26 @@ internal fun updateDateAnchors(
     return scanFrom(0)
 }
 
-/** Composable-side anchor state: recomputes only when the loaded count actually changes. */
+/** Composable-side anchor state: recomputes when the loaded count OR the paging generation changes. */
 internal class AnchorScanHolder {
     private var examinedCount: Int = -1
+    private var examinedFirstKey: String? = null
     var anchors: List<DateAnchor> = emptyList()
         private set
 
-    fun update(newCount: Int, dayAt: (Int) -> PhotosItem.Day?): List<DateAnchor> {
-        if (newCount == examinedCount) return anchors
-        // Growth appends from the previously examined boundary; anything else scans from zero.
-        val firstUnchecked = if (newCount > examinedCount && examinedCount >= 0) examinedCount else 0
+    /**
+     * [firstKey] identifies the loaded generation (the head cell's stable key). A refresh can land on
+     * exactly the same item count, which the count alone cannot distinguish — without the key check
+     * the rail would keep pointing at the previous generation's rows.
+     */
+    fun update(newCount: Int, firstKey: String?, dayAt: (Int) -> PhotosItem.Day?): List<DateAnchor> {
+        val sameGeneration = newCount == examinedCount && firstKey == examinedFirstKey
+        if (sameGeneration) return anchors
+        // Append only within one generation that grew; any other change rescans from the start.
+        val appendedWithinGeneration = newCount > examinedCount && examinedCount >= 0 && firstKey == examinedFirstKey
+        val firstUnchecked = if (appendedWithinGeneration) examinedCount else 0
         examinedCount = newCount
+        examinedFirstKey = firstKey
         anchors = updateDateAnchors(anchors, firstUnchecked, newCount, dayAt)
         return anchors
     }
@@ -132,10 +141,10 @@ fun MediaGrid(
     val today = remember { LocalDate.now() }
 
     // Rail anchors grow incrementally as pages append: only items past the last examined index are
-    // scanned per change, instead of re-walking the whole loaded list. A refresh (new PagingData
-    // generation) remaps every index, so it rebuilds from scratch.
-    val anchorHolder = remember(media) { AnchorScanHolder() }
-    val anchors: List<DateAnchor> = anchorHolder.update(media.itemCount) { index ->
+    // scanned per change, instead of re-walking the whole loaded list. The head cell's key carries the
+    // Paging generation, so a refresh — even one landing on the same item count — rebuilds from zero.
+    val anchorHolder = remember { AnchorScanHolder() }
+    val anchors: List<DateAnchor> = anchorHolder.update(media.itemCount, media[0]?.key) { index ->
         media[index] as? PhotosItem.Day
     }
 

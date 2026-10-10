@@ -40,11 +40,11 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.telepic.R
 import com.telepic.domain.backup.MediaBackupVisualState
+import com.telepic.domain.media.DurationLabel
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaDay
 import com.telepic.domain.media.MediaType
 import com.telepic.ui.theme.TelepicTokens
-import java.util.Locale
 
 /**
  * A single media cell (Phase 8): a square, center-cropped, thumbnail-first Coil image (never a full
@@ -89,7 +89,7 @@ fun MediaTile(
 
         when (media.type) {
             MediaType.VIDEO -> VideoOverlay(
-                durationLabel = formatDuration(media.durationMillis),
+                durationLabel = DurationLabel.format(media.durationMillis),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(spacing.xs),
@@ -273,7 +273,7 @@ private fun mediaAccessibilityLabel(
     }
     val parts = mutableListOf(context.getString(typeRes), MediaDay.label(media.dateMillis))
     if (media.type == MediaType.VIDEO) {
-        formatDuration(media.durationMillis)?.let { parts += it }
+        DurationLabel.format(media.durationMillis)?.let { parts += it }
     }
     if (backupState != MediaBackupVisualState.NONE) {
         parts += context.getString(backupState.descriptionRes())
@@ -292,17 +292,4 @@ private fun MediaBackupVisualState.descriptionRes(): Int = when (this) {
     MediaBackupVisualState.FAILED -> R.string.backup_state_failed
     MediaBackupVisualState.STALLED -> R.string.backup_state_stalled
     MediaBackupVisualState.NONE -> R.string.backup_state_none
-}
-
-private fun formatDuration(millis: Long?): String? {
-    if (millis == null || millis <= 0L) return null
-    val totalSeconds = millis / 1000
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return if (hours > 0) {
-        String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
-    } else {
-        String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
-    }
 }

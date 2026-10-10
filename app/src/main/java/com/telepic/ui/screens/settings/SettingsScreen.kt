@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepic.BuildConfig
 import com.telepic.R
 import com.telepic.onboarding.BackupPreference
+import com.telepic.permissions.rememberNotificationPermissionState
 import com.telepic.settings.ThemeMode
 import com.telepic.telegram.TelegramAuthState
 import com.telepic.ui.components.ScreenHeader
@@ -65,6 +66,7 @@ fun SettingsScreen(
 ) {
     val spacing = TelepicTokens.spacing
     val context = LocalContext.current
+    val notifications = rememberNotificationPermissionState()
     var showThemeDialog by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
@@ -195,6 +197,9 @@ fun SettingsScreen(
                     showFolderPicker = true
                 } else {
                     viewModel.setBackupChoice(choice)
+                    // Turning backup on is when upload progress starts to matter; asking no-ops
+                    // below API 33 and when notifications are already enabled.
+                    if (choice != BackupPreference.NOT_NOW) notifications.request()
                 }
             },
             onDismiss = { showBackupDialog = false },
@@ -208,6 +213,7 @@ fun SettingsScreen(
             onConfirm = { ids ->
                 showFolderPicker = false
                 viewModel.setBackupChoice(BackupPreference.SELECT_FOLDER, ids)
+                if (ids.isNotEmpty()) notifications.request()
             },
             onDismiss = { showFolderPicker = false },
         )

@@ -4,7 +4,10 @@ import android.content.ContentResolver
 import android.database.Cursor
 import android.net.Uri
 import java.io.File
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
@@ -15,7 +18,8 @@ import kotlinx.coroutines.withContext
 interface BackupStager {
     /**
      * Stage the item at [contentUri]. Returns the staged file, or null when the source is gone or
-     * unreadable (the caller turns that into a permanent failure). Throws nothing on missing media.
+     * unreadable (the caller turns that into a permanent failure). Missing media never throws; only
+     * coroutine cancellation propagates, so a stopped worker abandons the copy.
      */
     suspend fun stage(localMediaId: String, contentUri: String): StagedFile?
 }
@@ -50,13 +54,20 @@ class MediaStoreBackupStager(
                 target.outputStream().use { output ->
                     val buffer = ByteArray(STREAM_BUFFER_BYTES)
                     while (true) {
+                        // Blocking stream IO is not cancellable by itself: checkpoint per block so a
+                        // stopped worker abandons a multi-gigabyte copy instead of finishing it.
+                        coroutineContext.ensureActive()
                         val read = input.read(buffer)
-                        if (read <= 0) break
+                        if (read < 0) break
                         output.write(buffer, 0, read)
                     }
                 }
             } ?: return@withContext null
             StagedFile(target)
+        } catch (cancellation: CancellationException) {
+            // Clean up, then let the caller see the cancel rather than a "source unreadable" null.
+            target.delete()
+            throw cancellation
         } catch (throwable: Throwable) {
             target.delete()
             null
