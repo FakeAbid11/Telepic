@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Telepix adaptive-icon foreground: a minimal white photo glyph (sun + peaks).
+  Telepic adaptive-icon foreground: a minimal white photo glyph (sun + peaks).
   Drawn inside the 108x108 adaptive canvas with content kept in the central safe zone.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Night window theme applied before Compose renders, matching Telepix's dark default. -->
-    <style name="Theme.Telepix" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/telepix_window_dark</item>
+    <!-- Night window theme applied before Compose renders, matching Telepic's dark default. -->
+    <style name="Theme.Telepic" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/telepic_window_dark</item>
     </style>
 </resources>

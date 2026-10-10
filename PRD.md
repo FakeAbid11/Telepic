@@ -2,7 +2,7 @@ Telepic
 
 Master Product Requirements Document (PRD)
 
-Repository: https://github.com/FakeAbid11/Telepix.git
+Repository: https://github.com/FakeAbid11/Telepic.git
 Product: Telepic
 Platform: Android
 Language: Kotlin
@@ -74,7 +74,7 @@ GitHub Actions must therefore be considered part of the project's architecture.
 
 The official repository is:
 
-FakeAbid11/Telepix
+FakeAbid11/Telepic
 
 All implementation work must target this repository.
 

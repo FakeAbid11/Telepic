@@ -2,7 +2,7 @@
 <!--
   Android full-backup rules (API <= 30).
 
-  Telepix keeps the Telegram/TDLib session and database in noBackupFilesDir and the upload staging
+  Telepic keeps the Telegram/TDLib session and database in noBackupFilesDir and the upload staging
   files in cacheDir, so those are already outside the backup set by location. These rules cover the
   two remaining sensitive pieces of app-private state:
 
