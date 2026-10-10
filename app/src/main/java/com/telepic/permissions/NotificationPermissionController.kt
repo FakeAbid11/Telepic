@@ -41,7 +41,9 @@ fun rememberNotificationPermissionState(): NotificationPermissionUiState {
     val lifecycleOwner = LocalLifecycleOwner.current
     val sdkInt = Build.VERSION.SDK_INT
 
-    var refreshTick by mutableIntStateOf(0)
+    // Not saveable on purpose: this only forces a re-read of the platform toggle, and resume
+    // refreshes it anyway, so surviving process death would be state for no benefit.
+    var refreshTick by remember { mutableIntStateOf(0) }
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
