@@ -96,6 +96,21 @@ fun rememberMediaPermissionState(): MediaPermissionUiState {
     }
 }
 
+/**
+ * A caller-forced snapshot for screens whose permission state is supplied by the test. It registers
+ * no activity-result launcher and no lifecycle observer — only the real controller owns those — and
+ * its actions are no-ops, so a forced state can never trigger a platform request.
+ */
+@Composable
+fun rememberForcedMediaPermissionState(state: MediaPermissionState): MediaPermissionUiState =
+    remember(state) {
+        MediaPermissionUiState(
+            state = state,
+            requestPermission = {},
+            openAppSettings = {},
+        )
+    }
+
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()

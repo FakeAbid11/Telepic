@@ -19,8 +19,9 @@ sealed interface AlbumsStatus {
 
 /**
  * Loads local albums (MediaStore buckets) for the Albums screen. Permission gating is handled by
- * the caller (the same model as Photos); this only queries once access is available and exposes
- * distinct loading / empty / error states so a failure is never shown as "no albums".
+ * the caller (the same model as Photos): the screen only triggers [refresh] once access is
+ * available — no doomed query flashing an error at denied users, no double load after grant.
+ * Distinct loading / empty / error states keep a failure from ever showing as "no albums".
  */
 class AlbumsViewModel(
     private val repository: AlbumRepository,
@@ -28,10 +29,6 @@ class AlbumsViewModel(
 
     private val _status = MutableStateFlow<AlbumsStatus>(AlbumsStatus.Loading)
     val status: StateFlow<AlbumsStatus> = _status.asStateFlow()
-
-    init {
-        refresh()
-    }
 
     fun refresh() {
         _status.value = AlbumsStatus.Loading

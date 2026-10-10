@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudPreviewState
-import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.cloud.CloudUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,10 +37,12 @@ class CloudViewModel(
         viewModelScope.launch { repository.prepare() }
     }
 
-    // Per-item preview lifecycle, keyed by messageId. Populated lazily on scroll; failures are
-    // tracked so the tile can offer a retry instead of a permanent placeholder.
-    private val _previews = MutableStateFlow<Map<Long, CloudPreviewState>>(emptyMap())
-    val previews: StateFlow<Map<Long, CloudPreviewState>> = _previews.asStateFlow()
+    // Per-item preview lifecycle, keyed by the FULL remote identity (chatId, messageId) — message
+    // ids are only unique per chat, so a single-id key could bleed one chat's state onto another.
+    // Populated lazily on scroll; failures are tracked so the tile can offer a retry instead of a
+    // permanent placeholder. Original downloads live with the Viewer, not here.
+    private val _previews = MutableStateFlow<Map<Pair<Long, Long>, CloudPreviewState>>(emptyMap())
+    val previews: StateFlow<Map<Pair<Long, Long>, CloudPreviewState>> = _previews.asStateFlow()
 
     /** Re-pulls the destination list and clears cached preview states so failed items retry. */
     fun refresh() {
@@ -55,9 +56,10 @@ class CloudViewModel(
      * recovered via [retryPreview] so we never loop on a broken fetch.
      */
     fun loadPreview(media: CloudMedia) {
-        if (_previews.value.containsKey(media.messageId)) return
+        val key = media.chatId to media.messageId
+        if (_previews.value.containsKey(key)) return
         if (media.previewFileId == null) {
-            _previews.update { it + (media.messageId to CloudPreviewState.Failed(retryable = false)) }
+            _previews.update { it + (key to CloudPreviewState.Failed(retryable = false)) }
             return
         }
         fetchPreview(media)
@@ -66,12 +68,13 @@ class CloudViewModel(
     /** Re-attempts a preview whose prior fetch failed but which has a preview file to fetch. */
     fun retryPreview(media: CloudMedia) {
         if (media.previewFileId == null) return
-        _previews.update { it - media.messageId }
+        _previews.update { it - (media.chatId to media.messageId) }
         fetchPreview(media)
     }
 
     private fun fetchPreview(media: CloudMedia) {
-        _previews.update { it + (media.messageId to CloudPreviewState.Loading) }
+        val key = media.chatId to media.messageId
+        _previews.update { it + (key to CloudPreviewState.Loading) }
         viewModelScope.launch {
             val state = try {
                 val preview = repository.getPreview(media)
@@ -82,14 +85,7 @@ class CloudViewModel(
                 // Surfaced as a visible Failed state (with retry), never swallowed silently.
                 CloudPreviewState.Failed(retryable = true)
             }
-            _previews.update { it + (media.messageId to state) }
+            _previews.update { it + (key to state) }
         }
     }
-
-    fun downloadOriginal(media: CloudMedia) {
-        viewModelScope.launch { repository.downloadOriginal(media) }
-    }
-
-    /** Maps the current status to whether a background refresh spinner should show. */
-    val isBusy: Boolean get() = uiState.value.status is CloudStatus.Refreshing
 }

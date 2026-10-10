@@ -30,6 +30,8 @@ data class TelepicSpacing(
     val gridGutter: Dp = 2.dp,
     /** Corner radius applied to media grid cells. */
     val gridItemRadius: Dp = 10.dp,
+    /** Uniform adaptive min-size for every media tile grid (timeline, albums, collections, cloud). */
+    val gridTileMinSize: Dp = 108.dp,
     /** Reserved right-edge padding so the date rail never covers grid media. */
     val railGutter: Dp = 56.dp,
     /** Width of the date-rail column (kept at the Material touch-target width). */

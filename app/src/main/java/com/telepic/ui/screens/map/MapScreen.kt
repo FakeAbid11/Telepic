@@ -31,6 +31,7 @@ import com.telepic.data.media.MapClusterer
 import com.telepic.data.media.MapZoomPrecision
 import com.telepic.domain.media.GeotaggedMedia
 import com.telepic.permissions.MediaPermissionState
+import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.LoadingState
@@ -65,8 +66,13 @@ fun MapScreen(
     modifier: Modifier = Modifier,
     permissionStateOverride: MediaPermissionState? = null,
 ) {
-    val controller = rememberMediaPermissionState()
-    val permissionState = permissionStateOverride ?: controller.state
+    // One controller per composition: the real (launcher-owning) one unless the caller forces a state.
+    val controller = if (permissionStateOverride != null) {
+        rememberForcedMediaPermissionState(permissionStateOverride)
+    } else {
+        rememberMediaPermissionState()
+    }
+    val permissionState = controller.state
     val locations by viewModel.locations.collectAsStateWithLifecycle()
     val locationCount by viewModel.locationCount.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()

@@ -132,7 +132,7 @@ private fun DestinationStatusBar(uiState: CloudUiState) {
 @Composable
 private fun CloudContent(
     uiState: CloudUiState,
-    previews: Map<Long, CloudPreviewState>,
+    previews: Map<Pair<Long, Long>, CloudPreviewState>,
     onLoadPreview: (CloudMedia) -> Unit,
     onRetryPreview: (CloudMedia) -> Unit,
     onOpen: (CloudMedia) -> Unit,
@@ -187,14 +187,14 @@ private fun CloudContent(
 @Composable
 private fun CloudGrid(
     media: List<CloudMedia>,
-    previews: Map<Long, CloudPreviewState>,
+    previews: Map<Pair<Long, Long>, CloudPreviewState>,
     onLoadPreview: (CloudMedia) -> Unit,
     onRetryPreview: (CloudMedia) -> Unit,
     onOpen: (CloudMedia) -> Unit,
 ) {
     val spacing = TelepicTokens.spacing
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 110.dp),
+        columns = GridCells.Adaptive(minSize = spacing.gridTileMinSize),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(spacing.gridGutter),
         horizontalArrangement = Arrangement.spacedBy(spacing.gridGutter),
         verticalArrangement = Arrangement.spacedBy(spacing.gridGutter),
@@ -203,7 +203,7 @@ private fun CloudGrid(
         items(media, key = { "${it.chatId}_${it.messageId}" }) { item ->
             CloudTile(
                 media = item,
-                previewState = previews[item.messageId],
+                previewState = previews[item.chatId to item.messageId],
                 onLoadPreview = { onLoadPreview(item) },
                 onRetryPreview = { onRetryPreview(item) },
                 onClick = { onOpen(item) },
@@ -304,7 +304,7 @@ private fun CloudTile(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(spacing.xs)
-                    .background(Color(0x99000000), RoundedCornerShape(4.dp))
+                    .background(TelepicTokens.colors.scrim, RoundedCornerShape(4.dp))
                     .padding(horizontal = spacing.xs, vertical = 1.dp),
             )
             CloudMediaType.IMAGE -> Unit
@@ -351,7 +351,7 @@ private fun CloudBadge(modifier: Modifier = Modifier) {
         modifier = modifier
             .size(22.dp)
             .clip(CircleShape)
-            .background(Color(0x80000000))
+            .background(TelepicTokens.colors.scrim)
             .padding(4.dp),
     )
 }

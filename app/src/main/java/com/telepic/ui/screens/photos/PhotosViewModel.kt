@@ -13,7 +13,6 @@ import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
-import com.telepic.permissions.MediaPermissionState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -46,9 +46,6 @@ class PhotosViewModel(
     private val backupCoordinator: BackupCoordinator? = null,
 ) : ViewModel() {
 
-    private val _permissionState = MutableStateFlow(MediaPermissionState.NotRequested)
-    val permissionState: StateFlow<MediaPermissionState> = _permissionState.asStateFlow()
-
     /** Paged day-headers + media cells. Cached so rotation/recomposition don't re-query. */
     val media: Flow<PagingData<PhotosItem>> = repository.media.cachedIn(viewModelScope)
 
@@ -57,7 +54,7 @@ class PhotosViewModel(
      * or hash). Tiles read `backupStates[id] ?: NONE`; the map comes from one batched queue flow.
      */
     val backupStates: StateFlow<Map<Long, MediaBackupVisualState>> =
-        (backupStatusRepository?.visualStates ?: kotlinx.coroutines.flow.flowOf(emptyMap()))
+        (backupStatusRepository?.visualStates ?: flowOf(emptyMap()))
             .map { rows ->
                 buildMap(rows.size) {
                     rows.forEach { (id, state) -> id.toLongOrNull()?.let { put(it, state) } }
@@ -67,7 +64,7 @@ class PhotosViewModel(
 
     /** Favorited ids for the tile badge — one batched snapshot, no per-tile query. */
     val favoriteIds: StateFlow<Set<Long>> =
-        (organizationRepository?.favoriteIds ?: kotlinx.coroutines.flow.flowOf(emptySet()))
+        (organizationRepository?.favoriteIds ?: flowOf(emptySet()))
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     // --- Multi-selection (§15) -----------------------------------------------------------------
@@ -154,10 +151,6 @@ class PhotosViewModel(
             delay(MEDIA_CHANGE_SYNC_DEBOUNCE_MS)
             coordinator.syncFromPreference()
         }
-    }
-
-    fun updatePermission(state: MediaPermissionState) {
-        _permissionState.value = state
     }
 
     fun refresh() {

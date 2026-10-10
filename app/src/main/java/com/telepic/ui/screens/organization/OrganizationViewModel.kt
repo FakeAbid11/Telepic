@@ -17,6 +17,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** Transient feedback the collection screen must report; a type, never a magic string. */
+sealed interface OrgMessage {
+    /** A consented permanent delete could not be executed. */
+    data object DeleteFailed : OrgMessage
+}
+
 /**
  * Backs a single Favorites / Archive / Trash collection. It reads only the ids for [kind] from Room
  * and resolves the media in one batched lookup, so it never loads the whole library and stays
@@ -28,11 +34,10 @@ class OrganizationViewModel(
     private val organizationRepository: MediaOrganizationRepository,
     private val localLookup: LocalMediaLookup,
     private val deleter: LocalMediaDeleter,
-    private val onChanged: () -> Unit = {},
 ) : ViewModel() {
 
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message.asStateFlow()
+    private val _message = MutableStateFlow<OrgMessage?>(null)
+    val message: StateFlow<OrgMessage?> = _message.asStateFlow()
 
     private val idsFlow: Flow<Set<Long>> = when (kind) {
         OrganizationKind.FAVORITES -> organizationRepository.favoriteIds
@@ -52,7 +57,6 @@ class OrganizationViewModel(
             OrganizationKind.ARCHIVE -> organizationRepository.setArchived(id, false)
             OrganizationKind.TRASH -> organizationRepository.restoreFromTrash(id)
         }
-        onChanged()
     }
 
     /** Ask to permanently delete a trashed file. Returns the outcome the UI must act on. */
@@ -62,18 +66,13 @@ class OrganizationViewModel(
     fun onDeleteConfirmed(id: Long) = viewModelScope.launch {
         organizationRepository.markDeletedFromStore(id)
         organizationRepository.remove(id)
-        onChanged()
     }
 
     fun reportDeleteFailed() {
-        _message.value = DELETE_FAILED_KEY
+        _message.value = OrgMessage.DeleteFailed
     }
 
     fun consumeMessage() {
         _message.value = null
-    }
-
-    companion object {
-        const val DELETE_FAILED_KEY = "delete_failed"
     }
 }

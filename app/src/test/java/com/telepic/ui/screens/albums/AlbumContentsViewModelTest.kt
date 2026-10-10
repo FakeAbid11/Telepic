@@ -89,24 +89,24 @@ class AlbumContentsViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private val album = Album(
-        bucketId = 3L,
-        title = "Camera",
-        coverUri = Uri.parse("content://media/cover"),
-        coverIsVideo = false,
-        count = 2,
-        latestMillis = 1L,
-    )
-
     private fun photo(id: Long) = LocalMedia(
         id = id, contentUri = Uri.parse("content://media/$id"), type = MediaType.PHOTO,
         mimeType = "image/jpeg", displayName = "p$id.jpg", dateMillis = 1L, durationMillis = null,
         width = 10, height = 10, sizeBytes = 100L, bucketId = 3L, bucketName = "Camera", relativePath = "DCIM/",
     )
 
+    /** The screen builds the VM from the route's (bucketId, title) — no fabricated Album record. */
+    private fun viewModel(backupCoordinator: BackupCoordinator? = null) = AlbumContentsViewModel(
+        bucketId = 3L,
+        title = "Camera",
+        albumRepository = FakeAlbumRepository(),
+        backupStatusRepository = EmptyStatusRepository(),
+        backupCoordinator = backupCoordinator,
+    )
+
     @Test
     fun `long-press begins selection and selects that item`() = runTest {
-        val vm = AlbumContentsViewModel(album, FakeAlbumRepository(), EmptyStatusRepository(), RecordingCoordinator())
+        val vm = viewModel(RecordingCoordinator())
         assertTrue(vm.selectedItems.value.isEmpty())
         vm.beginSelection(photo(1))
         assertEquals(setOf(1L), vm.selectedItems.value.keys)
@@ -114,7 +114,7 @@ class AlbumContentsViewModelTest {
 
     @Test
     fun `tapping toggles selection by stable id, independent of position`() = runTest {
-        val vm = AlbumContentsViewModel(album, FakeAlbumRepository(), EmptyStatusRepository(), RecordingCoordinator())
+        val vm = viewModel(RecordingCoordinator())
         vm.beginSelection(photo(1))
         vm.toggleSelection(photo(2))
         assertEquals(setOf(1L, 2L), vm.selectedItems.value.keys)
@@ -127,7 +127,7 @@ class AlbumContentsViewModelTest {
     @Test
     fun `back up selected hands the chosen items to the engine then clears selection`() = runTest {
         val coordinator = RecordingCoordinator()
-        val vm = AlbumContentsViewModel(album, FakeAlbumRepository(), EmptyStatusRepository(), coordinator)
+        val vm = viewModel(coordinator)
         vm.beginSelection(photo(1))
         vm.toggleSelection(photo(2))
         vm.backupSelected()
@@ -141,7 +141,7 @@ class AlbumContentsViewModelTest {
 
     @Test
     fun `back up selected with no coordinator wired is a harmless no-op`() = runTest {
-        val vm = AlbumContentsViewModel(album, FakeAlbumRepository(), EmptyStatusRepository())
+        val vm = viewModel()
         vm.beginSelection(photo(1))
         vm.backupSelected()
         runCurrent()

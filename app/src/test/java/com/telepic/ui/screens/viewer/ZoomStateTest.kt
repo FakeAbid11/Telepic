@@ -44,4 +44,34 @@ class ZoomStateTest {
         assertEquals(0f, reset.offsetX, 0.001f)
         assertFalse(reset.isZoomed)
     }
+
+    // --- Pannable bounds: a zoomed image can never be dragged fully off-screen ------------------
+
+    @Test
+    fun `panning is clamped to the caller's bounds`() {
+        val clamped = ZoomState().onScale(3f).onPan(1000f, -1000f, boundX = 120f, boundY = 200f)
+        assertEquals(120f, clamped.offsetX, 0.001f)
+        assertEquals(-200f, clamped.offsetY, 0.001f)
+    }
+
+    @Test
+    fun `accumulated panning beyond the bound is held at it, not rejected`() {
+        var zoom = ZoomState().onScale(2f)
+        repeat(10) { zoom = zoom.onPan(50f, 0f, boundX = 100f, boundY = 100f) }
+        assertEquals(100f, zoom.offsetX, 0.001f)
+    }
+
+    @Test
+    fun `pinching out re-clamps stale offsets to the smaller pannable region`() {
+        val over = ZoomState(scale = 5f, offsetX = 900f, offsetY = 0f).bounded(boundX = 100f, boundY = 100f)
+        assertEquals(100f, over.offsetX, 0.001f)
+    }
+
+    @Test
+    fun `scales back to fit collapse offsets even when bounded`() {
+        val collapsed = ZoomState(scale = 4f, offsetX = 80f).onScale(0.1f)
+        assertEquals(1f, collapsed.scale, 0.001f)
+        assertEquals(0f, collapsed.offsetX, 0.001f)
+        assertEquals(0f, collapsed.offsetY, 0.001f)
+    }
 }

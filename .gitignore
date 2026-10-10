@@ -24,3 +24,4 @@ secrets.properties
 # local dependency-inspection scratch (never committed)
 .tdlib-inspect/
 .ci-scratch/
+/.kotlin/

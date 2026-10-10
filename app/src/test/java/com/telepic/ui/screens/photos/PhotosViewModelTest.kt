@@ -13,7 +13,6 @@ import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import com.telepic.domain.media.PhotosItem
-import com.telepic.permissions.MediaPermissionState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -35,8 +34,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Verifies the Photos ViewModel's permission state, refresh delegation, and lifecycle-safe change
- * watcher wiring — with a fake repository and watcher (no MediaStore).
+ * Verifies the Photos ViewModel's refresh delegation, debounced auto-backup sync, and lifecycle-safe
+ * change watcher wiring — with a fake repository and watcher (no MediaStore). Permission state is
+ * intentionally NOT part of the ViewModel: the screen's permission controller is its only owner.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -84,13 +84,6 @@ class PhotosViewModelTest {
         assertTrue(watcher.started)
         watcher.callback?.invoke()
         assertEquals(1, repository.refreshCount)
-    }
-
-    @Test
-    fun `updates the permission state`() = runTest {
-        val viewModel = PhotosViewModel(FakeRepository(), FakeWatcher())
-        viewModel.updatePermission(MediaPermissionState.Granted)
-        assertEquals(MediaPermissionState.Granted, viewModel.permissionState.value)
     }
 
     @Test

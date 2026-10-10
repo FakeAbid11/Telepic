@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,9 +83,11 @@ fun ViewerScreen(
     val flags by viewModel.flags.collectAsStateWithLifecycle()
     val restore by viewModel.restore.collectAsStateWithLifecycle()
     val details by viewModel.details.collectAsStateWithLifecycle()
-    var controlsVisible by remember { mutableStateOf(true) }
-    var showDetails by remember { mutableStateOf(false) }
-    var showTrashConfirm by remember { mutableStateOf(false) }
+    // Rotation-surviving chrome state: controls, sheets and the pending confirm dialog should not
+    // reset just because the Activity was recreated.
+    var controlsVisible by rememberSaveable { mutableStateOf(true) }
+    var showDetails by rememberSaveable { mutableStateOf(false) }
+    var showTrashConfirm by rememberSaveable { mutableStateOf(false) }
     val backDesc = stringResource(R.string.viewer_back)
     val isCloudReady = state.source is MediaSource.Cloud && state.status == ViewerStatus.READY
     val isLocalReady = state.source is MediaSource.Local && state.status == ViewerStatus.READY
@@ -101,7 +104,7 @@ fun ViewerScreen(
         }
     }
 
-    Surface(modifier = modifier.fillMaxSize(), color = Color.Black) {
+    Surface(modifier = modifier.fillMaxSize(), color = TelepicTokens.colors.viewerBackdrop) {
         Box(modifier = Modifier.fillMaxSize()) {
             when (state.status) {
                 ViewerStatus.LOADING -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -124,7 +127,9 @@ fun ViewerScreen(
                     backDesc = backDesc,
                     showActions = state.source is MediaSource.Local && state.status == ViewerStatus.READY,
                     onToggleFavorite = viewModel::toggleFavorite,
-                    onToggleArchive = { viewModel.toggleArchive(); onBack() },
+                    // Flag-only, like favorite: toggling archive never kicks the user out of the
+                    // Viewer. Grids behind react on their own when the Room flag flow re-emits.
+                    onToggleArchive = viewModel::toggleArchive,
                     onMoveToTrash = { showTrashConfirm = true },
                     onShowDetails = if (isLocalReady) {
                         { viewModel.loadDetails(); showDetails = true }
@@ -165,8 +170,9 @@ fun ViewerScreen(
                     confirmButton = {
                         Button(onClick = {
                             showTrashConfirm = false
+                            // Stay put: the write is the VM's, and the flag flow reflects it. Popping
+                            // before the async Room write used to hide failures and yank the user back.
                             viewModel.moveToTrash()
-                            onBack()
                         }) { Text(stringResource(R.string.viewer_trash_confirm)) }
                     },
                     dismissButton = {
@@ -244,9 +250,15 @@ private fun ViewerContent(
                             val dist = (a.position - b.position).getDistance()
                             val centroid = (a.position + b.position) / 2f
                             if (lastPinchDist > 0f && dist > 0f) {
-                                zoom = zoom
-                                    .onScale(dist / lastPinchDist)
-                                    .onPan(centroid.x - lastCentroid.x, centroid.y - lastCentroid.y)
+                                val scaled = zoom.onScale(dist / lastPinchDist)
+                                // Re-clamp the pan against the NEW scale so pinch-out can't leave
+                                // the image stranded off-screen.
+                                zoom = scaled.onPan(
+                                    centroid.x - lastCentroid.x,
+                                    centroid.y - lastCentroid.y,
+                                    boundX = (scaled.scale - 1f) * size.width / 2f,
+                                    boundY = (scaled.scale - 1f) * size.height / 2f,
+                                )
                             }
                             lastPinchDist = dist
                             lastCentroid = centroid
@@ -259,7 +271,16 @@ private fun ViewerContent(
                                 Offset.Zero
                             }
                             if (zoom.isZoomed) {
-                                zoom = zoom.onPan(delta.x, delta.y)
+                                // Bound by the viewport half-extent scaled past fit. Deliberate
+                                // approximation: the true limit is the image's painted size, which
+                                // differs per axis under ContentScale.Fit — viewport bounds still
+                                // make "drag it permanently away" impossible without painter metrics.
+                                zoom = zoom.onPan(
+                                    delta.x,
+                                    delta.y,
+                                    boundX = (zoom.scale - 1f) * size.width / 2f,
+                                    boundY = (zoom.scale - 1f) * size.height / 2f,
+                                )
                                 change.consume()
                             } else if (!pinched) {
                                 dragging = true
@@ -343,10 +364,11 @@ private fun ViewerTopBar(
     onShowDetails: (() -> Unit)? = null,
 ) {
     val spacing = TelepicTokens.spacing
+    val chromeScrim = TelepicTokens.colors.chromeScrim
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x88000000))
+            .background(chromeScrim)
             .padding(horizontal = spacing.xs, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -373,7 +395,7 @@ private fun ViewerTopBar(
                     contentDescription = stringResource(
                         if (flags.isFavorite) R.string.viewer_unfavorite else R.string.viewer_favorite,
                     ),
-                    tint = if (flags.isFavorite) Color(0xFFFFC53D) else Color.White,
+                    tint = if (flags.isFavorite) TelepicTokens.colors.favoriteAmber else Color.White,
                 )
             }
             IconButton(onClick = onToggleArchive) {
@@ -415,11 +437,12 @@ private fun ViewerBottomBar(
     restore: RestoreState = RestoreState.Idle,
 ) {
     val spacing = TelepicTokens.spacing
+    val chromeScrim = TelepicTokens.colors.chromeScrim
     val showDownload = state.source is MediaSource.Cloud && state.download !is CloudDownload.Available
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x88000000))
+            .background(chromeScrim)
             .padding(vertical = spacing.sm),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,

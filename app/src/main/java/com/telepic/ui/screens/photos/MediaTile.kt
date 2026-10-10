@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.CloudUpload
@@ -64,11 +65,12 @@ fun MediaTile(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     selectionActive: Boolean = false,
+    isFavorite: Boolean = false,
     onLongClick: () -> Unit = onClick,
 ) {
     val spacing = TelepicTokens.spacing
     val context = LocalContext.current
-    val label = mediaAccessibilityLabel(context, media, backupState)
+    val label = mediaAccessibilityLabel(context, media, backupState, isFavorite)
 
     Box(
         modifier = modifier
@@ -107,6 +109,14 @@ fun MediaTile(
                 .padding(spacing.xs),
         )
 
+        if (isFavorite) {
+            FavoriteBadge(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(spacing.xs),
+            )
+        }
+
         if (selectionActive) {
             if (selected) {
                 Box(
@@ -128,11 +138,12 @@ fun MediaTile(
 /** A top-left check circle shown only while selecting: filled check when selected, a hollow ring otherwise. */
 @Composable
 private fun SelectionCheck(selected: Boolean, modifier: Modifier = Modifier) {
+    val scrim = TelepicTokens.colors.scrim
     Box(
         modifier = modifier
             .size(24.dp)
             .clip(CircleShape)
-            .background(if (selected) MaterialTheme.colorScheme.primary else Color(0x99000000))
+            .background(if (selected) MaterialTheme.colorScheme.primary else scrim)
             .border(
                 width = if (selected) 0.dp else 2.dp,
                 color = if (selected) Color.Transparent else Color.White,
@@ -183,9 +194,28 @@ private fun GifOverlay(modifier: Modifier = Modifier) {
         style = MaterialTheme.typography.labelSmall,
         color = Color.White,
         modifier = modifier
-            .background(Color(0x99000000), RoundedCornerShape(4.dp))
+            .background(TelepicTokens.colors.scrim, RoundedCornerShape(4.dp))
             .padding(horizontal = spacing.xs, vertical = 1.dp),
     )
+}
+
+/** Bottom-right star shown on favorite tiles; the screen-level a11y label carries the state verbally. */
+@Composable
+private fun FavoriteBadge(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(TelepicTokens.colors.scrim),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Star,
+            contentDescription = null, // merged into the tile's content description
+            tint = TelepicTokens.colors.favoriteAmber,
+            modifier = Modifier.size(14.dp),
+        )
+    }
 }
 
 /**
@@ -196,7 +226,7 @@ private fun GifOverlay(modifier: Modifier = Modifier) {
 @Composable
 private fun BackupBadge(state: MediaBackupVisualState, modifier: Modifier = Modifier) {
     if (state == MediaBackupVisualState.NONE) return
-    val scrim = Color(0x99000000)
+    val scrim = TelepicTokens.colors.scrim
     Box(
         modifier = modifier
             .size(20.dp)
@@ -234,6 +264,7 @@ private fun mediaAccessibilityLabel(
     context: Context,
     media: LocalMedia,
     backupState: MediaBackupVisualState,
+    isFavorite: Boolean,
 ): String {
     val typeRes = when (media.type) {
         MediaType.PHOTO -> R.string.media_type_photo
@@ -246,6 +277,10 @@ private fun mediaAccessibilityLabel(
     }
     if (backupState != MediaBackupVisualState.NONE) {
         parts += context.getString(backupState.descriptionRes())
+    }
+    // Appended last so existing prefix/substring expectations keep matching.
+    if (isFavorite) {
+        parts += context.getString(R.string.media_favorited)
     }
     return parts.joinToString(", ")
 }

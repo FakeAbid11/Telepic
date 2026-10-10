@@ -1,7 +1,9 @@
 package com.telepic.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -21,9 +23,13 @@ import com.telepic.ui.screens.backup.BackupViewModel
 import com.telepic.ui.screens.cloud.CloudScreen
 import com.telepic.ui.screens.cloud.CloudViewModel
 import com.telepic.ui.screens.map.MapScreen
+import com.telepic.ui.screens.map.MapViewModel
+import com.telepic.ui.screens.organization.OrganizationScreen
+import com.telepic.ui.screens.organization.OrganizationViewModel
 import com.telepic.ui.screens.photos.PhotosScreen
 import com.telepic.ui.screens.photos.PhotosViewModel
 import com.telepic.ui.screens.settings.SettingsScreen
+import com.telepic.ui.screens.settings.SettingsViewModel
 import com.telepic.ui.screens.viewer.ViewerScreen
 import com.telepic.ui.screens.viewer.ViewerViewModel
 import kotlinx.coroutines.flow.combine
@@ -50,8 +56,10 @@ fun TelepicNavHost(
         modifier = modifier,
     ) {
         composable(TelepicDestination.Photos.route) {
-            val photosViewModel: PhotosViewModel = viewModel(
-                factory = viewModelFactory {
+            // Factories are remembered per container so recomposition never hands `viewModel` a new
+            // factory instance (which would otherwise rebuild the factory on every frame).
+            val photosFactory = remember(container) {
+                viewModelFactory {
                     initializer {
                         PhotosViewModel(
                             repository = container.localMediaRepository,
@@ -61,8 +69,9 @@ fun TelepicNavHost(
                             backupCoordinator = container.backupCoordinator,
                         )
                     }
-                },
-            )
+                }
+            }
+            val photosViewModel: PhotosViewModel = viewModel(factory = photosFactory)
             PhotosScreen(
                 viewModel = photosViewModel,
                 onMediaSelected = { media -> navController.navigate(ViewerRoute.local(media.id)) },
@@ -70,18 +79,20 @@ fun TelepicNavHost(
             )
         }
         composable(TelepicDestination.Cloud.route) {
-            val cloudViewModel: CloudViewModel = viewModel(
-                factory = viewModelFactory { initializer { CloudViewModel(container.cloudRepository) } },
-            )
+            val cloudFactory = remember(container) {
+                viewModelFactory { initializer { CloudViewModel(container.cloudRepository) } }
+            }
+            val cloudViewModel: CloudViewModel = viewModel(factory = cloudFactory)
             CloudScreen(
                 viewModel = cloudViewModel,
                 onOpenMedia = { media -> navController.navigate(ViewerRoute.cloud(media.chatId, media.messageId)) },
             )
         }
         composable(TelepicDestination.Albums.route) {
-            val albumsViewModel: AlbumsViewModel = viewModel(
-                factory = viewModelFactory { initializer { AlbumsViewModel(container.albumRepository) } },
-            )
+            val albumsFactory = remember(container) {
+                viewModelFactory { initializer { AlbumsViewModel(container.albumRepository) } }
+            }
+            val albumsViewModel: AlbumsViewModel = viewModel(factory = albumsFactory)
             AlbumsScreen(
                 viewModel = albumsViewModel,
                 onOpenAlbum = { album -> navController.navigate(AlbumRoute.create(album.bucketId, album.title)) },
@@ -94,19 +105,20 @@ fun TelepicNavHost(
         ) { backStackEntry ->
             val kind = OrganizationRoute.kindOf(backStackEntry.arguments?.getString(OrganizationRoute.ARG_KIND))
                 ?: return@composable
-            val organizationViewModel: com.telepic.ui.screens.organization.OrganizationViewModel = viewModel(
-                factory = viewModelFactory {
+            val organizationFactory = remember(container, kind) {
+                viewModelFactory {
                     initializer {
-                        com.telepic.ui.screens.organization.OrganizationViewModel(
+                        OrganizationViewModel(
                             kind = kind,
                             organizationRepository = container.mediaOrganizationRepository,
                             localLookup = container.localMediaLookup,
                             deleter = container.mediaDeleter,
                         )
                     }
-                },
-            )
-            com.telepic.ui.screens.organization.OrganizationScreen(
+                }
+            }
+            val organizationViewModel: OrganizationViewModel = viewModel(factory = organizationFactory)
+            OrganizationScreen(
                 viewModel = organizationViewModel,
                 onBack = { navController.popBackStack() },
                 onOpenMedia = { mediaId -> navController.navigate(ViewerRoute.localInCollection(mediaId, kind)) },
@@ -121,25 +133,21 @@ fun TelepicNavHost(
         ) { backStackEntry ->
             val bucketId = backStackEntry.arguments?.getLong(AlbumRoute.ARG_BUCKET_ID) ?: return@composable
             val title = backStackEntry.arguments?.getString(AlbumRoute.ARG_TITLE).orEmpty()
-            val contentsViewModel: AlbumContentsViewModel = viewModel(
-                factory = viewModelFactory {
+            val contentsFactory = remember(container, bucketId, title) {
+                viewModelFactory {
                     initializer {
                         AlbumContentsViewModel(
-                            album = com.telepic.domain.media.Album(
-                                bucketId = bucketId,
-                                title = title,
-                                coverUri = android.net.Uri.EMPTY,
-                                coverIsVideo = false,
-                                count = 0,
-                                latestMillis = 0L,
-                            ),
+                            bucketId = bucketId,
+                            title = title,
                             albumRepository = container.albumRepository,
                             backupStatusRepository = container.backupStatusRepository,
                             backupCoordinator = container.backupCoordinator,
+                            organizationRepository = container.mediaOrganizationRepository,
                         )
                     }
-                },
-            )
+                }
+            }
+            val contentsViewModel: AlbumContentsViewModel = viewModel(factory = contentsFactory)
             AlbumContentsScreen(
                 viewModel = contentsViewModel,
                 onBack = { navController.popBackStack() },
@@ -147,10 +155,10 @@ fun TelepicNavHost(
             )
         }
         composable(TelepicDestination.Map.route) {
-            val mapViewModel: com.telepic.ui.screens.map.MapViewModel = viewModel(
-                factory = viewModelFactory {
+            val mapFactory = remember(container) {
+                viewModelFactory {
                     initializer {
-                        com.telepic.ui.screens.map.MapViewModel(
+                        MapViewModel(
                             mapLocationRepository = container.mapLocationRepository,
                             hiddenIds = combine(
                                 container.mediaOrganizationRepository.archivedIds,
@@ -158,29 +166,31 @@ fun TelepicNavHost(
                             ) { archived, trashed -> archived + trashed },
                         )
                     }
-                },
-            )
-            com.telepic.ui.screens.map.MapScreen(
+                }
+            }
+            val mapViewModel: MapViewModel = viewModel(factory = mapFactory)
+            MapScreen(
                 viewModel = mapViewModel,
                 onOpenMedia = { mediaId -> navController.navigate(ViewerRoute.local(mediaId)) },
             )
         }
         composable(TelepicDestination.Settings.route) {
-            val settingsViewModel: com.telepic.ui.screens.settings.SettingsViewModel = viewModel(
-                factory = viewModelFactory {
+            val settingsFactory = remember(container) {
+                viewModelFactory {
                     initializer {
-                        com.telepic.ui.screens.settings.SettingsViewModel(
+                        SettingsViewModel(
                             telegramAuthController = container.telegramAuthController,
                             onboardingRepository = container.onboardingRepository,
                             albumRepository = container.albumRepository,
                             backupCoordinator = container.backupCoordinator,
                             appContext = checkNotNull(
-                                this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY],
+                                this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY],
                             ),
                         )
                     }
-                },
-            )
+                }
+            }
+            val settingsViewModel: SettingsViewModel = viewModel(factory = settingsFactory)
             SettingsScreen(
                 viewModel = settingsViewModel,
                 themeMode = themeMode,
@@ -189,16 +199,17 @@ fun TelepicNavHost(
             )
         }
         composable(BackupCenterRoute.ROUTE) {
-            val backupViewModel: BackupViewModel = viewModel(
-                factory = viewModelFactory {
+            val backupFactory = remember(container) {
+                viewModelFactory {
                     initializer {
                         BackupViewModel(
                             coordinator = container.backupCoordinator,
                             authState = container.telegramAuthController.state,
                         )
                     }
-                },
-            )
+                }
+            }
+            val backupViewModel: BackupViewModel = viewModel(factory = backupFactory)
             BackupCenterScreen(viewModel = backupViewModel, onBack = { navController.popBackStack() })
         }
         composable(
@@ -213,8 +224,8 @@ fun TelepicNavHost(
             val bucketId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_BUCKET_ID)
                 ?.takeIf { it >= 0L }
             val orgKind = OrganizationRoute.kindOf(backStackEntry.arguments?.getString(ViewerRoute.ARG_ORG_KIND))
-            val viewerViewModel: ViewerViewModel = viewModel(
-                factory = viewModelFactory {
+            val viewerFactory = remember(container, mediaId, bucketId, orgKind) {
+                viewModelFactory {
                     initializer {
                         ViewerViewModel(
                             initialSource = MediaSource.Local(mediaId),
@@ -225,8 +236,9 @@ fun TelepicNavHost(
                             metadataReader = container.mediaMetadataReader,
                         )
                     }
-                },
-            )
+                }
+            }
+            val viewerViewModel: ViewerViewModel = viewModel(factory = viewerFactory)
             ViewerScreen(viewModel = viewerViewModel, onBack = { navController.popBackStack() })
         }
         composable(
@@ -238,8 +250,8 @@ fun TelepicNavHost(
         ) { backStackEntry ->
             val chatId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_CHAT_ID) ?: return@composable
             val messageId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_MESSAGE_ID) ?: return@composable
-            val viewerViewModel: ViewerViewModel = viewModel(
-                factory = viewModelFactory {
+            val viewerFactory = remember(container, chatId, messageId) {
+                viewModelFactory {
                     initializer {
                         ViewerViewModel(
                             initialSource = MediaSource.Cloud(chatId, messageId),
@@ -248,8 +260,9 @@ fun TelepicNavHost(
                             restoreRepository = container.restoreRepository,
                         )
                     }
-                },
-            )
+                }
+            }
+            val viewerViewModel: ViewerViewModel = viewModel(factory = viewerFactory)
             ViewerScreen(viewModel = viewerViewModel, onBack = { navController.popBackStack() })
         }
     }

@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.LocalMediaLookup
+import com.telepic.data.media.MediaMetadata
 import com.telepic.data.media.MediaMetadataReader
 import com.telepic.data.media.NeighborDirection
 import com.telepic.data.organization.MediaOrganizationRepository
+import com.telepic.data.restore.RestoreFailure
 import com.telepic.data.restore.RestoreRepository
 import com.telepic.data.restore.RestoreResult
 import com.telepic.domain.cloud.CloudMedia
@@ -158,7 +160,7 @@ class ViewerViewModel(
         val media = (_uiState.value.item as? ViewerItem.Local)?.media ?: return
         viewModelScope.launch {
             val metadata = runCatching { metadataReader?.read(media.contentUri) }
-                .getOrNull() ?: com.telepic.data.media.MediaMetadata()
+                .getOrNull() ?: MediaMetadata()
             _details.value = MediaDetails(
                 fileName = media.displayName,
                 mimeType = media.mimeType,
@@ -259,7 +261,7 @@ class ViewerViewModel(
         _restore.value = RestoreState.Restoring
         viewModelScope.launch {
             val result = runCatching { repo.restore(cloud.media) }.getOrElse {
-                RestoreResult.Failed(com.telepic.data.restore.RestoreFailure.DOWNLOAD_UNAVAILABLE)
+                RestoreResult.Failed(RestoreFailure.DOWNLOAD_UNAVAILABLE)
             }
             // Guard: a restore that finishes after navigation must not claim the new item was saved.
             if (_uiState.value.source == requestedSource) {

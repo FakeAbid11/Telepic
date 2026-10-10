@@ -8,8 +8,8 @@ import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.backup.BulkBackupSummary
 import com.telepic.data.media.AlbumRepository
+import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.backup.MediaBackupVisualState
-import com.telepic.domain.media.Album
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -29,19 +30,26 @@ import kotlinx.coroutines.launch
  * backup mirror the Photos timeline exactly — same engine, same stable-id semantics.
  */
 class AlbumContentsViewModel(
-    val album: Album,
+    bucketId: Long,
+    val title: String,
     albumRepository: AlbumRepository,
     backupStatusRepository: BackupStatusRepository,
     private val backupCoordinator: BackupCoordinator? = null,
+    organizationRepository: MediaOrganizationRepository? = null,
 ) : ViewModel() {
 
     val media: Flow<PagingData<PhotosItem>> =
-        albumRepository.mediaInBucket(album.bucketId).cachedIn(viewModelScope)
+        albumRepository.mediaInBucket(bucketId).cachedIn(viewModelScope)
 
     val backupStates: StateFlow<Map<Long, MediaBackupVisualState>> =
         backupStatusRepository.visualStates
             .map { rows -> buildMap { rows.forEach { (id, s) -> id.toLongOrNull()?.let { put(it, s) } } } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Favorited ids for the tile badge — same batched snapshot as the Photos timeline. */
+    val favoriteIds: StateFlow<Set<Long>> =
+        (organizationRepository?.favoriteIds ?: flowOf(emptySet()))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     // --- Multi-selection: identical semantics to the Photos timeline (§15). --------------------
     // Keyed by stable MediaStore id (never grid position), insertion-ordered, updated synchronously

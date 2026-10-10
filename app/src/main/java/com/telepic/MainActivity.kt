@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -25,13 +26,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val container = (application as TelepicApplication).container
 
-            val themeViewModel: ThemeViewModel = viewModel(
-                factory = viewModelFactory {
+            val themeFactory = remember(container) {
+                viewModelFactory {
                     initializer { ThemeViewModel(container.settingsRepository) }
-                },
-            )
-            val onboardingViewModel: OnboardingViewModel = viewModel(
-                factory = viewModelFactory {
+                }
+            }
+            val themeViewModel: ThemeViewModel = viewModel(factory = themeFactory)
+            val onboardingFactory = remember(container) {
+                viewModelFactory {
                     initializer {
                         OnboardingViewModel(
                             repository = container.onboardingRepository,
@@ -40,8 +42,9 @@ class MainActivity : ComponentActivity() {
                             onBackupChoiceChanged = { container.backupCoordinator.syncFromPreference() },
                         )
                     }
-                },
-            )
+                }
+            }
+            val onboardingViewModel: OnboardingViewModel = viewModel(factory = onboardingFactory)
 
             TelepicRoot(
                 themeViewModel = themeViewModel,

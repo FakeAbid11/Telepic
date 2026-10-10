@@ -3,6 +3,8 @@ package com.telepic.ui.screens.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.media.MapLocationRepository
+import com.telepic.domain.media.GeotaggedMedia
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +28,7 @@ import kotlinx.coroutines.launch
  */
 class MapViewModel(
     private val mapLocationRepository: MapLocationRepository,
-    private val hiddenIds: kotlinx.coroutines.flow.Flow<Set<Long>> = flowOf(emptySet()),
+    private val hiddenIds: Flow<Set<Long>> = flowOf(emptySet()),
 ) : ViewModel() {
 
     private val _isScanning = MutableStateFlow(false)
@@ -39,7 +41,7 @@ class MapViewModel(
         }
 
     /** Shared raw list for clustering *and* the count — one collection of the Room flow, one filter. */
-    val locations: StateFlow<List<com.telepic.domain.media.GeotaggedMedia>> =
+    val locations: StateFlow<List<GeotaggedMedia>> =
         visibleLocations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Number of distinct visible geotagged items, for an honest "N locations" affordance. */

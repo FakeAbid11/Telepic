@@ -58,6 +58,56 @@ private const val RAIL_MAX_ENTRIES = 12
 data class DateAnchor(val index: Int, val epochDay: Long, val absoluteLabel: String)
 
 /**
+ * Rebuild or extend the day-anchor list for a pager whose loaded count changed to [newCount].
+ *
+ * When [previous] is a valid prefix of the current contents — every anchor still sits at its
+ * recorded index and [firstUncheckedIndex] lies within [newCount] — only the never-examined tail
+ * `[firstUncheckedIndex, newCount)` is scanned and appended, so paging costs O(new items) instead
+ * of O(loaded list). Anything else (a refresh remapping indices, a shrinking list) rebuilds by
+ * scanning [newCount] items from scratch. [dayAt] returns the day item at an index, or null for
+ * media/placeholder/absent cells.
+ */
+internal fun updateDateAnchors(
+    previous: List<DateAnchor>,
+    firstUncheckedIndex: Int,
+    newCount: Int,
+    dayAt: (Int) -> PhotosItem.Day?,
+): List<DateAnchor> {
+    fun scanFrom(start: Int): List<DateAnchor> {
+        val result = ArrayList<DateAnchor>()
+        for (index in start until newCount) {
+            val day = dayAt(index) ?: continue
+            result += DateAnchor(index, day.epochDay, day.label)
+        }
+        return result
+    }
+
+    val prefixValid = previous.isNotEmpty() &&
+        firstUncheckedIndex in 0..newCount &&
+        previous.all { anchor -> anchor.index < firstUncheckedIndex && dayAt(anchor.index)?.epochDay == anchor.epochDay }
+    if (prefixValid) {
+        return previous + scanFrom(firstUncheckedIndex)
+    }
+    return scanFrom(0)
+}
+
+/** Composable-side anchor state: recomputes only when the loaded count actually changes. */
+internal class AnchorScanHolder {
+    private var examinedCount: Int = -1
+    var anchors: List<DateAnchor> = emptyList()
+        private set
+
+    fun update(newCount: Int, dayAt: (Int) -> PhotosItem.Day?): List<DateAnchor> {
+        if (newCount == examinedCount) return anchors
+        // Growth appends from the previously examined boundary; anything else scans from zero.
+        val firstUnchecked = if (newCount > examinedCount && examinedCount >= 0) examinedCount else 0
+        examinedCount = newCount
+        anchors = updateDateAnchors(anchors, firstUnchecked, newCount, dayAt)
+        return anchors
+    }
+}
+
+/**
  * The Photos media grid (Phase 8): adaptive, thumbnail-first, lazy, with localized relative day
  * headers (Today / Yesterday / weekday / date), a right-side date rail that jumps among the loaded
  * pages and highlights the active day, per-tile backup badges read from a repository-provided
@@ -73,6 +123,7 @@ fun MediaGrid(
     gridState: LazyGridState = rememberLazyGridState(),
     selectedIds: Set<Long> = emptySet(),
     selectionActive: Boolean = false,
+    favoriteIds: Set<Long> = emptySet(),
     onToggleSelect: (LocalMedia) -> Unit = {},
     onLongSelect: (LocalMedia) -> Unit = {},
 ) {
@@ -80,15 +131,12 @@ fun MediaGrid(
     val scope = rememberCoroutineScope()
     val today = remember { LocalDate.now() }
 
-    // Rail anchors rebuild only when the loaded count changes — not per recomposition. Each anchor
-    // is a *loaded* day header, so the rail grows with paging and never force-loads the library.
-    val anchors: List<DateAnchor> = remember(media.itemCount) {
-        val result = ArrayList<DateAnchor>()
-        for (index in 0 until media.itemCount) {
-            val item = media[index]
-            if (item is PhotosItem.Day) result += DateAnchor(index, item.epochDay, item.label)
-        }
-        result
+    // Rail anchors grow incrementally as pages append: only items past the last examined index are
+    // scanned per change, instead of re-walking the whole loaded list. A refresh (new PagingData
+    // generation) remaps every index, so it rebuilds from scratch.
+    val anchorHolder = remember(media) { AnchorScanHolder() }
+    val anchors: List<DateAnchor> = anchorHolder.update(media.itemCount) { index ->
+        media[index] as? PhotosItem.Day
     }
 
     // The active rail entry is the last anchor at/above the first visible item — derived so it
@@ -102,7 +150,7 @@ fun MediaGrid(
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 108.dp),
+            columns = GridCells.Adaptive(minSize = spacing.gridTileMinSize),
             state = gridState,
             contentPadding = PaddingValues(
                 start = spacing.gridGutter,
@@ -133,6 +181,7 @@ fun MediaGrid(
                         onLongClick = { onLongSelect(item.media) },
                         selected = item.media.id in selectedIds,
                         selectionActive = selectionActive,
+                        isFavorite = item.media.id in favoriteIds,
                     )
                     null -> Box(modifier = Modifier.aspectRatio(1f))
                 }
@@ -168,11 +217,15 @@ fun DayHeader(epochDay: Long, absoluteLabel: String, today: LocalDate, modifier:
     val date = LocalDate.ofEpochDay(epochDay)
     val diff = today.toEpochDay() - epochDay
     val locale = Locale.getDefault()
+    // Formatters are locale-bound but pattern-constant: build once per locale instead of per
+    // header recomposition (DateTimeFormatter.ofPattern is not cheap).
+    val weekdayFormatter = remember(locale) { DateTimeFormatter.ofPattern("EEEE", locale) }
+    val monthDayFormatter = remember(locale) { DateTimeFormatter.ofPattern("MMMM d", locale) }
     val label = when {
         diff == 0L -> stringResource(R.string.date_today)
         diff == 1L -> stringResource(R.string.date_yesterday)
-        diff in 2..6 -> date.format(DateTimeFormatter.ofPattern("EEEE", locale))
-        date.year == today.year -> date.format(DateTimeFormatter.ofPattern("MMMM d", locale))
+        diff in 2..6 -> date.format(weekdayFormatter)
+        date.year == today.year -> date.format(monthDayFormatter)
         else -> absoluteLabel
     }
     Text(

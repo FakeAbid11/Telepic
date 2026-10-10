@@ -31,6 +31,10 @@ import com.telepic.navigation.navigateToTopLevel
 import com.telepic.navigation.selectedIcon
 import com.telepic.di.AppContainer
 import com.telepic.settings.ThemeMode
+import com.telepic.ui.theme.TelepicTokens
+
+private const val NAV_PILL_RADIUS_DP = 28
+private const val NAV_PILL_ELEVATION_DP = 10
 
 /**
  * The Telepic application shell: a Material 3 [Scaffold] with a bottom navigation bar for
@@ -46,6 +50,7 @@ fun TelepicApp(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route
+    val spacing = TelepicTokens.spacing
     // Only a top-level tab route selects a tab; detail/immersive screens (viewer, album contents,
     // organization, backup) resolve to null so the bar neither mis-highlights Photos nor overlays them.
     val currentTab = TelepicDestination.topLevelOf(route)
@@ -60,14 +65,14 @@ fun TelepicApp(
                     modifier = Modifier
                         .fillMaxWidth()
                         .windowInsetsPadding(WindowInsets.navigationBars)
-                        .padding(horizontal = 16.dp)
-                        .padding(top = 6.dp, bottom = 12.dp),
+                        .padding(horizontal = spacing.lg)
+                        .padding(top = spacing.sm, bottom = spacing.md),
                 ) {
                     NavigationBar(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .shadow(10.dp, RoundedCornerShape(28.dp))
-                            .clip(RoundedCornerShape(28.dp)),
+                            .shadow(NAV_PILL_ELEVATION_DP.dp, RoundedCornerShape(NAV_PILL_RADIUS_DP.dp))
+                            .clip(RoundedCornerShape(NAV_PILL_RADIUS_DP.dp)),
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         windowInsets = WindowInsets(0, 0, 0, 0),
                     ) {

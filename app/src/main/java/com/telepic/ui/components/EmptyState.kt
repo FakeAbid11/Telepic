@@ -84,12 +84,12 @@ fun EmptyState(
                     verticalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
                     primaryAction?.let { action ->
-                        Button(onClick = action.onClick) {
+                        Button(onClick = action.onClick, enabled = action.enabled) {
                             Text(action.label)
                         }
                     }
                     secondaryAction?.let { action ->
-                        TextButton(onClick = action.onClick) {
+                        TextButton(onClick = action.onClick, enabled = action.enabled) {
                             Text(action.label)
                         }
                     }

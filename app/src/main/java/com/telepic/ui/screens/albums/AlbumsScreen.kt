@@ -42,6 +42,7 @@ import com.telepic.R
 import com.telepic.domain.media.Album
 import com.telepic.navigation.OrganizationKind
 import com.telepic.permissions.MediaPermissionState
+import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
@@ -63,8 +64,13 @@ fun AlbumsScreen(
     modifier: Modifier = Modifier,
     permissionStateOverride: MediaPermissionState? = null,
 ) {
-    val controller = rememberMediaPermissionState()
-    val permissionState = permissionStateOverride ?: controller.state
+    // One controller per composition: the real (launcher-owning) one unless the caller forces a state.
+    val controller = if (permissionStateOverride != null) {
+        rememberForcedMediaPermissionState(permissionStateOverride)
+    } else {
+        rememberMediaPermissionState()
+    }
+    val permissionState = controller.state
     val status by viewModel.status.collectAsStateWithLifecycle()
     val spacing = TelepicTokens.spacing
 

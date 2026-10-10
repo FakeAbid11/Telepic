@@ -187,6 +187,7 @@
     <string name="media_type_video">Video</string>
     <string name="media_type_gif">GIF</string>
     <string name="media_gif_badge">GIF</string>
+    <string name="media_favorited">Favorited</string>
     <string name="photos_date_rail">Jump to date</string>
     <string name="date_rail_selected">current section</string>
     <string name="date_rail_not_selected">tap to jump</string>

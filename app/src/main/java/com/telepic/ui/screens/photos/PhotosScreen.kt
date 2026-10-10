@@ -42,11 +42,13 @@ import com.telepic.R
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.permissions.MediaPermissionState
+import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.StateAction
+import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.theme.TelepicTokens
 
 /**
@@ -65,14 +67,22 @@ fun PhotosScreen(
     onOpenSettings: () -> Unit = {},
     permissionStateOverride: MediaPermissionState? = null,
 ) {
-    val controller = rememberMediaPermissionState()
-    val permissionState = permissionStateOverride ?: controller.state
+    // Exactly one controller is built per composition: the real one while the state is live, an inert
+    // snapshot when the caller forces it. A call site never flips its override mid-life, so the branch
+    // (and the remember order inside it) stays stable across recompositions.
+    val controller = if (permissionStateOverride != null) {
+        rememberForcedMediaPermissionState(permissionStateOverride)
+    } else {
+        rememberMediaPermissionState()
+    }
+    val permissionState = controller.state
     val backupStates by viewModel.backupStates.collectAsStateWithLifecycle()
     val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
     val selectionActive = selectedItems.isNotEmpty()
     val selectionMessage by viewModel.selectionMessage.collectAsStateWithLifecycle()
 
-    LaunchedEffect(permissionState) { viewModel.updatePermission(permissionState) }
+    // The permission controller above is the single source of truth for permission state; the VM
+    // deliberately does not mirror it.
     LaunchedEffect(permissionState.hasAccess) {
         if (permissionState.hasAccess) viewModel.refresh()
     }
@@ -160,27 +170,11 @@ fun PhotosScreen(
             // Transient feedback after a bulk enqueue; auto-cleared. Honest split of new work vs items
             // the engine recognized as already backed up / in progress (never a fabricated upload claim).
             selectionMessage?.let { summary ->
-                LaunchedEffect(summary) {
-                    kotlinx.coroutines.delay(2_500)
-                    viewModel.consumeSelectionMessage()
-                }
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(
-                            horizontal = TelepicTokens.spacing.screenMargin,
-                            vertical = TelepicTokens.spacing.lg,
-                        ),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.inverseSurface,
-                ) {
-                    Text(
-                        text = stringResource(R.string.photos_selection_result, summary.queued, summary.alreadyCovered),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.inverseOnSurface,
-                        modifier = Modifier.padding(horizontal = TelepicTokens.spacing.md, vertical = TelepicTokens.spacing.sm),
-                    )
-                }
+                TransientMessageBar(
+                    message = stringResource(R.string.photos_selection_result, summary.queued, summary.alreadyCovered),
+                    onDismiss = viewModel::consumeSelectionMessage,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         }
     }
@@ -204,6 +198,7 @@ private fun MediaRegion(
     val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
     val selectedIds = selectedItems.keys
     val selectionActive = selectedItems.isNotEmpty()
+    val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
@@ -228,6 +223,7 @@ private fun MediaRegion(
                     onMediaSelected = onMediaSelected,
                     selectedIds = selectedIds,
                     selectionActive = selectionActive,
+                    favoriteIds = favoriteIds,
                     onToggleSelect = viewModel::toggleSelection,
                     onLongSelect = viewModel::beginSelection,
                 )

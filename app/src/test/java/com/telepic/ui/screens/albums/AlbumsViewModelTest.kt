@@ -18,6 +18,8 @@ import org.robolectric.annotation.Config
 /**
  * Album loading states: ready, genuinely empty, and error distinct from empty. Runs on Robolectric so
  * `viewModelScope`'s Main dispatcher is the (synchronizable) test looper, exactly as on a device.
+ * The ViewModel no longer self-loads — [refresh] (driven by the screen once access exists) is the
+ * only entry point, so a denied user never triggers a doomed query.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -33,10 +35,20 @@ class AlbumsViewModelTest {
         override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
     }
 
-    /** Drains the main looper so the launched load reaches its terminal state. */
+    /** Mirrors the screen: the caller triggers the load, then the looper drains to a terminal state. */
     private fun AlbumsViewModel.settle(): AlbumsStatus {
+        refresh()
         repeat(5) { shadowOf(android.os.Looper.getMainLooper()).idle() }
         return status.value
+    }
+
+    @Test
+    fun `construction alone never queries - the caller gates on access`() {
+        var queries = 0
+        val vm = AlbumsViewModel(FakeAlbums { queries++; listOf(album(1)) })
+        repeat(5) { shadowOf(android.os.Looper.getMainLooper()).idle() }
+        assertEquals(0, queries)
+        assertEquals(AlbumsStatus.Loading, vm.status.value) // honest initial state, no doomed flash
     }
 
     @Test

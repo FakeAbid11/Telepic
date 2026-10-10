@@ -93,21 +93,21 @@ class CloudViewModelTest {
     fun `successful preview resolves to Loaded`() {
         vm.loadPreview(item(1))
         settle()
-        assertEquals(CloudPreviewState.Loaded("/tmp/p1"), vm.previews.value[1L])
+        assertEquals(CloudPreviewState.Loaded("/tmp/p1"), vm.previews.value[100L to 1L])
     }
 
     @Test
     fun `a null preview for an item with a file id is a retryable failure`() {
         vm.loadPreview(item(2, previewFileId = 1)) // repo has no path for id 2 → getPreview null
         settle()
-        assertEquals(CloudPreviewState.Failed(retryable = true), vm.previews.value[2L])
+        assertEquals(CloudPreviewState.Failed(retryable = true), vm.previews.value[100L to 2L])
     }
 
     @Test
     fun `an item with no preview file is a non-retryable failure and is never fetched`() {
         vm.loadPreview(item(3, previewFileId = null))
         settle()
-        assertEquals(CloudPreviewState.Failed(retryable = false), vm.previews.value[3L])
+        assertEquals(CloudPreviewState.Failed(retryable = false), vm.previews.value[100L to 3L])
         assertEquals(0, repo.previewCalls)
     }
 
@@ -126,11 +126,11 @@ class CloudViewModelTest {
         // id 2 initially fails (no path). Retry after teaching the repo its path.
         vm.loadPreview(item(2, previewFileId = 1))
         settle()
-        assertTrue(vm.previews.value[2L] is CloudPreviewState.Failed)
+        assertTrue(vm.previews.value[100L to 2L] is CloudPreviewState.Failed)
         val recovering = CloudViewModel(FakeCloudRepository(previewPaths = mapOf(2L to "/tmp/p2")))
         recovering.loadPreview(item(2))
         settle()
-        assertEquals(CloudPreviewState.Loaded("/tmp/p2"), recovering.previews.value[2L])
+        assertEquals(CloudPreviewState.Loaded("/tmp/p2"), recovering.previews.value[100L to 2L])
     }
 
     @Test

@@ -10,6 +10,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -45,6 +49,26 @@ fun VideoViewer(state: ViewerUiState, onDownload: () -> Unit) {
         onDispose { player.release() } // never leak a player across navigation
     }
 
+    // Backgrounding must silence playback: remember whether WE were playing (a user-paused video
+    // must not resume itself) and pause/resume with the STOP/START lifecycle — not PAUSE/RESUME, so
+    // a translucent overlay or the permission dialog never interrupts a video.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, player) {
+        var wasPlayingBeforeStop = false
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    wasPlayingBeforeStop = player.isPlaying
+                    if (wasPlayingBeforeStop) player.pause()
+                }
+                Lifecycle.Event.ON_START -> if (wasPlayingBeforeStop) player.play()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
@@ -66,6 +90,9 @@ fun VideoViewer(state: ViewerUiState, onDownload: () -> Unit) {
  */
 private fun buildPlayer(context: Context, uri: Uri): ExoPlayer =
     ExoPlayer.Builder(context).build().apply {
+        // Route audio through the media stream and let Media3 own audio focus (ducks/stops for
+        // calls and other focus requests instead of fighting them).
+        setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus = */ true)
         setMediaItem(MediaItem.fromUri(uri))
         addListener(
             object : Player.Listener {

@@ -27,18 +27,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,15 +42,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.telepic.R
 import com.telepic.data.organization.DeleteRequest
-import com.telepic.domain.media.LocalMedia
 import com.telepic.navigation.OrganizationKind
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.LoadingState
+import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.theme.TelepicTokens
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Archive
@@ -76,28 +71,25 @@ fun OrganizationScreen(
     val items by viewModel.items.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val spacing = TelepicTokens.spacing
-    val snackbar = remember { SnackbarHostState() }
     val deleteFailedMessage = stringResource(R.string.trash_delete_failed)
 
-    var selected by remember { mutableStateOf<LocalMedia?>(null) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    // Rotation-surviving selection: the tile id, not the whole LocalMedia. Tapping the already
+    // selected tile deselects (no sticky selection with no way to clear it but Back).
+    var selectedId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
+    val selected = items?.firstOrNull { it.id == selectedId }
 
-    val pendingDelete = remember { mutableStateOf<LocalMedia?>(null) }
+    // The consent launcher's result arrives across Activity recreation, so the pending item is
+    // saved as its id; success is reported by id alone.
+    var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
     val consentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
-        val media = pendingDelete.value
-        pendingDelete.value = null
-        if (result.resultCode == Activity.RESULT_OK && media != null) {
-            viewModel.onDeleteConfirmed(media.id)
-        }
-    }
-
-    LaunchedEffect(message) {
-        if (message == OrganizationViewModel.DELETE_FAILED_KEY) {
-            snackbar.showSnackbar(deleteFailedMessage)
-            viewModel.consumeMessage()
+        val id = pendingDeleteId
+        pendingDeleteId = null
+        if (result.resultCode == Activity.RESULT_OK && id != null) {
+            viewModel.onDeleteConfirmed(id)
         }
     }
 
@@ -123,14 +115,14 @@ fun OrganizationScreen(
                     )
                     else -> {
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 110.dp),
+                            columns = GridCells.Adaptive(minSize = spacing.gridTileMinSize),
                             contentPadding = PaddingValues(spacing.gridGutter),
                             horizontalArrangement = Arrangement.spacedBy(spacing.gridGutter),
                             verticalArrangement = Arrangement.spacedBy(spacing.gridGutter),
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         ) {
                             items(list, key = { it.id }) { media ->
-                                val isSelected = selected?.id == media.id
+                                val isSelected = selectedId == media.id
                                 Box(
                                     modifier = Modifier
                                         .aspectRatio(1f)
@@ -139,7 +131,7 @@ fun OrganizationScreen(
                                             if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
                                             else MaterialTheme.colorScheme.surfaceVariant,
                                         )
-                                        .clickable { selected = media },
+                                        .clickable { selectedId = if (isSelected) null else media.id },
                                 ) {
                                     AsyncImage(
                                         model = media.contentUri,
@@ -158,7 +150,7 @@ fun OrganizationScreen(
                             ActionRow(
                                 kind = viewModel.kind,
                                 onOpen = { onOpenMedia(media.id) },
-                                onUndo = { viewModel.undo(media.id); selected = null },
+                                onUndo = { viewModel.undo(media.id); selectedId = null },
                                 onDelete = { showDeleteConfirm = true },
                             )
                         }
@@ -166,7 +158,14 @@ fun OrganizationScreen(
                 }
             }
 
-            SnackbarHost(snackbar, modifier = Modifier.align(Alignment.BottomCenter))
+            val messageText = if (message is OrgMessage.DeleteFailed) deleteFailedMessage else null
+            messageText?.let {
+                TransientMessageBar(
+                    message = it,
+                    onDismiss = viewModel::consumeMessage,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
         }
     }
 
@@ -184,7 +183,7 @@ fun OrganizationScreen(
                         scope.launch {
                             when (val outcome = viewModel.requestDeleteForever(media)) {
                                 is DeleteRequest.NeedsConsent -> {
-                                    pendingDelete.value = media
+                                    pendingDeleteId = media.id
                                     consentLauncher.launch(IntentSenderRequest.Builder(outcome.intentSender).build())
                                 }
                                 DeleteRequest.Deleted -> viewModel.onDeleteConfirmed(media.id)
@@ -192,7 +191,7 @@ fun OrganizationScreen(
                             }
                         }
                     }
-                    selected = null
+                    selectedId = null
                 }) { Text(stringResource(R.string.trash_delete_confirm)) }
             },
             dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.organization_cancel)) } },

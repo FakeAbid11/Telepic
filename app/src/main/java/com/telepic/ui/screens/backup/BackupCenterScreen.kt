@@ -58,7 +58,7 @@ fun BackupCenterScreen(
                     icon = Icons.Outlined.CloudUpload,
                     title = stringResource(R.string.backup_center_empty_title),
                     description = stringResource(R.string.backup_center_empty_body),
-                    primaryAction = StateActionStartBackup(viewModel::startBackup),
+                    primaryAction = StateActionStartBackup(viewModel::startBackup, enabled = !state.isRunning),
                 )
                 return@Column
             }
@@ -74,6 +74,9 @@ fun BackupCenterScreen(
 
             Button(
                 onClick = viewModel::startBackup,
+                // Honest gating: while TDLib is uploading (stats.uploading > 0), a second start
+                // would just queue against a live run — the disabled state says so.
+                enabled = !state.isRunning,
                 modifier = Modifier
                     .padding(horizontal = spacing.screenMargin)
                     .fillMaxWidth(),
@@ -206,5 +209,5 @@ private fun BackupState.canCancel(): Boolean =
     this == BackupState.QUEUED || this == BackupState.WAITING_FOR_NETWORK || this == BackupState.WAITING_FOR_AUTH
 
 @Composable
-private fun StateActionStartBackup(onClick: () -> Unit) =
-    com.telepic.ui.components.StateAction(stringResource(R.string.backup_action_start), onClick)
+private fun StateActionStartBackup(onClick: () -> Unit, enabled: Boolean) =
+    com.telepic.ui.components.StateAction(stringResource(R.string.backup_action_start), onClick, enabled)

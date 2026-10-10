@@ -16,7 +16,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +30,7 @@ import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.LoadingState
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
+import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.screens.photos.MediaGrid
 import com.telepic.ui.theme.TelepicTokens
 
@@ -48,6 +48,7 @@ fun AlbumContentsScreen(
 ) {
     val paging = viewModel.media.collectAsLazyPagingItems()
     val backupStates by viewModel.backupStates.collectAsStateWithLifecycle()
+    val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
     val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
     val selectionMessage by viewModel.selectionMessage.collectAsStateWithLifecycle()
     val selectionActive = selectedItems.isNotEmpty()
@@ -78,7 +79,7 @@ fun AlbumContentsScreen(
                             )
                         }
                         Text(
-                            text = viewModel.album.title,
+                            text = viewModel.title,
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -106,6 +107,7 @@ fun AlbumContentsScreen(
                             onMediaSelected = onMediaSelected,
                             selectedIds = selectedItems.keys,
                             selectionActive = selectionActive,
+                            favoriteIds = favoriteIds,
                             onToggleSelect = viewModel::toggleSelection,
                             onLongSelect = viewModel::beginSelection,
                             modifier = Modifier.fillMaxSize(),
@@ -126,27 +128,11 @@ fun AlbumContentsScreen(
             // Transient feedback after a bulk enqueue; auto-cleared. Same honest split as the timeline:
             // new work vs items the engine recognized as already covered (never a fabricated upload).
             selectionMessage?.let { summary ->
-                LaunchedEffect(summary) {
-                    kotlinx.coroutines.delay(2_500)
-                    viewModel.consumeSelectionMessage()
-                }
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(
-                            horizontal = TelepicTokens.spacing.screenMargin,
-                            vertical = TelepicTokens.spacing.lg,
-                        ),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.inverseSurface,
-                ) {
-                    Text(
-                        text = stringResource(R.string.photos_selection_result, summary.queued, summary.alreadyCovered),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.inverseOnSurface,
-                        modifier = Modifier.padding(horizontal = TelepicTokens.spacing.md, vertical = TelepicTokens.spacing.sm),
-                    )
-                }
+                TransientMessageBar(
+                    message = stringResource(R.string.photos_selection_result, summary.queued, summary.alreadyCovered),
+                    onDismiss = viewModel::consumeSelectionMessage,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         }
     }
