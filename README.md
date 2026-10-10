@@ -161,7 +161,7 @@ Implemented and CI-verified:
   (stable identity `chatId + messageId`, optional reserved hash field for Phase 7)
 - Clean layering: **Cloud screen → `CloudViewModel` → `CloudRepository` → `CloudDataSource`
   → TDLib**, reusing the **single** Phase 4 client/session/gateway (never a second Telegram client)
-- Domain models: `TelepixCloudDestination`, `CloudMedia` (IMAGE / VIDEO / GIF, GIF kept distinct),
+- Domain models: `TelepicCloudDestination`, `CloudMedia` (IMAGE / VIDEO / GIF, GIF kept distinct),
   `CloudPreview`, `LocalDownloadedMedia`; a rich `CloudStatus` (initializing / connecting /
   refreshing / ready / empty / offline / not-authenticated / destination-missing / invalid / error)
 - `ChatValidator` enforces a **safe destination** (accessible channel the account can post to, with
@@ -419,7 +419,7 @@ interactive map, Favorites/Archive/Trash, and restore.
 - `RestoreRepository`: explicit download of a cloud original → **SHA-256 verification** of the bytes
   (against the trusted manifest hash when present) → publish into public media storage via a
   `MediaStore` `ContentResolver` insert + streamed copy (correct MIME, scoped
-  `Pictures|Movies/Telepix` path, `IS_PENDING` commit, no overwrite of unrelated files, partial-write
+  `Pictures|Movies/Telepic` path, `IS_PENDING` commit, no overwrite of unrelated files, partial-write
   cleanup). A **"Save to device"** action lives in the Viewer for cloud items; success is reported
   only after a committed publication, and every earlier step is a distinct honest failure.
 - CI-tested with a fake cloud source + fake publisher (success, unavailable/missing, verify mismatch,
@@ -439,9 +439,9 @@ Media Details · Settings & security hardening · full-device integration & hard
 ## Project structure
 
 ```
-app/src/main/java/com/telepix/
+app/src/main/java/com/telepic/
 ├── MainActivity.kt              # Single-activity Compose host
-├── TelepixApplication.kt        # Owns the DI container + Coil image loader
+├── TelepicApplication.kt        # Owns the DI container + Coil image loader
 ├── di/                          # Lightweight manual dependency container
 ├── navigation/                  # Destinations + NavHost + viewer route
 ├── domain/media/                # LocalMedia, MediaType, PhotosItem, day grouping
@@ -458,8 +458,8 @@ app/src/main/java/com/telepix/
 ├── settings/                    # ThemeMode, repository, ViewModel (DataStore)
 ├── telegram/                    # TDLib: controller, session manager, client gateway, key, states
 └── ui/
-    ├── TelepixRoot.kt            # Startup routing: onboarding vs main app
-    ├── TelepixApp.kt            # Scaffold + bottom navigation
+    ├── TelepicRoot.kt            # Startup routing: onboarding vs main app
+    ├── TelepicApp.kt            # Scaffold + bottom navigation
     ├── theme/                   # Design system: Color, Type, Shape, Spacing, Theme
     ├── components/              # Reusable Empty/Loading/Error/Header components
     ├── onboarding/              # OnboardingScreen, steps, and reusable onboarding components
@@ -470,7 +470,7 @@ app/src/main/java/com/telepix/
 
 ## Package namespace
 
-`com.telepix` — used consistently across the application ID, namespace, and source packages.
+`com.telepic` — used consistently across the application ID, namespace, and source packages.
 
 ---
 

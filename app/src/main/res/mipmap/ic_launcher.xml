@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Legacy (API 24-25) launcher icon: a full-bleed Telepix blue square with the white photo
+  Legacy (API 24-25) launcher icon: a full-bleed Telepic blue square with the white photo
   glyph. Superseded by the adaptive icon in mipmap-anydpi-v26 on API 26+.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"

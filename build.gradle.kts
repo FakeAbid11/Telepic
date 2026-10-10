@@ -1,4 +1,4 @@
-// Telepix root build script.
+// Telepic root build script.
 // Plugin versions are declared in gradle/libs.versions.toml and applied per-module.
 plugins {
     alias(libs.plugins.android.application) apply false

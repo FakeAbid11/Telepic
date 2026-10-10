@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      Media access only. Telepix requests the modern, version-appropriate photo/video
+      Media access only. Telepic requests the modern, version-appropriate photo/video
       permissions and never requests location or unrelated permissions in this phase.
     -->
     <!-- Android 13+ (API 33) granular media permissions -->
@@ -27,14 +27,14 @@
 
     <!--
       Phase 10 map: tiles are fetched from an OpenStreetMap-compatible provider over the network.
-      Telepix does NOT request any device location permission — photo locations come only from the
+      Telepic does NOT request any device location permission — photo locations come only from the
       GPS data already embedded in the media files, and no coordinates or EXIF are ever uploaded.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
-        android:name=".TelepixApplication"
+        android:name=".TelepicApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -42,9 +42,9 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Telepix">
+        android:theme="@style/Theme.Telepic">
 
-        <!-- WorkManager is initialized on-demand via TelepixApplication (Configuration.Provider),
+        <!-- WorkManager is initialized on-demand via TelepicApplication (Configuration.Provider),
              which lets the backup worker receive the app container. Disable the default startup
              initializer so it is not created before the container exists. -->
         <provider
@@ -62,7 +62,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Telepix">
+            android:theme="@style/Theme.Telepic">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

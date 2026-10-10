@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      Base window theme. Compose (TelepixTheme) drives all in-app theming; this XML theme
+      Base window theme. Compose (TelepicTheme) drives all in-app theming; this XML theme
       only styles the window before Compose renders its first frame.
     -->
-    <style name="Theme.Telepix" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@color/telepix_window_light</item>
+    <style name="Theme.Telepic" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/telepic_window_light</item>
     </style>
 </resources>

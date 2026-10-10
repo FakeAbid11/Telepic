@@ -18,11 +18,11 @@ val telegramApiId = when {
 val telegramApiHash = System.getenv("TELEGRAM_API_HASH").orEmpty()
 
 android {
-    namespace = "com.telepix"
+    namespace = "com.telepic"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.telepix"
+        applicationId = "com.telepic"
         // Phase 4: the TDLib Android artifact requires minSdk 26 (Android 8.0+).
         minSdk = 26
         targetSdk = 34
@@ -119,7 +119,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     ksp(libs.androidx.room.compiler)
     // Compile Room in the test sources too, so the Phase 6 migration test can build a real
-    // version-1 database (TelepixDatabaseV1) and verify the explicit 1 -> 2 migration.
+    // version-1 database (TelepicDatabaseV1) and verify the explicit 1 -> 2 migration.
     kspTest(libs.androidx.room.compiler)
 
     debugImplementation(libs.androidx.ui.tooling)
