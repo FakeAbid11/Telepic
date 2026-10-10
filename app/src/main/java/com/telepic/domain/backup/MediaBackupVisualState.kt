@@ -11,15 +11,28 @@ enum class MediaBackupVisualState {
     QUEUED,
     UPLOADING,
     BACKED_UP,
-    FAILED;
+    FAILED,
+
+    /** Automatic retries exhausted: the item waits forever unless the user acts (retry/fix auth). */
+    STALLED;
 
     companion object {
-        /** Collapse the rich internal state machine into what a photo cell can usefully show. */
-        fun from(state: BackupState?): MediaBackupVisualState = when (state) {
+        /**
+         * Collapse the rich internal state machine into what a photo cell can usefully show.
+         * A WAITING_FOR_NETWORK row whose automatic retry budget is exhausted is *not* "queued" —
+         * nothing will pick it up again, so it surfaces as [STALLED] instead of pretending to progress.
+         */
+        fun from(
+            state: BackupState?,
+            retryCount: Int = 0,
+            maxRetries: Int = Int.MAX_VALUE,
+        ): MediaBackupVisualState = when (state) {
             BackupState.BACKED_UP -> BACKED_UP
             BackupState.PREPARING, BackupState.UPLOADING -> UPLOADING
             BackupState.FAILED -> FAILED
-            BackupState.QUEUED, BackupState.WAITING_FOR_NETWORK, BackupState.WAITING_FOR_AUTH -> QUEUED
+            BackupState.WAITING_FOR_NETWORK ->
+                if (retryCount >= maxRetries) STALLED else QUEUED
+            BackupState.QUEUED, BackupState.WAITING_FOR_AUTH -> QUEUED
             else -> NONE // NOT_BACKED_UP / CANCELLED / null → no indicator
         }
     }

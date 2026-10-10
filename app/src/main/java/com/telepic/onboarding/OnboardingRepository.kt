@@ -16,7 +16,12 @@ interface OnboardingRepository {
     /** The persisted backup preference, or `null` if none has been chosen yet. */
     val backupPreference: Flow<BackupPreference?>
 
+    /** The MediaStore bucket ids chosen for SELECT_FOLDER. Empty until the user picks folders. */
+    val backupBucketIds: Flow<Set<Long>>
+
     suspend fun setCompleted(completed: Boolean)
 
     suspend fun setBackupPreference(preference: BackupPreference?)
+
+    suspend fun setBackupBucketIds(ids: Set<Long>)
 }

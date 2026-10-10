@@ -73,6 +73,7 @@ class OrganizationMigration3To4Test {
             .addMigrations(
                 TelepicDatabase.MIGRATION_3_4,
                 TelepicDatabase.MIGRATION_4_5,
+                TelepicDatabase.MIGRATION_5_6,
             )
             .allowMainThreadQueries()
             .build()

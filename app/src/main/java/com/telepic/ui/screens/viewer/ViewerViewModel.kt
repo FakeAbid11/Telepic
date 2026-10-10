@@ -16,10 +16,12 @@ import com.telepic.domain.media.MediaType
 import com.telepic.navigation.MediaSource
 import com.telepic.navigation.OrganizationKind
 import com.telepic.navigation.ViewerScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** The kind of media the Viewer is showing (a GIF stays distinct from a static photo). */
@@ -115,6 +117,9 @@ class ViewerViewModel(
     private val _restore = MutableStateFlow<RestoreState>(RestoreState.Idle)
     val restore: StateFlow<RestoreState> = _restore.asStateFlow()
 
+    /** The in-flight item load; cancelled on every navigation so a slow resolve never lands stale. */
+    private var loadJob: Job? = null
+
     init {
         load(initialSource)
     }
@@ -127,10 +132,21 @@ class ViewerViewModel(
         _uiState.value.previous?.let(::open)
     }
 
-    /** Navigate to another source (used by next/previous and, if wired, a pager). */
+    /** Navigate to another source (used by next/previous and by the swipe gesture). */
     fun open(newSource: MediaSource) {
+        loadJob?.cancel()
         _uiState.value = ViewerUiState(newSource, ViewerStatus.LOADING)
         load(newSource)
+    }
+
+    /**
+     * The Coil display model for a (possibly adjacent) source, so the screen can warm the image
+     * cache for the swipe targets. Cloud sources return null: pre-resolving a preview would fire a
+     * TDLib file request for every neighbor.
+     */
+    suspend fun displayModelFor(source: MediaSource): Any? = when (source) {
+        is MediaSource.Local -> localLookup.byId(source.mediaId)?.contentUri
+        is MediaSource.Cloud -> null
     }
 
     /**
@@ -210,16 +226,22 @@ class ViewerViewModel(
         val current = _uiState.value
         val cloud = current.item as? ViewerItem.Cloud ?: return
         if (current.download is CloudDownload.Available) return
+        val requestedSource = current.source
         _uiState.value = current.copy(download = CloudDownload.Downloading)
         viewModelScope.launch {
             val local = runCatching { cloudRepository.downloadOriginal(cloud.media) }.getOrNull()
-            _uiState.value = if (local != null) {
-                current.copy(
-                    download = CloudDownload.Available(local.localPath),
-                    item = cloud.copy(originalPath = local.localPath),
-                )
-            } else {
-                current.copy(download = CloudDownload.Unavailable)
+            // Identity-guarded: navigating away mid-download must never resurrect the old item's state.
+            _uiState.update { state ->
+                if (state.source != requestedSource) return@update state
+                if (local != null) {
+                    val existing = state.item as? ViewerItem.Cloud ?: return@update state
+                    state.copy(
+                        download = CloudDownload.Available(local.localPath),
+                        item = existing.copy(originalPath = local.localPath),
+                    )
+                } else {
+                    state.copy(download = CloudDownload.Unavailable)
+                }
             }
         }
     }
@@ -233,20 +255,24 @@ class ViewerViewModel(
         val repo = restoreRepository ?: return
         val cloud = (_uiState.value.item as? ViewerItem.Cloud) ?: return
         if (_restore.value is RestoreState.Restoring) return
+        val requestedSource = _uiState.value.source
         _restore.value = RestoreState.Restoring
         viewModelScope.launch {
             val result = runCatching { repo.restore(cloud.media) }.getOrElse {
                 RestoreResult.Failed(com.telepic.data.restore.RestoreFailure.DOWNLOAD_UNAVAILABLE)
             }
-            _restore.value = when (result) {
-                is RestoreResult.Restored -> RestoreState.Restored(result.localUri)
-                is RestoreResult.Failed -> RestoreState.Failed(result.reason.name)
+            // Guard: a restore that finishes after navigation must not claim the new item was saved.
+            if (_uiState.value.source == requestedSource) {
+                _restore.value = when (result) {
+                    is RestoreResult.Restored -> RestoreState.Restored(result.localUri)
+                    is RestoreResult.Failed -> RestoreState.Failed(result.reason.name)
+                }
             }
         }
     }
 
     private fun load(target: MediaSource) {
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             _restore.value = RestoreState.Idle
             _details.value = null // a different item never leaks the previous item's details
             val resolved = when (target) {
@@ -259,7 +285,7 @@ class ViewerViewModel(
             } else {
                 _flags.value = ViewerFlags()
             }
-            _uiState.value = resolved
+            _uiState.update { if (it.source == resolved.source) resolved else it }
         }
     }
 

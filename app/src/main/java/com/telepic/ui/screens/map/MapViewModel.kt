@@ -14,9 +14,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * Backs the interactive map. It exposes geotagged items (from the EXIF cache) as map pins using the
- * pure [com.telepic.data.media.MapClusterer] — grouping is a rendering concern computed off the main
- * thread — and triggers a bounded incremental scan when the screen is opened (never at app startup).
+ * Backs the interactive map. It exposes visible geotagged items (from the EXIF cache) raw: the
+ * grouping into pins is a rendering concern recomputed by the view at the current zoom level with
+ * the pure [com.telepic.data.media.MapClusterer] + [com.telepic.data.media.MapZoomPrecision] seam.
+ * The ViewModel triggers a bounded incremental scan when the screen is opened (never at app startup).
  *
  * Archived/trashed media is hidden on the map too ([hiddenIds]), so the pins match the timeline,
  * albums and Viewer: a filed-away photo must not stay visible on the map while the Viewer refuses to
@@ -37,14 +38,13 @@ class MapViewModel(
             if (hidden.isEmpty()) items else items.filterNot { it.mediaId in hidden }
         }
 
-    val pins: StateFlow<List<com.telepic.data.media.MapClusterer.MapPin>> =
-        visibleLocations
-            .map { items -> com.telepic.data.media.MapClusterer.cluster(items, DEFAULT_PRECISION) }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** Shared raw list for clustering *and* the count — one collection of the Room flow, one filter. */
+    val locations: StateFlow<List<com.telepic.domain.media.GeotaggedMedia>> =
+        visibleLocations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Number of distinct visible geotagged items, for an honest "N locations" affordance. */
     val locationCount: StateFlow<Int> =
-        visibleLocations.map { it.size }
+        locations.map { it.size }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     fun refresh() {
@@ -56,9 +56,5 @@ class MapViewModel(
                 _isScanning.value = false
             }
         }
-    }
-
-    private companion object {
-        const val DEFAULT_PRECISION = 4 // ~11 m grid; recomputed by the view when zoomed.
     }
 }

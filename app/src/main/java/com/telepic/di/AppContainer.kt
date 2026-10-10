@@ -41,6 +41,7 @@ import com.telepic.data.media.LocalMediaRepositoryImpl
 import com.telepic.data.media.MediaChangeWatcher
 import com.telepic.data.media.MediaStoreAlbumRepository
 import com.telepic.data.media.MediaStoreLocalLookup
+import com.telepic.data.media.MediaStoreBucketLoader
 import com.telepic.data.media.MediaStoreMediaLoader
 import com.telepic.data.organization.DefaultMediaOrganizationRepository
 import com.telepic.data.organization.LocalMediaDeleter
@@ -112,6 +113,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                 TelepicDatabase.MIGRATION_2_3,
                 TelepicDatabase.MIGRATION_3_4,
                 TelepicDatabase.MIGRATION_4_5,
+                TelepicDatabase.MIGRATION_5_6,
             )
             .build()
     }
@@ -237,12 +239,24 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val backupCoordinator: BackupCoordinator by lazy {
-        DefaultBackupCoordinator(
+        val coordinator = DefaultBackupCoordinator(
             repository = backupRepository,
             recognition = backupRecognitionRepository,
             scheduler = backupWorkScheduler,
             onboardingRepository = onboardingRepository,
-            pageLoader = mediaLoader,
+            // null bucket = whole library; a bucket id = the same projection scoped to that folder,
+            // so SELECT_FOLDER discovery reads exactly what the user chose.
+            pageLoaderFactory = { bucketId ->
+                if (bucketId == null) {
+                    mediaLoader
+                } else {
+                    MediaStoreBucketLoader(appContext, bucketId) { mediaOrganizationRepository.hiddenIds() }
+                }
+            },
         )
+        // The periodic discovery worker is created by WorkManager, not here; install the seam
+        // after construction (touching backupWorkScheduler first would re-enter this lazy block).
+        BackupWorkerDependencies.coordinator = coordinator
+        coordinator
     }
 }

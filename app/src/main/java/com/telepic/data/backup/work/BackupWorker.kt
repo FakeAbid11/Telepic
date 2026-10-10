@@ -10,15 +10,19 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.telepic.R
+import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupRepository
 
 /**
- * Process-wide handle the container installs so the WorkManager-created worker can reach the
- * [BackupRepository] without a DI framework. Set once in [com.telepic.di.AppContainer].
+ * Process-wide handle the container installs so the WorkManager-created workers can reach their
+ * dependencies without a DI framework. Set once in [com.telepic.di.AppContainer].
  */
 object BackupWorkerDependencies {
     @Volatile
     var repository: BackupRepository? = null
+
+    @Volatile
+    var coordinator: BackupCoordinator? = null
 }
 
 /**

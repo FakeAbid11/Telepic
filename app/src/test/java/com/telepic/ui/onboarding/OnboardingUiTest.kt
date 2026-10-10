@@ -1,5 +1,6 @@
 package com.telepic.ui.onboarding
 
+import android.net.Uri
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,9 +13,11 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.telepic.domain.media.Album
 import com.telepic.onboarding.BackupPreference
 import com.telepic.telegram.TelegramAuthController
 import com.telepic.telegram.TelegramAuthState
+import com.telepic.ui.onboarding.components.TAG_FOLDER_PICKER_CONFIRM
 import com.telepic.ui.onboarding.components.TAG_ONBOARDING_PRIMARY
 import com.telepic.ui.onboarding.components.TAG_ONBOARDING_SECONDARY
 import com.telepic.ui.onboarding.steps.TAG_BACKUP_ALL
@@ -23,6 +26,7 @@ import com.telepic.ui.theme.TelepicTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -58,14 +62,29 @@ class OnboardingUiTest {
         override fun logout() = Unit
     }
 
+    private fun folder(bucketId: Long, title: String, count: Int) = Album(
+        bucketId = bucketId,
+        title = title,
+        coverUri = Uri.parse("content://media/cover/$bucketId"),
+        coverIsVideo = false,
+        count = count,
+        latestMillis = 1L,
+    )
+
+    private val deviceFolders = listOf(folder(11L, "Camera", 42), folder(22L, "Screenshots", 7))
+
     @Test
     fun `welcome shows branding and a primary action`() {
         composeRule.setContent {
             TelepicTheme(darkTheme = true) {
                 OnboardingScreen(
                     backupPreference = null,
+                    backupBucketIds = emptySet(),
+                    folders = emptyList(),
                     telegramController = FakeTelegramController(),
                     onBackupPreferenceChange = {},
+                    onNeedFolders = {},
+                    onPickFolders = {},
                     onComplete = {},
                 )
             }
@@ -81,8 +100,12 @@ class OnboardingUiTest {
             TelepicTheme(darkTheme = true) {
                 OnboardingScreen(
                     backupPreference = null,
+                    backupBucketIds = emptySet(),
+                    folders = emptyList(),
                     telegramController = FakeTelegramController(),
                     onBackupPreferenceChange = { chosen = it },
+                    onNeedFolders = {},
+                    onPickFolders = {},
                     onComplete = {},
                 )
             }
@@ -99,14 +122,19 @@ class OnboardingUiTest {
     }
 
     @Test
-    fun `folder backup is disabled and never selectable`() {
-        var chosen: BackupPreference? = null
+    fun `folder choice opens the picker and confirming reports the picked buckets`() {
+        var requestedFolders = false
+        var picked: Set<Long>? = null
         composeRule.setContent {
             TelepicTheme(darkTheme = true) {
                 OnboardingScreen(
                     backupPreference = null,
+                    backupBucketIds = emptySet(),
+                    folders = deviceFolders,
                     telegramController = FakeTelegramController(),
-                    onBackupPreferenceChange = { chosen = it },
+                    onBackupPreferenceChange = {},
+                    onNeedFolders = { requestedFolders = true },
+                    onPickFolders = { picked = it },
                     onComplete = {},
                 )
             }
@@ -116,10 +144,18 @@ class OnboardingUiTest {
         composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Telegram (skip)
         composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Backup
 
-        // The unimplemented folder choice must not present as an actionable, active preference.
-        composeRule.onNodeWithTag(TAG_BACKUP_ALL).assertIsEnabled()
-        composeRule.onNodeWithTag(TAG_BACKUP_FOLDER).assertIsNotEnabled()
-        assertTrue(chosen == null)
+        // The folder choice is now actionable and asks the host for the live folder list.
+        composeRule.onNodeWithTag(TAG_BACKUP_FOLDER).assertIsEnabled()
+        composeRule.onNodeWithTag(TAG_BACKUP_FOLDER).performClick()
+        assertTrue(requestedFolders)
+
+        composeRule.onNodeWithText("Choose folders").assertIsDisplayed()
+        // Nothing picked yet: confirming an empty selection must stay impossible.
+        composeRule.onNodeWithTag(TAG_FOLDER_PICKER_CONFIRM).assertIsNotEnabled()
+        composeRule.onNodeWithText("Camera").performClick()
+        composeRule.onNodeWithTag(TAG_FOLDER_PICKER_CONFIRM).assertIsEnabled()
+        composeRule.onNodeWithTag(TAG_FOLDER_PICKER_CONFIRM).performClick()
+        assertEquals(setOf(11L), picked)
     }
 
     @Test
@@ -166,8 +202,12 @@ class OnboardingUiTest {
         } else {
             OnboardingScreen(
                 backupPreference = backup,
+                backupBucketIds = emptySet(),
+                folders = emptyList(),
                 telegramController = FakeTelegramController(),
                 onBackupPreferenceChange = { backup = it },
+                onNeedFolders = {},
+                onPickFolders = { backup = BackupPreference.SELECT_FOLDER },
                 onComplete = {
                     done = true
                     onCompleted()

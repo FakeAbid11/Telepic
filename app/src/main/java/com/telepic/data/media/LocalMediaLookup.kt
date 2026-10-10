@@ -103,7 +103,9 @@ class MediaStoreLocalLookup(
                 projection,
                 selection,
                 bounded.map { it.toString() }.toTypedArray(),
-                "${MediaStore.MediaColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns._ID} DESC",
+                // Same coalesced newest-first order the timeline displays, so a curated collection
+                // (favorites/archive/trash) steps in exactly the order the user sees.
+                MediaSortOrder.TIMELINE_DESC,
             )?.use { cursor ->
                 val out = ArrayList<LocalMedia>(bounded.size)
                 while (cursor.moveToNext()) {

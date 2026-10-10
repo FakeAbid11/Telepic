@@ -14,6 +14,8 @@ import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
 import com.telepic.permissions.MediaPermissionState
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -123,13 +125,34 @@ class PhotosViewModel(
 
     init {
         // Re-read the library when MediaStore changes while the screen is alive.
-        changeWatcher.start { repository.refresh() }
+        changeWatcher.start {
+            repository.refresh()
+            scheduleChangeSync()
+        }
         // When organization state changes (archive/trash), re-read so the timeline hides/shows items.
         if (organizationRepository != null) {
             viewModelScope.launch {
                 combine(organizationRepository.archivedIds, organizationRepository.trashedIds) { a, t -> a + t }
                     .collect { repository.refresh() }
             }
+        }
+    }
+
+    /**
+     * Debounced auto-backup trigger for foreground MediaStore changes: ContentObserver events fire
+     * in bursts (a camera save is several callbacks), so the last tick within the window collapses
+     * the burst into one preference-gated sync. Recognition dedups everything already covered, and
+     * the scheduler's KEEP policy coalesces duplicate runs. Background coverage is the periodic
+     * worker's job — this only keeps an open app fresh.
+     */
+    private var changeSyncJob: Job? = null
+
+    private fun scheduleChangeSync() {
+        val coordinator = backupCoordinator ?: return
+        changeSyncJob?.cancel()
+        changeSyncJob = viewModelScope.launch {
+            delay(MEDIA_CHANGE_SYNC_DEBOUNCE_MS)
+            coordinator.syncFromPreference()
         }
     }
 
@@ -143,6 +166,12 @@ class PhotosViewModel(
 
     override fun onCleared() {
         changeWatcher.stop()
+        changeSyncJob?.cancel()
         super.onCleared()
+    }
+
+    private companion object {
+        /** Trailing-debounce window for MediaStore change bursts (~10s of quiet). */
+        const val MEDIA_CHANGE_SYNC_DEBOUNCE_MS = 10_000L
     }
 }

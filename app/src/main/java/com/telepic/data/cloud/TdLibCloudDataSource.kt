@@ -3,6 +3,7 @@ package com.telepic.data.cloud
 import com.telepic.domain.cloud.ChatCandidate
 import com.telepic.domain.cloud.ChatValidator
 import com.telepic.domain.cloud.CloudMedia
+import com.telepic.domain.cloud.CloudMediaType
 import com.telepic.domain.cloud.CloudPreview
 import com.telepic.domain.cloud.CloudUploadProgress
 import com.telepic.domain.cloud.CloudUploadRequest
@@ -103,12 +104,17 @@ class TdLibCloudDataSource(
         chatId: Long,
         request: CloudUploadRequest,
         onProgress: (CloudUploadProgress) -> Unit,
+        onSent: suspend (chatId: Long, messageId: Long) -> Unit,
     ): CloudUploadResult {
         requireAuth()
         val content = TdApiCloudMapper.uploadContent(request)
         val response = gateway.request(TdApiCloudRequests.sendMessage(chatId, content))
         if (response is TdApi.Error) throw classifySendError(response)
         val sent = response as? TdApi.Message ?: throw CloudNetworkException("Unexpected sendMessage response")
+        // TDLib accepted the send: hand the real identity to the caller *now*, before polling.
+        // If this run later times out or dies, the persisted id lets the next pass confirm the
+        // in-flight message instead of re-sending and duplicating the post.
+        onSent(chatId, sent.id)
         val confirmed = awaitSendConfirmation(chatId, sent)
         // Telegram confirmed the send; report the real remote identity. Progress is not fabricated:
         // the byte count is only known once, at confirmation, so a single honest sample is emitted.
@@ -119,6 +125,29 @@ class TdLibCloudDataSource(
             telegramFileId = TdApiCloudMapper.uploadedFileId(confirmed),
             mediaType = request.mediaType,
         )
+    }
+
+    override suspend fun confirmSend(chatId: Long, messageId: Long, mediaType: CloudMediaType): CloudUploadResult {
+        requireAuth()
+        val response = gateway.request(TdApiCloudRequests.getMessage(chatId, messageId))
+        if (response is TdApi.Error) {
+            // "message id invalid" (400) is the one TDLib code that proves the send never landed —
+            // anything else (network, temporary) stays retryable without clearing the pending id.
+            if (response.code == 400) throw CloudMessageGoneException("Telegram has no message $messageId: ${response.message}")
+            throw CloudNetworkException("Confirm failed: ${response.message}")
+        }
+        val message = response as? TdApi.Message ?: throw CloudNetworkException("Unexpected getMessage response")
+        when (val state = message.sendingState) {
+            null -> return CloudUploadResult(
+                chatId = message.chatId.takeIf { it != 0L } ?: chatId,
+                messageId = message.id,
+                telegramFileId = TdApiCloudMapper.uploadedFileId(message),
+                mediaType = mediaType,
+            )
+            is TdApi.MessageSendingStateFailed ->
+                throw CloudUploadRejectedException("Telegram rejected the upload: ${state.error?.message ?: "unknown"}")
+            else -> throw CloudMessagePendingException()
+        }
     }
 
     // --- internals ---------------------------------------------------------------------------
@@ -181,8 +210,10 @@ class TdLibCloudDataSource(
     }
 
     private fun classifySendError(error: TdApi.Error): Exception =
-        // 429 (flood wait) and 5xx are transient/retryable; anything else is a permanent rejection.
-        if (error.code == 429 || error.code >= 500) {
+        // TDLib's flood wait is 420 (with "retry after N seconds"); 429/5xx are other transient
+        // conditions. All of them re-run through the queue's backoff — only genuine rejections
+        // (400s etc.) are permanent failures. Matches telegram/TelegramError.kt's auth-side mapping.
+        if (error.code == 420 || error.code == 429 || error.code >= 500) {
             CloudNetworkException("Telegram send failed (${error.code}): ${error.message}")
         } else {
             CloudUploadRejectedException("Telegram rejected the upload (${error.code}): ${error.message}")

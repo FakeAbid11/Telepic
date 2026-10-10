@@ -6,6 +6,8 @@ import com.telepic.data.backup.BackupMapping.toDomain
 import com.telepic.data.backup.BackupMapping.toQueueEntity
 import com.telepic.data.backup.BackupMapping.toStats
 import com.telepic.data.cloud.CloudDestinationInvalidException
+import com.telepic.data.cloud.CloudMessageGoneException
+import com.telepic.data.cloud.CloudMessagePendingException
 import com.telepic.data.cloud.CloudNetworkException
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.cloud.CloudUploadRejectedException
@@ -46,7 +48,7 @@ class DefaultBackupRepository(
 
     override fun observeQueue(): Flow<List<BackupItem>> = dao.observeAll().map { rows -> rows.map { it.toDomain() } }
 
-    override fun observeStats(): Flow<BackupQueueStats> = dao.observeAll().map { it.toStats() }
+    override fun observeStats(): Flow<BackupQueueStats> = dao.observeAll().map { rows -> rows.toStats(maxRetries) }
 
     override suspend fun enqueue(media: LocalMedia): Boolean = withContext(dispatcher) {
         dao.insertIgnore(media.toQueueEntity(clock())) != -1L
@@ -63,18 +65,19 @@ class DefaultBackupRepository(
 
     override suspend fun retry(itemId: Long) = withContext(dispatcher) {
         dao.requeueForRetry(itemId, clock())
+        Unit
     }
 
     override suspend fun cancel(itemId: Long) = withContext(dispatcher) {
         dao.cancel(itemId, clock())
+        Unit
     }
 
     override suspend fun recoverInterruptedWork() = withContext(dispatcher) {
-        val now = clock()
-        // A row with a persisted remote id already succeeded (the identity write is atomic with
-        // BACKED_UP, so this is defensive); anything without one is safely returned to QUEUED.
-        dao.finalizeInterruptedWithIdentity(now)
-        dao.recoverInterruptedWithoutIdentity(now)
+        // Mid-flight rows return to QUEUED keeping any pending remote identity, so the next pass
+        // confirms an already-accepted send instead of re-uploading it. (BACKED_UP wrote its identity
+        // atomically with the state, so a mid-flight row can never already be confirmed.)
+        dao.recoverInterruptedToQueued(clock())
         Unit
     }
 
@@ -113,6 +116,40 @@ class DefaultBackupRepository(
             return ProcessOutcome.Waiting
         }
 
+        // A send accepted by a previous run that never confirmed here (timeout / process death):
+        // confirm THAT message instead of uploading again — the duplicate-upload guarantee.
+        if (item.pendingTelegramChatId != null && item.pendingTelegramMessageId != null) {
+            val confirmation: ProcessOutcome? = try {
+                val confirmed = cloudRepository.confirmUpload(
+                    chatId = item.pendingTelegramChatId,
+                    messageId = item.pendingTelegramMessageId,
+                    mediaType = mediaTypeOf(item),
+                    contentHash = item.contentHash,
+                    contentSizeBytes = item.contentSizeBytes ?: item.sizeBytes.takeIf { it > 0 },
+                )
+                dao.markBackedUp(item.id, confirmed.chatId, confirmed.messageId, confirmed.telegramFileId, clock())
+                ProcessOutcome.Uploaded
+            } catch (pending: CloudMessagePendingException) {
+                // Still delivering on Telegram's side: wait WITHOUT burning the retry budget — a
+                // large video may legitimately spend a long time in TDLib's send queue.
+                dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, clock())
+                ProcessOutcome.Waiting
+            } catch (gone: CloudMessageGoneException) {
+                // Provably never landed: clear the pending id and fall through to a real upload.
+                dao.clearPendingRemote(item.id, clock())
+                null
+            } catch (network: CloudNetworkException) {
+                dao.recordTransientFailure(item.id, safeError(network), clock())
+                ProcessOutcome.Waiting
+            } catch (rejected: CloudUploadRejectedException) {
+                dao.markFailed(item.id, safeError(rejected), clock())
+                ProcessOutcome.PermanentFailure
+            } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                throw cancellation
+            }
+            if (confirmation != null) return confirmation
+        }
+
         val destination = cloudRepository.ensureDestination()
             ?: run {
                 dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, now)
@@ -132,7 +169,7 @@ class DefaultBackupRepository(
             stagedPath = stagedPath,
             fileName = item.fileName,
             mimeType = item.mimeType,
-            mediaType = runCatching { CloudMediaType.valueOf(item.mediaType) }.getOrDefault(CloudMediaType.IMAGE),
+            mediaType = mediaTypeOf(item),
             sizeBytes = item.sizeBytes.takeIf { it > 0 },
             width = null,
             height = null,
@@ -146,12 +183,21 @@ class DefaultBackupRepository(
         // failure, OR cancellation. The previous code placed it after the try/catch, so the
         // cooperative CancellationException path (rethrown below) skipped it and leaked the temp file.
         val outcome = try {
-            val result = cloudRepository.uploadMedia(request)
+            val result = cloudRepository.uploadMedia(
+                request = request,
+                // The moment TDLib accepts the send, persist the remote identity on the row: every
+                // later interruption becomes confirmable instead of re-sendable.
+                onSent = { chatId, messageId -> dao.recordPendingRemote(item.id, chatId, messageId, clock()) },
+            )
             if (result == null || result.chatId != destination.chatId) {
                 // No confirmed identity for the right destination: never mark BACKED_UP.
                 dao.recordTransientFailure(item.id, "Upload not confirmed by Telegram.", clock())
                 ProcessOutcome.Waiting
             } else {
+                // Terminal-state guard in SQL: if the user cancelled while this upload ran, the row
+                // stays CANCELLED and this write no-ops. The delivered message then exists without a
+                // queue claim — content-addressed recognition dedups it on the next manifest refresh
+                // instead of the queue ever overwriting the user's cancel.
                 dao.markBackedUp(item.id, result.chatId, result.messageId, result.telegramFileId, clock())
                 ProcessOutcome.Uploaded
             }
@@ -165,7 +211,7 @@ class DefaultBackupRepository(
             dao.markFailed(item.id, safeError(rejected), clock())
             ProcessOutcome.PermanentFailure
         } catch (cancellation: kotlinx.coroutines.CancellationException) {
-            throw cancellation // cooperative: recovery returns the row to QUEUED
+            throw cancellation // cooperative: recovery returns the row to QUEUED (pending id kept)
         } catch (throwable: Throwable) {
             dao.markFailed(item.id, safeError(throwable), clock())
             ProcessOutcome.PermanentFailure
@@ -174,6 +220,10 @@ class DefaultBackupRepository(
         }
         return outcome
     }
+
+    /** The queue row's cloud media type; a corrupted value must never silently change upload semantics. */
+    private fun mediaTypeOf(item: BackupQueueEntity): CloudMediaType =
+        runCatching { CloudMediaType.valueOf(item.mediaType) }.getOrDefault(CloudMediaType.IMAGE)
 
     private fun safeError(throwable: Throwable): String =
         (throwable.message ?: "Upload failed").take(160)

@@ -33,6 +33,18 @@ class OnboardingRepositoryImplTest {
         val repository = newRepository("fresh")
         assertFalse(repository.isCompleted.first())
         assertNull(repository.backupPreference.first())
+        assertEquals(emptySet<Long>(), repository.backupBucketIds.first())
+    }
+
+    @Test
+    fun `selected folder buckets persist and clear honestly`() = runTest {
+        val repository = newRepository("buckets")
+        repository.setBackupBucketIds(setOf(11L, 22L))
+        assertEquals(setOf(11L, 22L), repository.backupBucketIds.first())
+        // An empty pick removes the key rather than storing an empty set — SELECT_FOLDER with no
+        // folders must read back as "nothing picked", the NOT_NOW equivalent.
+        repository.setBackupBucketIds(emptySet())
+        assertEquals(emptySet<Long>(), repository.backupBucketIds.first())
     }
 
     @Test

@@ -2,9 +2,11 @@ package com.telepic.data.backup.work
 
 import android.content.Context
 import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
@@ -17,6 +19,9 @@ interface BackupWorkScheduler {
     /** Ensure a run is scheduled (unique; won't stack duplicate workers). */
     fun schedule()
 
+    /** Ensure the recurring discovery+processing cadence is installed (unique; idempotent). */
+    fun schedulePeriodic()
+
     /** Stop active work cooperatively; queued rows stay QUEUED. */
     fun cancel()
 
@@ -24,6 +29,7 @@ interface BackupWorkScheduler {
 }
 
 const val BACKUP_WORK_NAME = "telepic_backup"
+const val BACKUP_PERIODIC_WORK_NAME = "telepic_backup_periodic"
 
 class WorkManagerBackupScheduler(private val context: Context) : BackupWorkScheduler {
 
@@ -42,6 +48,18 @@ class WorkManagerBackupScheduler(private val context: Context) : BackupWorkSched
         workManager.enqueueUniqueWork(BACKUP_WORK_NAME, ExistingWorkPolicy.KEEP, request)
     }
 
+    override fun schedulePeriodic() {
+        val request = PeriodicWorkRequestBuilder<BackupDiscoveryWorker>(PERIOD_HOURS, TimeUnit.HOURS)
+            .setConstraints(
+                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
+            )
+            .setBackoffCriteria(androidx.work.BackoffPolicy.EXPONENTIAL, BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
+            .build()
+        // KEEP, same rationale as the one-time path: the periodic spec is static, so UPDATE would
+        // only risk interrupting an in-flight discovery run for zero benefit.
+        workManager.enqueueUniquePeriodicWork(BACKUP_PERIODIC_WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+    }
+
     override fun cancel() {
         workManager.cancelUniqueWork(BACKUP_WORK_NAME)
     }
@@ -52,5 +70,8 @@ class WorkManagerBackupScheduler(private val context: Context) : BackupWorkSched
 
     private companion object {
         const val BACKOFF_MILLIS = 10_000L
+
+        /** Background discovery cadence: new media left on the device is picked up within 12h. */
+        const val PERIOD_HOURS = 12L
     }
 }

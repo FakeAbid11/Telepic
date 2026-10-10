@@ -187,7 +187,9 @@ class TdApiCloudMapperTest {
         assertEquals(4, video.video.duration)
 
         val gif = TdApiCloudMapper.uploadContent(request(CloudMediaType.GIF)) as TdApi.InputMessageAnimation
-        assertEquals(File("/tmp/a").path, "/tmp/a")
+        // The staged path is handed to TDLib untouched — no File() normalization hop that would
+        // rewrite separators (the old sanity line asserted java.io.File's behavior, not the mapper's).
+        assertEquals("/tmp/a", (gif.animation.animation as TdApi.InputFileLocal).path)
         assertEquals(4, gif.animation.duration)
     }
 

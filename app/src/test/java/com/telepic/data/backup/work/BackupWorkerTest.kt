@@ -45,10 +45,17 @@ class BackupWorkerTest {
         BackupWorkerDependencies.repository = null
     }
 
+    /**
+     * Build through the production [TelepicWorkerFactory] seam instead of the process-global
+     * [BackupWorkerDependencies]: Robolectric creates a TelepicApplication per test whose startup
+     * sync touches the container lazily, racing (and overwriting) the global static. The factory
+     * path is what actually ships, so this tests the real construction route deterministically.
+     */
     private fun worker(repo: BackupRepository): BackupWorker {
-        BackupWorkerDependencies.repository = repo
-        return TestListenableWorkerBuilder<BackupWorker>(ApplicationProvider.getApplicationContext()).build()
-            as BackupWorker
+        val factory = TelepicWorkerFactory(backupRepository = { repo }, backupCoordinator = { error("unused") })
+        return TestListenableWorkerBuilder<BackupWorker>(ApplicationProvider.getApplicationContext())
+            .setWorkerFactory(factory)
+            .build() as BackupWorker
     }
 
     @Test

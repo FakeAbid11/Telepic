@@ -11,6 +11,11 @@ import androidx.room.PrimaryKey
  * are written together with the BACKED_UP state only after Telegram confirms the upload; they are
  * the crash-recovery evidence that an upload already succeeded.
  *
+ * [pendingTelegramChatId] / [pendingTelegramMessageId] capture the remote identity the moment TDLib
+ * **accepts** a send (before delivery confirms). They exist so a run that times out or dies can
+ * confirm the already-in-flight message on the next pass instead of re-sending it and duplicating
+ * the post. Cleared by confirmation, failure resolution, or manual re-queue.
+ *
  * Phase 7 fills in the previously reserved [contentHash] (lowercase hex SHA-256) as the content
  * identity, with [contentSizeBytes] as a cheap consistency check and [hashedAt] recording when the
  * hash was computed — the cache-validation hint that lets recognition reuse an unchanged file's
@@ -48,13 +53,17 @@ data class BackupQueueEntity(
     val contentHash: String?,
     val contentSizeBytes: Long? = null,
     val hashedAt: Long? = null,
+    val pendingTelegramChatId: Long? = null,
+    val pendingTelegramMessageId: Long? = null,
 )
 
 /**
- * A lightweight id+state projection of a queue row. Used to feed the Photos backup-status map
+ * A lightweight id+state+retry projection of a queue row. Used to feed the Photos backup-status map
  * without loading full rows (paths, metadata) onto the UI — one batched query, not one per tile.
+ * The retry count is part of the honest visual state (exhausted → STALLED).
  */
 data class BackupStatusRow(
     val localMediaId: String,
     val state: String,
+    val retryCount: Int,
 )

@@ -25,10 +25,13 @@ class OnboardingViewModelTest {
     private class FakeRepository : OnboardingRepository {
         val completed = MutableStateFlow(false)
         val backup = MutableStateFlow<BackupPreference?>(null)
+        val buckets = MutableStateFlow<Set<Long>>(emptySet())
         override val isCompleted: Flow<Boolean> get() = completed
         override val backupPreference: Flow<BackupPreference?> get() = backup
+        override val backupBucketIds: Flow<Set<Long>> get() = buckets
         var setCompletedCalls = 0
         var setBackupCalls = 0
+        var setBucketCalls = 0
         override suspend fun setCompleted(completed: Boolean) {
             setCompletedCalls++
             this.completed.value = completed
@@ -36,6 +39,10 @@ class OnboardingViewModelTest {
         override suspend fun setBackupPreference(preference: BackupPreference?) {
             setBackupCalls++
             backup.value = preference
+        }
+        override suspend fun setBackupBucketIds(ids: Set<Long>) {
+            setBucketCalls++
+            buckets.value = ids
         }
     }
 
@@ -85,5 +92,23 @@ class OnboardingViewModelTest {
         val state = vm.uiState.value
         assertTrue("expected not loading", !state.isLoading)
         assertEquals(BackupPreference.NOT_NOW, state.backupPreference)
+    }
+
+    @Test
+    fun `SELECT_FOLDER choice persists preference and picked buckets together and syncs`() {
+        val repository = FakeRepository()
+        val syncs = AtomicInteger()
+        val vm = OnboardingViewModel(repository, onBackupChoiceChanged = { syncs.incrementAndGet() })
+
+        vm.setBackupChoice(BackupPreference.SELECT_FOLDER, bucketIds = setOf(11L, 22L))
+        settle()
+
+        assertEquals(1, repository.setBackupCalls)
+        assertEquals(1, repository.setBucketCalls)
+        assertEquals(BackupPreference.SELECT_FOLDER, repository.backup.value)
+        assertEquals(setOf(11L, 22L), repository.buckets.value)
+        // The router/state surface exposes the picked buckets so the step can show the real count.
+        assertEquals(setOf(11L, 22L), vm.uiState.value.backupBucketIds)
+        assertEquals(1, syncs.get())
     }
 }

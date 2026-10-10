@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -63,11 +64,17 @@ class DefaultBackupRepositoryTest {
         var destination: TelepicCloudDestination? = TelepicCloudDestination(100L, "Telepic Backup", true, true, true),
         var uploadResult: CloudUploadResult? = CloudUploadResult(100L, 500L, 7, CloudMediaType.IMAGE),
         var uploadError: Throwable? = null,
+        // When set, the fake reports TDLib accepting the send (fires onSent) BEFORE it returns or
+        // throws — exactly the real data source's behavior for the pending-identity guarantee.
+        var sentIdentity: Pair<Long, Long>? = null,
+        var confirmResult: CloudUploadResult? = null,
+        var confirmError: Throwable? = null,
     ) : CloudRepository {
         override val status = MutableStateFlow<CloudStatus>(CloudStatus.Ready)
         override val media = kotlinx.coroutines.flow.flowOf<List<CloudMedia>>(emptyList())
         override val destinationTitle = MutableStateFlow<String?>("Telepic Backup")
         var uploadCalls = 0
+        var confirmCalls = 0
 
         override suspend fun prepare() = Unit
         override suspend fun refresh() = Unit
@@ -77,10 +84,23 @@ class DefaultBackupRepositoryTest {
         override suspend fun uploadMedia(
             request: CloudUploadRequest,
             onProgress: (com.telepic.domain.cloud.CloudUploadProgress) -> Unit,
+            onSent: suspend (chatId: Long, messageId: Long) -> Unit,
         ): CloudUploadResult? {
             uploadCalls++
+            sentIdentity?.let { onSent(it.first, it.second) }
             uploadError?.let { throw it }
             return uploadResult
+        }
+        override suspend fun confirmUpload(
+            chatId: Long,
+            messageId: Long,
+            mediaType: CloudMediaType,
+            contentHash: String?,
+            contentSizeBytes: Long?,
+        ): CloudUploadResult {
+            confirmCalls++
+            confirmError?.let { throw it }
+            return requireNotNull(confirmResult) { "FakeCloud must set confirmResult or confirmError" }
         }
     }
 
@@ -317,5 +337,79 @@ class DefaultBackupRepositoryTest {
         } finally {
             stagingDir.deleteRecursively()
         }
+    }
+
+    // --- Pending remote identity: confirm instead of re-sending (duplicate-upload guarantee) ----
+
+    @Test
+    fun `an accepted send that times out is confirmed on the next run without re-uploading`() = runBlocking {
+        val cloud = FakeCloud(
+            sentIdentity = 100L to 500L,
+            uploadError = CloudNetworkException("Upload confirmation timed out"),
+        )
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        assertEquals(0, r.processPendingWork(maxItems = 1).uploaded)
+
+        val waiting = db.backupQueueDao().observeAll().first().first()
+        assertEquals(BackupState.WAITING_FOR_NETWORK.name, waiting.state)
+        // The critical bit: the accepted send's identity is on the row, not just in TDLib's memory.
+        assertEquals(100L, waiting.pendingTelegramChatId)
+        assertEquals(500L, waiting.pendingTelegramMessageId)
+
+        // Telegram finished delivering in the meantime; the next run CONFIRMS — it never re-sends.
+        cloud.uploadError = null
+        cloud.confirmResult = CloudUploadResult(100L, 500L, 7, CloudMediaType.IMAGE)
+        val summary = r.processPendingWork(maxItems = 1)
+        assertEquals(1, summary.uploaded)
+        assertEquals(1, cloud.uploadCalls) // exactly one sendMessage across both runs
+        assertEquals(1, cloud.confirmCalls)
+
+        val row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(BackupState.BACKED_UP.name, row.state)
+        assertEquals(500L, row.telegramMessageId)
+        assertNull("confirmation must clear the pending identity", row.pendingTelegramMessageId)
+    }
+
+    @Test
+    fun `a still-sending confirmation waits without burning the retry budget`() = runBlocking {
+        val cloud = FakeCloud(sentIdentity = 100L to 500L, uploadError = CloudNetworkException("timeout"))
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        r.processPendingWork(maxItems = 1) // run 1 burns one transient retry
+        val afterFirst = db.backupQueueDao().observeAll().first().first()
+        assertEquals(1, afterFirst.retryCount)
+
+        cloud.uploadError = null
+        cloud.confirmError = com.telepic.data.cloud.CloudMessagePendingException()
+        r.processPendingWork(maxItems = 1)
+        val row = db.backupQueueDao().observeAll().first().first()
+        // A long video send must not exhaust its budget while Telegram is legitimately uploading.
+        assertEquals(1, row.retryCount)
+        assertEquals(BackupState.WAITING_FOR_NETWORK.name, row.state)
+        assertEquals(500L, row.pendingTelegramMessageId)
+        assertEquals(1, cloud.uploadCalls) // never re-sent while pending
+    }
+
+    @Test
+    fun `a send that provably never landed clears pending and re-uploads exactly once`() = runBlocking {
+        val cloud = FakeCloud(sentIdentity = 100L to 500L, uploadError = CloudNetworkException("timeout"))
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        r.processPendingWork(maxItems = 1)
+
+        // TDLib lost the un-flushed send: gone → this run re-sends (and records the new identity).
+        cloud.uploadError = null
+        cloud.uploadResult = CloudUploadResult(100L, 501L, 8, CloudMediaType.IMAGE)
+        cloud.confirmError = com.telepic.data.cloud.CloudMessageGoneException()
+        val summary = r.processPendingWork(maxItems = 1)
+        assertEquals(1, summary.uploaded)
+        assertEquals(2, cloud.uploadCalls) // one send per run: the gone-confirmed row re-uploads once
+        assertEquals(1, cloud.confirmCalls) // confirm attempted, proven gone, then a real re-upload
+
+        val row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(BackupState.BACKED_UP.name, row.state)
+        assertEquals(501L, row.telegramMessageId)
+        assertNull(row.pendingTelegramMessageId)
     }
 }

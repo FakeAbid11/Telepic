@@ -56,7 +56,7 @@ class MapViewModelTest {
 
         // Subscribe so the WhileSubscribed stateIn flows materialize, then idle the main looper.
         mainScope.launch { vm.locationCount.collect {} }
-        mainScope.launch { vm.pins.collect {} }
+        mainScope.launch { vm.locations.collect {} }
         settle()
         assertEquals(2, vm.locationCount.value)
 
@@ -65,11 +65,10 @@ class MapViewModelTest {
         settle()
         assertEquals(3, vm.locationCount.value)
 
-        // Pins must not carry a pin for the hidden item.
+        // The raw visible list the view clusters must not carry the hidden items.
         hidden.value = setOf(1L, 3L)
         settle()
-        val pinnedIds = vm.pins.value.mapNotNull { (it as? com.telepic.data.media.MapClusterer.MapPin.Single)?.mediaId }
-        assertEquals(listOf(2L), pinnedIds)
+        assertEquals(listOf(2L), vm.locations.value.map { it.mediaId })
     }
 
     @Test
@@ -92,14 +91,14 @@ class MapViewModelTest {
     }
 
     @Test
-    fun `pins default to empty and reflect the first emission`() = kotlinx.coroutines.runBlocking {
+    fun `locations default to empty and reflect the first emission`() = kotlinx.coroutines.runBlocking {
         val vm = MapViewModel(FakeMapRepo(MutableStateFlow(listOf(geo(5)))), hiddenIds = MutableStateFlow(emptySet()))
-        mainScope.launch { vm.pins.collect {} }
+        mainScope.launch { vm.locations.collect {} }
         mainScope.launch { vm.locationCount.collect {} }
         settle()
         assertEquals(1, vm.locationCount.value)
-        // A single geotagged item clusters to exactly one pin.
-        assertEquals(1, vm.pins.value.size)
-        assertTrue(vm.pins.first { it.isNotEmpty() }.isNotEmpty())
+        assertEquals(1, vm.locations.value.size)
+        // The raw visible item — clustering into pins is now the view's zoom-adaptive concern.
+        assertEquals(5L, vm.locations.value.first().mediaId)
     }
 }

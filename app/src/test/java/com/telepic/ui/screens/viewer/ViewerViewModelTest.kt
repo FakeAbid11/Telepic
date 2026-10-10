@@ -96,7 +96,14 @@ class ViewerViewModelTest {
         override suspend fun ensureDestination(): TelepicCloudDestination? = null
         override suspend fun getPreview(media: CloudMedia): CloudPreview? = CloudPreview("/tmp/prev_${media.messageId}", null, null)
         override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? = null
-        override suspend fun uploadMedia(request: com.telepic.domain.cloud.CloudUploadRequest, onProgress: (com.telepic.domain.cloud.CloudUploadProgress) -> Unit) = null
+        override suspend fun uploadMedia(request: com.telepic.domain.cloud.CloudUploadRequest, onProgress: (com.telepic.domain.cloud.CloudUploadProgress) -> Unit, onSent: suspend (Long, Long) -> Unit) = null
+        override suspend fun confirmUpload(
+            chatId: Long,
+            messageId: Long,
+            mediaType: com.telepic.domain.cloud.CloudMediaType,
+            contentHash: String?,
+            contentSizeBytes: Long?,
+        ): com.telepic.domain.cloud.CloudUploadResult = throw NotImplementedError()
     }
 
     private fun cloudItem(messageId: Long) = CloudMedia(
@@ -299,5 +306,14 @@ class ViewerViewModelTest {
         vm.open(MediaSource.Local(6))
         vm.uiState.first { it.source == MediaSource.Local(6) && it.status != ViewerStatus.LOADING }
         assertNull(vm.details.value) // cleared on navigation
+    }
+
+    @Test
+    fun `display model for a local source is its content uri and cloud sources prefetch nothing`() = runBlocking {
+        val lookup = FakeLookup(mapOf(4L to local(4)))
+        val vm = ViewerViewModel(MediaSource.Local(5), lookup, FakeCloud(listOf(cloudItem(7))))
+        assertEquals(Uri.parse("content://media/4"), vm.displayModelFor(MediaSource.Local(4)))
+        assertNull(vm.displayModelFor(MediaSource.Local(99))) // gone items warm nothing
+        assertNull(vm.displayModelFor(MediaSource.Cloud(100, 7))) // no TDLib request per neighbor
     }
 }

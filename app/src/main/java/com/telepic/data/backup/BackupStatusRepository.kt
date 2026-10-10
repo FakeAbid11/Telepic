@@ -21,6 +21,7 @@ interface BackupStatusRepository {
 
 class DefaultBackupStatusRepository(
     private val dao: BackupQueueDao,
+    private val maxRetries: Int = DefaultBackupRepository.DEFAULT_MAX_RETRIES,
 ) : BackupStatusRepository {
 
     override val visualStates: Flow<Map<String, MediaBackupVisualState>> =
@@ -28,7 +29,14 @@ class DefaultBackupStatusRepository(
             .map { rows ->
                 buildMap(rows.size) {
                     for (row in rows) {
-                        put(row.localMediaId, MediaBackupVisualState.from(BackupState.fromName(row.state)))
+                        put(
+                            row.localMediaId,
+                            MediaBackupVisualState.from(
+                                state = BackupState.fromName(row.state),
+                                retryCount = row.retryCount,
+                                maxRetries = maxRetries,
+                            ),
+                        )
                     }
                 }
             }

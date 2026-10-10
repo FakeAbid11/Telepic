@@ -33,11 +33,16 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!--
+      allowBackup=false: Telepic holds a live Telegram session (TDLib database + keystore-wrapped
+      key) and a queue that references every backed-up file. There is no backup-set configuration
+      that makes an ADB/cloud transfer of this app's data provably safe, so the app opts out
+      entirely; settings and the queue rebuild from first launch, and the TDLib session already
+      lives under noBackupFilesDir. (Formerly true with XML exclusion rules — retired here.)
+    -->
     <application
         android:name=".TelepicApplication"
-        android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

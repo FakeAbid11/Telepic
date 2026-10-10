@@ -62,7 +62,14 @@ class ViewerUiTest {
         override suspend fun ensureDestination(): TelepicCloudDestination? = null
         override suspend fun getPreview(media: CloudMedia): CloudPreview? = null
         override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? = null
-        override suspend fun uploadMedia(request: com.telepic.domain.cloud.CloudUploadRequest, onProgress: (com.telepic.domain.cloud.CloudUploadProgress) -> Unit) = null
+        override suspend fun uploadMedia(request: com.telepic.domain.cloud.CloudUploadRequest, onProgress: (com.telepic.domain.cloud.CloudUploadProgress) -> Unit, onSent: suspend (Long, Long) -> Unit) = null
+        override suspend fun confirmUpload(
+            chatId: Long,
+            messageId: Long,
+            mediaType: com.telepic.domain.cloud.CloudMediaType,
+            contentHash: String?,
+            contentSizeBytes: Long?,
+        ): com.telepic.domain.cloud.CloudUploadResult = throw NotImplementedError()
     }
 
     @Test

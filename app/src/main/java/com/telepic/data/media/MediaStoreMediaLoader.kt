@@ -48,8 +48,7 @@ class MediaStoreMediaLoader(
             "${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE}, " +
             "${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})"
 
-    private val sortOrder =
-        "${MediaStore.MediaColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns._ID} DESC"
+    private val sortOrder = MediaSortOrder.TIMELINE_DESC
 
     override suspend fun load(offset: Int, limit: Int): List<LocalMedia> =
         withContext(Dispatchers.IO) {

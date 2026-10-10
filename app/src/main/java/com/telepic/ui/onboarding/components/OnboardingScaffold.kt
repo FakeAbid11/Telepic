@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -57,7 +58,9 @@ fun OnboardingScaffold(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        // Onboarding renders outside the main Scaffold, so it owns its insets: the progress header
+        // clears the status bar and the action row clears the navigation bar (edge-to-edge, §Android 15).
+        Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

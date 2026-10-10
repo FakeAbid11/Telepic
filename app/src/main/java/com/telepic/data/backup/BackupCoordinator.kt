@@ -46,8 +46,10 @@ interface BackupCoordinator {
     suspend fun cancel(itemId: Long)
 
     /**
-     * Apply the persisted preference: when the user chose BACKUP_ALL, incrementally discover,
-     * recognize and enqueue only eligible *new* media, then schedule a run. Honors NOT_NOW.
+     * Apply the persisted preference: BACKUP_ALL scans the whole library, SELECT_FOLDER scans only
+     * the chosen buckets (empty selection = nothing), NOT_NOW does nothing. Either automatic choice
+     * installs the periodic discovery cadence, then incrementally discovers, recognizes and enqueues
+     * only eligible *new* media and schedules a run.
      */
     suspend fun syncFromPreference()
 
@@ -61,18 +63,18 @@ interface BackupCoordinator {
  * reinstall (new MediaStore id, same bytes → same hash) recognizes existing content instead of
  * uploading a second copy.
  *
- * Honest limitation: SELECT_FOLDER is not enforceable yet — folder selection has no real
- * implementation, so the queue treats it as "back up nothing automatically" rather than pretending
- * to filter by folder. The pipeline is ready for a folder filter once selection exists.
+ * SELECT_FOLDER scans exactly the buckets the user chose (per-bucket [MediaPageLoader]s); an empty
+ * folder selection backs up nothing automatically — the honest equivalent of NOT_NOW, never a
+ * silent fallback to the whole library.
  */
 class DefaultBackupCoordinator(
     override val repository: BackupRepository,
     private val recognition: BackupRecognitionRepository,
     private val scheduler: BackupWorkScheduler,
     private val onboardingRepository: OnboardingRepository,
-    private val pageLoader: MediaPageLoader,
+    private val pageLoaderFactory: (bucketId: Long?) -> MediaPageLoader,
     private val discoveryPageSize: Int = 100,
-    private val discoveryMaxItems: Int = 2000,
+    private val discoveryMaxItems: Int = 25_000,
 ) : BackupCoordinator {
 
     override suspend fun backup(media: LocalMedia): BulkBackupSummary {
@@ -98,17 +100,41 @@ class DefaultBackupCoordinator(
     override suspend fun cancel(itemId: Long) = repository.cancel(itemId)
 
     override suspend fun syncFromPreference() {
-        val preference = onboardingRepository.backupPreference.first()
-        if (preference != BackupPreference.BACKUP_ALL) return
-        val scheduled = discoverAndEnqueue()
-        if (scheduled) scheduler.schedule()
+        when (onboardingRepository.backupPreference.first()) {
+            BackupPreference.BACKUP_ALL -> {
+                // Install the recurring 12h discovery cadence while automatic backup is on; the KEEP
+                // policy makes this idempotent, and the worker re-checks the preference on every tick.
+                scheduler.schedulePeriodic()
+                if (discoverAndEnqueue(pageLoaderFactory(null))) scheduler.schedule()
+            }
+            BackupPreference.SELECT_FOLDER -> {
+                val buckets = onboardingRepository.backupBucketIds.first()
+                // Honest equivalence: "only these folders" with no folders picked backs up nothing.
+                if (buckets.isEmpty()) return
+                scheduler.schedulePeriodic()
+                var enqueuedAny = false
+                for (bucketId in buckets) {
+                    if (discoverAndEnqueue(pageLoaderFactory(bucketId))) enqueuedAny = true
+                }
+                if (enqueuedAny) scheduler.schedule()
+            }
+            BackupPreference.NOT_NOW, null -> return
+        }
     }
 
     override suspend fun startPendingBackup() {
         scheduler.schedule()
     }
 
-    private suspend fun discoverAndEnqueue(): Boolean {
+    /**
+     * Bounded, incremental scan of one loader (the whole library, or a single chosen bucket). The
+     * cap is a safety ceiling for one pass, not the expected case: repeat scans are near-free because
+     * every visited item ends with a queue row and recognition reuses the cached hash when
+     * size+modified still match, so a pass interrupted by WorkManager's run window simply resumes
+     * cheaply on the next tick (still from the newest head). Libraries larger than the cap converge
+     * over consecutive periodic runs.
+     */
+    private suspend fun discoverAndEnqueue(pageLoader: MediaPageLoader): Boolean {
         var offset = 0
         var seen = 0
         var enqueuedAny = false

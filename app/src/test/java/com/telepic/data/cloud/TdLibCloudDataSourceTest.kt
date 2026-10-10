@@ -206,7 +206,7 @@ class TdLibCloudDataSourceTest {
         }
         val request = CloudUploadRequest("/tmp/x", "x", "image/jpeg", CloudMediaType.IMAGE, 10L, 1, 1, null, 1L)
         try {
-            ds.upload(100L, request) {}
+            ds.upload(100L, request, onProgress = {})
             fail("expected rejection")
         } catch (e: CloudUploadRejectedException) {
             assertTrue(e.message!!.contains("rejected"))
@@ -215,13 +215,16 @@ class TdLibCloudDataSourceTest {
 
     @Test
     fun `a flood-wait send error is treated as transient for retry`() = runBlocking {
-        val (ds, _) = source { _ -> TdApi.Error(429, "retry after") }
-        val request = CloudUploadRequest("/tmp/x", "x", "image/jpeg", CloudMediaType.IMAGE, 10L, 1, 1, null, 1L)
-        try {
-            ds.upload(100L, request) {}
-            fail("expected transient")
-        } catch (e: CloudNetworkException) {
-            assertTrue(e.message!!.contains("429"))
+        // TDLib's flood wait is code 420 (auth-side TelegramError maps it); 429 kept for coverage.
+        for (code in listOf(420, 429)) {
+            val (ds, _) = source { _ -> TdApi.Error(code, "retry after 35") }
+            val request = CloudUploadRequest("/tmp/x", "x", "image/jpeg", CloudMediaType.IMAGE, 10L, 1, 1, null, 1L)
+            try {
+                ds.upload(100L, request, onProgress = {})
+                fail("expected transient for code $code")
+            } catch (e: CloudNetworkException) {
+                assertTrue(e.message!!.contains(code.toString()))
+            }
         }
     }
 
@@ -236,10 +239,95 @@ class TdLibCloudDataSourceTest {
         }
         val request = CloudUploadRequest("/tmp/x", "x", "image/jpeg", CloudMediaType.IMAGE, 10L, 1, 1, null, 1L)
         try {
-            ds.upload(100L, request) {}
+            ds.upload(100L, request, onProgress = {})
             fail("expected timeout")
         } catch (e: CloudNetworkException) {
             assertTrue(e.message!!.contains("timed out"))
+        }
+    }
+
+    // --- Pending-identity seam: onSent + confirmSend ---------------------------------------------
+
+    @Test
+    fun `onSent carries the accepted identity out even when confirmation later times out`() = runBlocking {
+        val (ds, _) = source { req ->
+            when (req) {
+                is TdApi.SendMessage -> message(600L, photoContent(1, 2)).apply { sendingState = TdApi.MessageSendingStatePending() }
+                is TdApi.GetMessage -> message(600L, photoContent(1, 2)).apply { sendingState = TdApi.MessageSendingStatePending() }
+                else -> TdApi.Error(400, "unhandled")
+            }
+        }
+        val sent = mutableListOf<Pair<Long, Long>>()
+        val request = CloudUploadRequest("/tmp/x", "x", "image/jpeg", CloudMediaType.IMAGE, 10L, 1, 1, null, 1L)
+        try {
+            ds.upload(100L, request, onProgress = {}, onSent = { chatId, messageId -> sent += chatId to messageId })
+            fail("expected timeout")
+        } catch (e: CloudNetworkException) {
+            assertTrue(e.message!!.contains("timed out"))
+        }
+        // The key guarantee: despite the throw, the caller learned the real sent identity — the
+        // queue persists it and the next run CONFIRMS instead of re-sending a duplicate.
+        assertEquals(listOf(100L to 600L), sent)
+    }
+
+    @Test
+    fun `confirmSend reports the real identity once the sending state clears`() = runBlocking {
+        val (ds, gateway) = source { req ->
+            when (req) {
+                is TdApi.GetMessage -> message(600L, photoContent(1, 2)) // no sendingState → delivered
+                else -> TdApi.Error(400, "unhandled")
+            }
+        }
+        val result = ds.confirmSend(chatId = 100L, messageId = 600L, mediaType = CloudMediaType.IMAGE)
+        assertEquals(100L, result.chatId)
+        assertEquals(600L, result.messageId)
+        assertEquals(2, result.telegramFileId)
+        assertEquals(CloudMediaType.IMAGE, result.mediaType)
+        assertTrue(gateway.sent.any { it is TdApi.GetMessage })
+    }
+
+    @Test
+    fun `confirmSend separates still-sending from never-landed from rejected`() = runBlocking {
+        // (a) Still uploading on Telegram's side → wait, not failure, not gone.
+        val (pendingDs, _) = source { _ ->
+            message(600L, photoContent(1, 2)).apply { sendingState = TdApi.MessageSendingStatePending() }
+        }
+        try {
+            pendingDs.confirmSend(100L, 600L, CloudMediaType.IMAGE)
+            fail("expected pending")
+        } catch (e: CloudMessagePendingException) {
+            assertTrue(true)
+        }
+
+        // (b) TDLib no longer knows the message → provably gone; only then is a re-send safe.
+        val (goneDs, _) = source { _ -> TdApi.Error(400, "message id invalid") }
+        try {
+            goneDs.confirmSend(100L, 600L, CloudMediaType.IMAGE)
+            fail("expected gone")
+        } catch (e: CloudMessageGoneException) {
+            assertTrue(true)
+        }
+
+        // (c) Real send failure → permanent rejection, exactly like the live send path.
+        val (failedDs, _) = source { _ ->
+            message(600L, photoContent(1, 2)).apply {
+                sendingState = TdApi.MessageSendingStateFailed().apply { error = TdApi.Error(400, "bad file") }
+            }
+        }
+        try {
+            failedDs.confirmSend(100L, 600L, CloudMediaType.IMAGE)
+            fail("expected rejection")
+        } catch (e: CloudUploadRejectedException) {
+            assertTrue(e.message!!.contains("rejected"))
+        }
+
+        // (d) A 5xx on getMessage stays transient and must NOT clear the pending id.
+        val (networkDs, _) = source { _ -> TdApi.Error(500, "internal") }
+        try {
+            networkDs.confirmSend(100L, 600L, CloudMediaType.IMAGE)
+            fail("expected transient")
+        } catch (e: CloudNetworkException) {
+            assertTrue(true)
         }
     }
 }

@@ -17,8 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Telegram API credentials (masked secrets). Absent => debug placeholder (id 0); CI stays green.
+      # Release tasks FAIL without them (task-graph gate in app/build.gradle.kts).
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      # Release signing (optional here: without them bundleRelease produces an UNSIGNED AAB; note
+      # the Telegram-credential gate still requires TELEGRAM_API_ID/HASH for any release task).
+      RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -47,17 +54,30 @@ jobs:
       - name: Compile & run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
-      - name: Lint (static verification)
-        run: ./gradlew lintDebug --stacktrace
+      - name: Lint (debug + release static verification)
+        run: ./gradlew lintDebug lintRelease --stacktrace
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
+
+      # The release bundle exercises R8 + resource shrinking + the secrets gate + signing on every
+      # push/PR. Without the signing secrets it produces an unsigned AAB — still the minification
+      # proof CI previously lacked.
+      - name: Bundle release AAB (R8 + optional signing)
+        run: ./gradlew bundleRelease --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: telepic-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: telepic-release-aab
+          path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
 
       - name: Upload reports (tests & lint)
@@ -68,4 +88,5 @@ jobs:
           path: |
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-release.html
           if-no-files-found: ignore

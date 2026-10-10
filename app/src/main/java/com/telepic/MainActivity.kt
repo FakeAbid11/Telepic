@@ -3,6 +3,7 @@ package com.telepic
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -18,6 +19,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 15 (targetSdk 35) enforces edge-to-edge; the Material Scaffold and the onboarding
+        // frame consume the system-bar insets, so content never hides behind them.
+        enableEdgeToEdge()
         setContent {
             val container = (application as TelepicApplication).container
 
@@ -31,6 +35,7 @@ class MainActivity : ComponentActivity() {
                     initializer {
                         OnboardingViewModel(
                             repository = container.onboardingRepository,
+                            albumRepository = container.albumRepository,
                             // Apply a first-run or changed backup choice immediately instead of only at next launch.
                             onBackupChoiceChanged = { container.backupCoordinator.syncFromPreference() },
                         )

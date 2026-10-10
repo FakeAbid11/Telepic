@@ -120,6 +120,9 @@ private fun StatsRow(stats: BackupQueueStats, modifier: Modifier = Modifier) {
         StatCard(R.string.backup_stat_uploading, stats.uploading, Modifier.fillMaxWidth(0.47f))
         StatCard(R.string.backup_stat_completed, stats.completed, Modifier.fillMaxWidth(0.47f))
         StatCard(R.string.backup_stat_failed, stats.failed, Modifier.fillMaxWidth(0.47f))
+        if (stats.stalled > 0) {
+            StatCard(R.string.backup_stat_stalled, stats.stalled, Modifier.fillMaxWidth(0.47f))
+        }
     }
 }
 
@@ -143,6 +146,7 @@ private fun StatCard(labelRes: Int, value: Int, modifier: Modifier = Modifier) {
 @Composable
 private fun BackupItemRow(item: BackupItem, onRetry: () -> Unit, onCancel: () -> Unit) {
     val spacing = TelepicTokens.spacing
+    val stalled = item.isStalled()
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(spacing.md),
@@ -152,12 +156,22 @@ private fun BackupItemRow(item: BackupItem, onRetry: () -> Unit, onCancel: () ->
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = item.fileName ?: item.localMediaId, style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    text = stringResource(item.state.labelRes()),
+                    text = stringResource(if (stalled) R.string.backup_queue_state_stalled else item.state.labelRes()),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (stalled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // A stalled row also carries its last real error — surfaced, not hidden behind "queued".
+                if (stalled || item.state == BackupState.FAILED) {
+                    item.lastError?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
-            if (item.state == BackupState.FAILED) {
+            if (stalled || item.state == BackupState.FAILED) {
                 OutlinedButton(onClick = onRetry) { Text(stringResource(R.string.backup_action_retry)) }
             }
             if (item.state.canCancel()) {
@@ -171,6 +185,10 @@ private fun BackupItemRow(item: BackupItem, onRetry: () -> Unit, onCancel: () ->
         }
     }
 }
+
+/** Automatic retries exhausted: nothing will pick this row up again until the user acts. */
+private fun BackupItem.isStalled(): Boolean =
+    state == BackupState.WAITING_FOR_NETWORK && retryCount >= com.telepic.data.backup.DefaultBackupRepository.DEFAULT_MAX_RETRIES
 
 private fun BackupState.labelRes(): Int = when (this) {
     BackupState.QUEUED -> R.string.backup_queue_state_queued

@@ -50,15 +50,24 @@
     <string name="settings_title">Settings</string>
     <string name="settings_section_account">Account</string>
     <string name="settings_account_telegram">Telegram account</string>
-    <string name="settings_account_telegram_summary">Not connected — sign in arrives in a later phase</string>
+    <string name="settings_account_status_disconnected">Not connected</string>
+    <string name="settings_account_sign_out">Sign out of Telegram</string>
+    <string name="settings_sign_out_title">Sign out?</string>
+    <string name="settings_sign_out_body">Telepic will disconnect your Telegram account. Backups stop until you sign in again during setup or after reinstalling.</string>
+    <string name="settings_sign_out_confirm">Sign out</string>
     <string name="settings_section_backup">Backup</string>
     <string name="settings_backup_preferences">Backup preferences</string>
-    <string name="settings_backup_preferences_summary">Coming in a later phase</string>
+    <string name="settings_backup_pref_unset">Not chosen yet</string>
+    <string name="settings_backup_pref_folders">%1$d folders selected</string>
+    <string name="settings_backup_preferences_dialog_title">Choose your backup</string>
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_appearance_theme">Theme</string>
     <string name="settings_section_storage">Storage</string>
-    <string name="settings_storage_cache">Cache and storage</string>
-    <string name="settings_storage_cache_summary">Coming in a later phase</string>
+    <string name="settings_storage_telegram_cache">Telegram session cache</string>
+    <string name="settings_storage_backup_cache">Backup staging cache</string>
+    <string name="settings_storage_measuring">Measuring…</string>
+    <string name="settings_storage_clear">Clear backup cache</string>
+    <string name="settings_storage_clear_summary">Removes transient upload copies; the engine recreates them as needed.</string>
     <string name="settings_section_about">About</string>
     <string name="settings_about_version">Telepic version</string>
 
@@ -134,10 +143,12 @@
     <string name="onboarding_backup_all_title">Back up all photos</string>
     <string name="onboarding_backup_all_body">Telepic can back up your photo library according to your backup settings.</string>
     <string name="onboarding_backup_folder_title">Select a folder</string>
-    <string name="onboarding_backup_folder_body">Choose a specific source or folder for backup.</string>
-    <string name="onboarding_backup_folder_pending">Folder selection becomes available with the media library phase.</string>
-    <string name="onboarding_backup_folder_unavailable">Not available yet — folder backup isn\'t set up, so it can\'t be chosen here. Pick "Back up all photos" or "Not now".</string>
-    <string name="onboarding_backup_folder_unavailable_short">Unavailable</string>
+    <string name="onboarding_backup_folder_body">Choose exactly which folders Telepic backs up.</string>
+    <string name="onboarding_backup_folder_selected">%1$d folders selected</string>
+    <string name="onboarding_ready_value_backup_folders">Selected folders — Telepic will back them up.</string>
+    <string name="onboarding_folder_picker_title">Choose folders</string>
+    <string name="onboarding_folder_picker_confirm">Back these up</string>
+    <string name="onboarding_folder_picker_empty">No folders found yet. Allow photo access first, then reopen this picker.</string>
     <string name="onboarding_backup_not_now_title">Not now</string>
     <string name="onboarding_backup_not_now_body">Continue without configuring backup. You can set it up anytime from Settings.</string>
 
@@ -200,6 +211,8 @@
     <string name="backup_stat_uploading">Uploading</string>
     <string name="backup_stat_completed">Completed</string>
     <string name="backup_stat_failed">Failed</string>
+    <string name="backup_stat_stalled">Needs attention</string>
+    <string name="backup_queue_state_stalled">Stalled — automatic retries exhausted</string>
     <string name="backup_action_retry">Retry</string>
     <string name="backup_action_cancel">Cancel</string>
     <string name="backup_action_start">Start backup</string>
@@ -233,6 +246,7 @@
     <string name="backup_state_uploading">Uploading</string>
     <string name="backup_state_backed_up">Backed up</string>
     <string name="backup_state_failed">Backup failed</string>
+    <string name="backup_state_stalled">Backup needs attention</string>
 
     <!-- ============================ Albums (Phase 9) ============================ -->
     <string name="albums_permission_title">See your albums</string>
@@ -318,7 +332,7 @@
     <string name="map_permission_title">See your photo locations</string>
     <string name="map_permission_description">Telepic needs photo &amp; video access to read the location data already stored in your media.</string>
     <string name="map_marker_description">Photo taken at this location</string>
-    <string name="map_cluster_description">%1$d photos at this area</string>
+    <string name="map_locations_count">%1$d locations</string>
     <string name="map_attribution">© OpenStreetMap contributors</string>
     <string name="map_offline">Map tiles are unavailable offline. Pinned media still shows; tiles load when you\'re connected.</string>
     <string name="map_selected_open">Open</string>

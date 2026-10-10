@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -152,6 +153,7 @@ class PhotosViewModelTest {
     private class RecordingCoordinator : BackupCoordinator {
         override val repository: BackupRepository = FakeBackupRepository()
         val bulk = mutableListOf<List<LocalMedia>>()
+        var syncCalls = 0
         override suspend fun backup(media: LocalMedia): com.telepic.data.backup.BulkBackupSummary {
             bulk += listOf(media); return com.telepic.data.backup.BulkBackupSummary(1, 0)
         }
@@ -160,7 +162,7 @@ class PhotosViewModelTest {
         }
         override suspend fun retry(itemId: Long) = Unit
         override suspend fun cancel(itemId: Long) = Unit
-        override suspend fun syncFromPreference() = Unit
+        override suspend fun syncFromPreference() { syncCalls++ }
         override suspend fun startPendingBackup() = Unit
     }
 
@@ -216,5 +218,26 @@ class PhotosViewModelTest {
         // Still selected (nothing enqueued), no crash, no message.
         assertEquals(setOf(1L), vm.selectedItems.value.keys)
         assertEquals(null, vm.selectionMessage.value)
+    }
+
+    @Test
+    fun `media change bursts collapse into one debounced auto-backup sync`() = runTest {
+        // Share the test scheduler so the debounce delay runs on virtual time.
+        kotlinx.coroutines.Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repository = FakeRepository()
+        val watcher = FakeWatcher()
+        val coordinator = RecordingCoordinator()
+        PhotosViewModel(repository, watcher, backupCoordinator = coordinator)
+
+        // One camera save produces several ContentObserver ticks in quick succession.
+        repeat(3) { watcher.callback?.invoke() }
+        runCurrent()
+        // The grid refresh is immediate per tick; the auto-backup sync waits out the quiet window.
+        assertEquals(3, repository.refreshCount)
+        assertEquals(0, coordinator.syncCalls)
+        advanceTimeBy(10_001)
+        runCurrent()
+        // The burst collapses into exactly one preference-gated sync.
+        assertEquals(1, coordinator.syncCalls)
     }
 }

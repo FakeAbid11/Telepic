@@ -8,6 +8,7 @@ import com.telepic.data.cloud.CloudMapping.toEntity
 import com.telepic.domain.cloud.ChatCandidate
 import com.telepic.domain.cloud.ChatValidator
 import com.telepic.domain.cloud.CloudMedia
+import com.telepic.domain.cloud.CloudMediaType
 import com.telepic.domain.cloud.CloudPreview
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.cloud.CloudUploadProgress
@@ -40,6 +41,18 @@ class CloudDestinationInvalidException(val reason: String) : Exception(reason)
  * rejected file, invalid destination). Unlike [CloudNetworkException] this is not worth retrying.
  */
 class CloudUploadRejectedException(message: String) : Exception(message)
+
+/**
+ * A send TDLib accepted but has not finished delivering yet. Distinct from a failure: the message
+ * exists and is still uploading, so the caller must wait — never burn the retry budget or re-send.
+ */
+class CloudMessagePendingException(message: String = "Telegram is still sending the message") : Exception(message)
+
+/**
+ * A previously-sent message that no longer exists on Telegram (e.g. the process was killed before
+ * TDLib flushed the send). Only after this may a queue row be safely re-uploaded.
+ */
+class CloudMessageGoneException(message: String = "The earlier send never reached Telegram") : Exception(message)
 
 /**
  * [CloudRepository] over an injectable [CloudDataSource] + Room persistence + the Phase 4
@@ -165,17 +178,55 @@ class TelegramCloudRepository(
     override suspend fun uploadMedia(
         request: CloudUploadRequest,
         onProgress: (CloudUploadProgress) -> Unit,
+        onSent: suspend (chatId: Long, messageId: Long) -> Unit,
     ): CloudUploadResult? = withContext(dispatcher) {
         if (!isAuthorized()) {
             throw CloudNetworkException("Not authenticated")
         }
         mutex.withLock {
             val destination = currentDestination() ?: throw CloudDestinationInvalidException("No Telepic Backup destination")
-            val result = dataSource.upload(destination.chatId, request, onProgress)
+            val result = dataSource.upload(destination.chatId, request, onProgress, onSent)
             // Remote confirmation arrived: record it under its stable identity, preserving any
             // existing trusted hash (upload rows carry a real hash; discovery rows carry none).
             upsertPreservingTrusted(fromUpload(request, result).toEntity(clock()))
             result
+        }
+    }
+
+    override suspend fun confirmUpload(
+        chatId: Long,
+        messageId: Long,
+        mediaType: CloudMediaType,
+        contentHash: String?,
+        contentSizeBytes: Long?,
+    ): CloudUploadResult = withContext(dispatcher) {
+        if (!isAuthorized()) {
+            throw CloudNetworkException("Not authenticated")
+        }
+        mutex.withLock {
+            val confirmed = dataSource.confirmSend(chatId, messageId, mediaType)
+            // Record the confirmed remote in the manifest under its identity, carrying the trusted
+            // content hash from the queue row so content recognition dedups this upload too — even
+            // when its confirmation arrived late, via this path instead of the original send run.
+            upsertPreservingTrusted(
+                CloudMedia(
+                    messageId = confirmed.messageId,
+                    chatId = confirmed.chatId,
+                    mediaType = confirmed.mediaType,
+                    mimeType = null,
+                    fileName = null,
+                    sizeBytes = contentSizeBytes,
+                    width = null,
+                    height = null,
+                    durationMs = null,
+                    dateEpochSec = clock() / 1000L,
+                    previewFileId = null,
+                    originalFileId = confirmed.telegramFileId,
+                    isDownloaded = false,
+                    contentHash = contentHash,
+                ).toEntity(clock()),
+            )
+            confirmed
         }
     }
 

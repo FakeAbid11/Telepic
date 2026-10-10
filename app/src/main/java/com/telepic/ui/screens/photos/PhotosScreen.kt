@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -46,6 +44,8 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.permissions.MediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
+import com.telepic.ui.components.SelectionActionBar
+import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.theme.TelepicTokens
 
@@ -186,66 +186,7 @@ fun PhotosScreen(
     }
 }
 
-/** The selection-mode header: a close action and the live selected count in place of the title. */
-@Composable
-private fun SelectionTopBar(count: Int, onCancel: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                start = TelepicTokens.spacing.xs,
-                end = TelepicTokens.spacing.screenMargin,
-                top = TelepicTokens.spacing.lg,
-                bottom = TelepicTokens.spacing.md,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onCancel) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(R.string.photos_selection_cancel),
-            )
-        }
-        Text(
-            text = stringResource(R.string.photos_selection_count, count),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-/** The bottom bulk-action bar shown while selecting: a Back up button and Cancel. The selected count
- * lives only in the top bar to avoid a duplicated number. */
-@Composable
-private fun SelectionActionBar(
-    canBackup: Boolean,
-    onBackup: () -> Unit,
-    onCancel: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        tonalElevation = 3.dp,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = TelepicTokens.spacing.md, vertical = TelepicTokens.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.sm, Alignment.End),
-        ) {
-            TextButton(onClick = onCancel) {
-                Text(stringResource(R.string.photos_selection_cancel))
-            }
-            TextButton(onClick = onBackup, enabled = canBackup) {
-                Icon(Icons.Outlined.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(
-                    text = stringResource(R.string.photos_selection_backup),
-                    modifier = Modifier.padding(start = TelepicTokens.spacing.xs),
-                )
-            }
-        }
-    }
-}
+// SelectionTopBar and SelectionActionBar live in ui/components/SelectionUi.kt, shared with album contents.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

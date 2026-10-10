@@ -43,16 +43,23 @@ class BackupCoordinatorTest {
 
     private class FakeScheduler : BackupWorkScheduler {
         var scheduled = 0
+        var periodicScheduled = 0
         override fun schedule() { scheduled++ }
+        override fun schedulePeriodic() { periodicScheduled++ }
         override fun cancel() = Unit
         override fun isScheduled() = false
     }
 
-    private class FakeOnboarding(private val preference: BackupPreference?) : OnboardingRepository {
+    private class FakeOnboarding(
+        private val preference: BackupPreference?,
+        private val buckets: Set<Long> = emptySet(),
+    ) : OnboardingRepository {
         override val isCompleted: Flow<Boolean> = flowOf(true)
         override val backupPreference: Flow<BackupPreference?> = flowOf(preference)
+        override val backupBucketIds: Flow<Set<Long>> = flowOf(buckets)
         override suspend fun setCompleted(completed: Boolean) = Unit
         override suspend fun setBackupPreference(preference: BackupPreference?) = Unit
+        override suspend fun setBackupBucketIds(ids: Set<Long>) = Unit
     }
 
     private class FakeLoader(private val pages: List<List<LocalMedia>>, private val pageSize: Int) :
@@ -89,12 +96,14 @@ class BackupCoordinatorTest {
         recognition: BackupRecognitionRepository = NeedsBackupRecognition(),
         pages: List<List<LocalMedia>> = listOf(listOf(media(1), media(2))),
         pageSize: Int = 100,
+        buckets: Set<Long> = emptySet(),
+        loaderFactory: ((Long?) -> com.telepic.data.media.MediaPageLoader)? = null,
     ) = DefaultBackupCoordinator(
         repository = repo,
         recognition = recognition,
         scheduler = scheduler,
-        onboardingRepository = FakeOnboarding(preference),
-        pageLoader = FakeLoader(pages, pageSize),
+        onboardingRepository = FakeOnboarding(preference, buckets),
+        pageLoaderFactory = loaderFactory ?: { FakeLoader(pages, pageSize) },
         discoveryPageSize = pageSize,
     )
 
@@ -107,20 +116,51 @@ class BackupCoordinatorTest {
         assertEquals(2, repo.enqueuedWithHash.size)
         assertEquals(2, recognition.calls)
         assertEquals(1, scheduler.scheduled)
+        // Automatic backup also installs the recurring 12h discovery cadence.
+        assertEquals(1, scheduler.periodicScheduled)
     }
 
     @Test
     fun `NOT_NOW does not enqueue anything automatically`() = runBlocking {
         val repo = RecordingRepo()
-        coordinator(repo, FakeScheduler(), BackupPreference.NOT_NOW).syncFromPreference()
+        val scheduler = FakeScheduler()
+        coordinator(repo, scheduler, BackupPreference.NOT_NOW).syncFromPreference()
         assertEquals(0, repo.enqueuedWithHash.size)
+        assertEquals(0, scheduler.periodicScheduled)
     }
 
     @Test
-    fun `SELECT_FOLDER is not faked as enforceable — no automatic enqueue`() = runBlocking {
+    fun `SELECT_FOLDER with no folders picked backs up nothing (NOT_NOW equivalent)`() = runBlocking {
         val repo = RecordingRepo()
-        coordinator(repo, FakeScheduler(), BackupPreference.SELECT_FOLDER).syncFromPreference()
+        val scheduler = FakeScheduler()
+        coordinator(repo, scheduler, BackupPreference.SELECT_FOLDER).syncFromPreference()
         assertEquals(0, repo.enqueuedWithHash.size)
+        assertEquals(0, scheduler.periodicScheduled)
+    }
+
+    @Test
+    fun `SELECT_FOLDER scans exactly the chosen buckets and nothing else`() = runBlocking {
+        val repo = RecordingRepo()
+        val scheduler = FakeScheduler()
+        val requested = mutableListOf<Long?>()
+        val bucketPages = mapOf(
+            11L to listOf(listOf(media(101))),
+            22L to listOf(listOf(media(201), media(202))),
+        )
+        coordinator(
+            repo, scheduler, BackupPreference.SELECT_FOLDER,
+            buckets = setOf(11L, 22L),
+            loaderFactory = { bucketId ->
+                requested += bucketId
+                val pages = if (bucketId == null) emptyList() else bucketPages[bucketId].orEmpty()
+                FakeLoader(pages, pageSize = 100)
+            },
+        ).syncFromPreference()
+        // Exactly one loader per chosen bucket — the whole library (null) is never read.
+        assertEquals(listOf<Long?>(11L, 22L), requested)
+        assertEquals(3, repo.enqueuedWithHash.size)
+        assertEquals(1, scheduler.periodicScheduled)
+        assertEquals(1, scheduler.scheduled)
     }
 
     @Test
@@ -172,5 +212,14 @@ class BackupCoordinatorTest {
         val pages = listOf(listOf(media(1), media(2)), listOf(media(3)))
         coordinator(repo, FakeScheduler(), BackupPreference.BACKUP_ALL, pages = pages, pageSize = 2).syncFromPreference()
         assertEquals(3, repo.enqueuedWithHash.size)
+    }
+
+    @Test
+    fun `discovery keeps paging well past the old 2000-item head cap for large libraries`() = runBlocking {
+        // 2,100 items in 21 full pages: the raised safety cap must not stop the scan at 2000.
+        val pages = (1..21).map { p -> (1..100).map { media((p - 1) * 100L + it) } }
+        val repo = RecordingRepo()
+        coordinator(repo, FakeScheduler(), BackupPreference.BACKUP_ALL, pages = pages, pageSize = 100).syncFromPreference()
+        assertEquals(2100, repo.enqueuedWithHash.size)
     }
 }

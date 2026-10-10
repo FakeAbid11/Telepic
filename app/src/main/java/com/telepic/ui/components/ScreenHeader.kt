@@ -1,5 +1,6 @@
 package com.telepic.ui.components
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,7 @@ import com.telepic.ui.theme.TelepicTokens
  * Consistent top header for a Telepic screen. Centralized so every destination shares the
  * same title placement, style and margins. When [onBack] is supplied (a pushed/detail screen) it
  * renders a leading back affordance so those screens are navigable in-app, not only via system Back.
+ * An optional [trailing] composable (e.g. a live count) sits at the header's end.
  */
 @Composable
 fun ScreenHeader(
@@ -30,6 +32,7 @@ fun ScreenHeader(
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.headlineMedium,
     onBack: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val spacing = TelepicTokens.spacing
     val text = @Composable {
@@ -41,7 +44,7 @@ fun ScreenHeader(
         )
     }
 
-    if (onBack == null) {
+    if (onBack == null && trailing == null) {
         Text(
             text = title,
             style = style,
@@ -55,16 +58,24 @@ fun ScreenHeader(
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(start = spacing.xs, end = spacing.screenMargin, top = spacing.sm, bottom = spacing.sm),
+                .padding(
+                    start = if (onBack != null) spacing.xs else spacing.screenMargin,
+                    end = if (trailing != null) spacing.sm else spacing.screenMargin,
+                    top = if (onBack != null) spacing.sm else spacing.lg,
+                    bottom = if (onBack != null) spacing.sm else spacing.lg,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.albums_back),
-                )
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.albums_back),
+                    )
+                }
             }
-            text()
+            Box(modifier = Modifier.weight(1f)) { text() }
+            trailing?.invoke()
         }
     }
 }

@@ -15,13 +15,15 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  * Telepic application database (Phase 5 cloud metadata; Phase 6 backup queue; Phase 7 content-hash
  * recognition; Phase 10 favorites/archive/trash organization + geotagged-location cache).
  *
- * Version 5 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
+ * Version 6 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
  * Phase 5 destination/manifest rows, Phase 6 queue rows and Phase 7 hashes always survive:
  * - `1 → 2` ([MIGRATION_1_2]): introduces `backup_queue`.
  * - `2 → 3` ([MIGRATION_2_3]): adds `contentSizeBytes` + `hashedAt` and the `contentHash` indexes
  *   to `backup_queue`, and a `contentHash` index to `cloud_media_manifest`.
  * - `3 → 4` ([MIGRATION_3_4]): introduces `media_organization` (favorites / archive / trash state).
  * - `4 → 5` ([MIGRATION_4_5]): introduces `media_location` (the geotagged-location cache).
+ * - `5 → 6` ([MIGRATION_5_6]): adds the `pendingTelegram*` columns to `backup_queue` (early remote
+ *   identity persistence, so a timed-out send is confirmed rather than duplicated).
  */
 @Database(
     entities = [
@@ -31,7 +33,7 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         MediaOrganizationEntity::class,
         MediaLocationEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class TelepicDatabase : RoomDatabase() {
@@ -131,6 +133,18 @@ abstract class TelepicDatabase : RoomDatabase() {
                         "`extractedAt` INTEGER NOT NULL, " +
                         "PRIMARY KEY(`localMediaId`))",
                 )
+            }
+        }
+
+        /**
+         * Duplicate-upload fix: nullable `pendingTelegram*` columns on `backup_queue`. Purely
+         * additive — every existing row (and hash) survives with the new columns NULL, meaning
+         * "no send currently unconfirmed".
+         */
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `backup_queue` ADD COLUMN `pendingTelegramChatId` INTEGER")
+                db.execSQL("ALTER TABLE `backup_queue` ADD COLUMN `pendingTelegramMessageId` INTEGER")
             }
         }
     }

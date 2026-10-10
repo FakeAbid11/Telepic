@@ -65,6 +65,9 @@ class TelegramCloudRepositoryTest {
         var searchCalls = 0
         var createCalls = 0
         var uploadCalls = 0
+        var confirmCalls = 0
+        var confirmResult: com.telepic.domain.cloud.CloudUploadResult? = null
+        var confirmError: Throwable? = null
         override suspend fun searchDestinationCandidates(): List<ChatCandidate> {
             searchCalls++
             searchError?.let { throw it }
@@ -84,10 +87,23 @@ class TelegramCloudRepositoryTest {
             chatId: Long,
             request: com.telepic.domain.cloud.CloudUploadRequest,
             onProgress: (com.telepic.domain.cloud.CloudUploadProgress) -> Unit,
+            onSent: suspend (Long, Long) -> Unit,
         ): com.telepic.domain.cloud.CloudUploadResult {
             uploadCalls++
             uploadError?.let { throw it }
-            return requireNotNull(uploadResult) { "FakeDataSource must set uploadResult or uploadError" }
+            val result = requireNotNull(uploadResult) { "FakeDataSource must set uploadResult or uploadError" }
+            onSent(chatId, result.messageId)
+            return result
+        }
+
+        override suspend fun confirmSend(
+            chatId: Long,
+            messageId: Long,
+            mediaType: com.telepic.domain.cloud.CloudMediaType,
+        ): com.telepic.domain.cloud.CloudUploadResult {
+            confirmCalls++
+            confirmError?.let { throw it }
+            return requireNotNull(confirmResult) { "FakeDataSource must set confirmResult or confirmError" }
         }
     }
 

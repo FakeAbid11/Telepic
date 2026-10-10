@@ -18,10 +18,20 @@ class MediaBackupVisualStateTest {
     }
 
     @Test
-    fun `queued and waiting collapse to queued`() {
+    fun `queued and in-budget waiting collapse to queued`() {
         assertEquals(MediaBackupVisualState.QUEUED, MediaBackupVisualState.from(BackupState.QUEUED))
         assertEquals(MediaBackupVisualState.QUEUED, MediaBackupVisualState.from(BackupState.WAITING_FOR_NETWORK))
+        assertEquals(MediaBackupVisualState.QUEUED, MediaBackupVisualState.from(BackupState.WAITING_FOR_NETWORK, retryCount = 3, maxRetries = 5))
         assertEquals(MediaBackupVisualState.QUEUED, MediaBackupVisualState.from(BackupState.WAITING_FOR_AUTH))
+    }
+
+    @Test
+    fun `a network-waiting row past its retry budget is STALLED, not queued`() {
+        // Nothing will automatically pick it up again — showing "queued" would fake progress.
+        assertEquals(MediaBackupVisualState.STALLED, MediaBackupVisualState.from(BackupState.WAITING_FOR_NETWORK, retryCount = 5, maxRetries = 5))
+        assertEquals(MediaBackupVisualState.STALLED, MediaBackupVisualState.from(BackupState.WAITING_FOR_NETWORK, retryCount = 9, maxRetries = 5))
+        // Auth-waiting is a different cause (sign-in needed) and stays QUEUED regardless of count.
+        assertEquals(MediaBackupVisualState.QUEUED, MediaBackupVisualState.from(BackupState.WAITING_FOR_AUTH, retryCount = 9, maxRetries = 5))
     }
 
     @Test

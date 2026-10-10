@@ -50,7 +50,15 @@ class CloudScreenUiTest {
         override suspend fun uploadMedia(
             request: com.telepic.domain.cloud.CloudUploadRequest,
             onProgress: (com.telepic.domain.cloud.CloudUploadProgress) -> Unit,
+            onSent: suspend (Long, Long) -> Unit,
         ): com.telepic.domain.cloud.CloudUploadResult? = null
+        override suspend fun confirmUpload(
+            chatId: Long,
+            messageId: Long,
+            mediaType: com.telepic.domain.cloud.CloudMediaType,
+            contentHash: String?,
+            contentSizeBytes: Long?,
+        ): com.telepic.domain.cloud.CloudUploadResult = throw NotImplementedError()
     }
 
     private fun item(id: Long, type: CloudMediaType, duration: Long? = null) = CloudMedia(

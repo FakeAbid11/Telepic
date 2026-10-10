@@ -4,6 +4,7 @@ import com.telepic.data.backup.db.BackupQueueEntity
 import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.BackupState
+import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.cloud.CloudMediaType
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
@@ -32,21 +33,34 @@ object BackupMapping {
         contentHash = contentHash,
     )
 
-    fun List<BackupQueueEntity>.toStats(): BackupQueueStats {
+    /**
+     * Aggregate queue counts. [maxRetries] must match the repository's automatic retry budget: a
+     * WAITING_FOR_NETWORK row at or past it is *stalled* (nothing will retry it again), not queued —
+     * counting it as queued would advertise an eternal pending queue as progress.
+     */
+    fun List<BackupQueueEntity>.toStats(maxRetries: Int = DefaultBackupRepository.DEFAULT_MAX_RETRIES): BackupQueueStats {
         var queued = 0
         var uploading = 0
         var completed = 0
         var failed = 0
+        var stalled = 0
         for (row in this) {
-            when (BackupState.fromName(row.state)) {
-                BackupState.QUEUED, BackupState.WAITING_FOR_NETWORK, BackupState.WAITING_FOR_AUTH -> queued++
-                BackupState.PREPARING, BackupState.UPLOADING -> uploading++
-                BackupState.BACKED_UP -> completed++
-                BackupState.FAILED -> failed++
-                else -> Unit
+            when (MediaBackupVisualState.from(BackupState.fromName(row.state), row.retryCount, maxRetries)) {
+                MediaBackupVisualState.QUEUED -> queued++
+                MediaBackupVisualState.UPLOADING -> uploading++
+                MediaBackupVisualState.BACKED_UP -> completed++
+                MediaBackupVisualState.FAILED -> failed++
+                MediaBackupVisualState.STALLED -> stalled++
+                MediaBackupVisualState.NONE -> Unit
             }
         }
-        return BackupQueueStats(queued = queued, uploading = uploading, completed = completed, failed = failed)
+        return BackupQueueStats(
+            queued = queued,
+            uploading = uploading,
+            completed = completed,
+            failed = failed,
+            stalled = stalled,
+        )
     }
 
     /**

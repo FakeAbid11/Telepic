@@ -46,7 +46,7 @@ class MediaStoreAlbumRepository(
 
     override suspend fun albums(): List<Album> = withContext(Dispatchers.IO) {
         val scope: CoroutineScope = this
-        val order = "${MediaStore.MediaColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns._ID} DESC"
+        val order = MediaSortOrder.TIMELINE_DESC
         val rows = ArrayList<AlbumGrouper.Row>()
         // Exclude archived/trashed media the same way the timeline and bucket loaders do, so album
         // counts and covers reflect only what the user can actually see. Done in-query to keep the
@@ -146,7 +146,7 @@ class MediaStoreBucketLoader(
             projection,
             realSelection,
             args,
-            "${MediaStore.MediaColumns.DATE_TAKEN} DESC, ${MediaStore.MediaColumns._ID} DESC",
+            MediaSortOrder.TIMELINE_DESC,
         )?.use { cursor ->
             // offset 0 is the newest page read directly via moveToNext(); only a positive offset
             // seeks, and an offset at/past the end yields an empty page (end of the bucket).

@@ -1,9 +1,13 @@
 package com.telepic.ui.screens.viewer
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,20 +38,26 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.imageLoader
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.telepic.R
 import com.telepic.domain.media.MediaDay
 import com.telepic.navigation.MediaSource
@@ -56,10 +66,11 @@ import java.io.File
 
 /**
  * The full-screen media Viewer (Phase 9) for both local and cloud items. Photos and GIFs render via
- * Coil with pinch-to-zoom / pan and double-tap-to-reset; videos delegate to the isolated Media3
- * [VideoViewer]. Controls are minimal, the source (Local / Cloud) is labelled, next/previous stay
- * within the originating collection, and a cloud original downloads only on explicit request. A
- * missing item shows an honest error, never another item.
+ * Coil with pinch-to-zoom / pan, double-tap-to-reset, and a horizontal swipe that pages to the
+ * adjacent item (disabled while zoomed); videos delegate to the isolated Media3 [VideoViewer] and
+ * keep button-only navigation. Controls are minimal, the source (Local / Cloud) is labelled, next/
+ * previous stay within the originating collection, and a cloud original downloads only on explicit
+ * request. A missing item shows an honest error, never another item.
  */
 @Composable
 fun ViewerScreen(
@@ -78,6 +89,18 @@ fun ViewerScreen(
     val isCloudReady = state.source is MediaSource.Cloud && state.status == ViewerStatus.READY
     val isLocalReady = state.source is MediaSource.Local && state.status == ViewerStatus.READY
 
+    // Warm Coil's cache for the swipe targets so a committed drag lands on a ready image.
+    val context = LocalContext.current
+    LaunchedEffect(state.previous, state.next, state.status) {
+        if (state.status != ViewerStatus.READY) return@LaunchedEffect
+        listOfNotNull(state.previous, state.next).forEach { neighbor ->
+            val model = viewModel.displayModelFor(neighbor)
+            if (model != null) {
+                context.imageLoader.enqueue(ImageRequest.Builder(context).data(model).build())
+            }
+        }
+    }
+
     Surface(modifier = modifier.fillMaxSize(), color = Color.Black) {
         Box(modifier = Modifier.fillMaxSize()) {
             when (state.status) {
@@ -87,6 +110,7 @@ fun ViewerScreen(
                 ViewerStatus.MISSING -> MissingMedia(onBack)
                 ViewerStatus.READY -> ViewerContent(
                     state = state,
+                    onNavigate = viewModel::open,
                     onDownload = viewModel::downloadOriginal,
                     onRequestToggle = { controlsVisible = !controlsVisible },
                 )
@@ -159,10 +183,13 @@ fun ViewerScreen(
 @Composable
 private fun ViewerContent(
     state: ViewerUiState,
+    onNavigate: (MediaSource) -> Unit,
     onDownload: () -> Unit,
     onRequestToggle: () -> Unit,
 ) {
     if (state.kind == ViewerKind.VIDEO) {
+        // Videos keep button navigation only: PlayerView consumes touches for its own controls,
+        // and a swipe detector here would fight them.
         VideoViewer(state = state, onDownload = onDownload)
         return
     }
@@ -179,6 +206,14 @@ private fun ViewerContent(
     }
 
     var zoom by remember(state.source) { mutableStateOf(ZoomState()) }
+    var swipeOffsetX by remember(state.source) { mutableFloatStateOf(0f) }
+    var dragging by remember(state.source) { mutableStateOf(false) }
+    // Follows the finger exactly while dragging; springs back to 0 once released without a commit.
+    val swipeOffset by animateFloatAsState(
+        targetValue = swipeOffsetX,
+        animationSpec = if (dragging) snap() else spring(),
+        label = "viewerSwipe",
+    )
     AsyncImage(
         model = model,
         contentDescription = stringResource(R.string.viewer_content_description),
@@ -187,8 +222,68 @@ private fun ViewerContent(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(state.source) {
-                detectTransformGestures { _, pan, gestureZoom, _ ->
-                    zoom = zoom.onScale(gestureZoom).onPan(pan.x, pan.y)
+                // One gesture pass: two fingers pinch/pan when zoomed, a single-finger horizontal
+                // drag swipes to the adjacent item (only while unzoomed). Taps stay on their own
+                // detector below — they don't consume drags and vice versa. The @RestrictSuspension
+                // gesture scope forbids spawning coroutines, so release feedback is declarative:
+                // snap while dragging, spring back through animateFloatAsState when released.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var dragTotalX = 0f
+                    var pinched = false
+                    var lastPinchDist = 0f
+                    var lastCentroid = Offset.Zero
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.filter { it.pressed }
+                        if (pressed.isEmpty()) break
+                        if (pressed.size >= 2) {
+                            pinched = true
+                            val a = pressed[0]
+                            val b = pressed[1]
+                            val dist = (a.position - b.position).getDistance()
+                            val centroid = (a.position + b.position) / 2f
+                            if (lastPinchDist > 0f && dist > 0f) {
+                                zoom = zoom
+                                    .onScale(dist / lastPinchDist)
+                                    .onPan(centroid.x - lastCentroid.x, centroid.y - lastCentroid.y)
+                            }
+                            lastPinchDist = dist
+                            lastCentroid = centroid
+                            pressed.forEach { it.consume() }
+                        } else {
+                            val change = pressed.first()
+                            val delta = if (change.previousPosition != Offset.Unspecified) {
+                                change.position - change.previousPosition
+                            } else {
+                                Offset.Zero
+                            }
+                            if (zoom.isZoomed) {
+                                zoom = zoom.onPan(delta.x, delta.y)
+                                change.consume()
+                            } else if (!pinched) {
+                                dragging = true
+                                dragTotalX += delta.x
+                                swipeOffsetX = dragTotalX
+                                change.consume()
+                            }
+                        }
+                    }
+                    if (!pinched && !zoom.isZoomed && dragTotalX != 0f) {
+                        val target = SwipeResolver.resolve(
+                            deltaPx = dragTotalX,
+                            widthPx = size.width.toFloat(),
+                            previous = state.previous,
+                            next = state.next,
+                        )
+                        if (target != null) {
+                            // Navigating swaps the remember(state.source) offset anyway; the swap is
+                            // immediate, identical to the arrow buttons' path through ViewModel.open.
+                            swipeOffsetX = 0f
+                            onNavigate(target)
+                        }
+                    }
+                    dragging = false
                 }
             }
             .pointerInput(state.source) {
@@ -200,7 +295,7 @@ private fun ViewerContent(
             .graphicsLayer(
                 scaleX = zoom.scale,
                 scaleY = zoom.scale,
-                translationX = zoom.offsetX,
+                translationX = zoom.offsetX + swipeOffset,
                 translationY = zoom.offsetY,
             ),
     )

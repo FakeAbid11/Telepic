@@ -135,6 +135,7 @@ fun TelepicNavHost(
                             ),
                             albumRepository = container.albumRepository,
                             backupStatusRepository = container.backupStatusRepository,
+                            backupCoordinator = container.backupCoordinator,
                         )
                     }
                 },
@@ -165,7 +166,23 @@ fun TelepicNavHost(
             )
         }
         composable(TelepicDestination.Settings.route) {
+            val settingsViewModel: com.telepic.ui.screens.settings.SettingsViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        com.telepic.ui.screens.settings.SettingsViewModel(
+                            telegramAuthController = container.telegramAuthController,
+                            onboardingRepository = container.onboardingRepository,
+                            albumRepository = container.albumRepository,
+                            backupCoordinator = container.backupCoordinator,
+                            appContext = checkNotNull(
+                                this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY],
+                            ),
+                        )
+                    }
+                },
+            )
             SettingsScreen(
+                viewModel = settingsViewModel,
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 onOpenBackupCenter = { navController.navigate(BackupCenterRoute.ROUTE) },

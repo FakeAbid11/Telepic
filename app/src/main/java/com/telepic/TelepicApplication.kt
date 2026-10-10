@@ -43,7 +43,12 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
-            .setWorkerFactory(TelepicWorkerFactory { container.backupRepository })
+            .setWorkerFactory(
+                TelepicWorkerFactory(
+                    backupRepository = { container.backupRepository },
+                    backupCoordinator = { container.backupCoordinator },
+                ),
+            )
             .build()
 
     override fun newImageLoader(): ImageLoader =

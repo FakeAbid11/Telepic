@@ -43,9 +43,29 @@ interface CloudRepository {
      * for transient failures and [CloudUploadRejectedException] for permanent ones. On success the
      * resulting item is added to the cloud manifest. The returned identity is the only thing that
      * lets a queue item become BACKED_UP.
+     *
+     * [onSent] fires as soon as TDLib accepts the send, with the real (chatId, messageId) — the
+     * backup engine persists it immediately so a later timeout confirms that message via
+     * [confirmUpload] instead of re-sending a duplicate.
      */
     suspend fun uploadMedia(
         request: CloudUploadRequest,
         onProgress: (CloudUploadProgress) -> Unit = {},
+        onSent: suspend (chatId: Long, messageId: Long) -> Unit = { _, _ -> },
     ): CloudUploadResult?
+
+    /**
+     * Re-check a previously accepted send without uploading again. Returns the confirmed identity
+     * (and records it in the manifest, preserving [contentHash]), throws
+     * [CloudMessagePendingException] while Telegram is still delivering, [CloudMessageGoneException]
+     * when the message never landed (only then is a re-send safe), or the usual transient/rejected
+     * exceptions. Success is only ever reported from Telegram's real state.
+     */
+    suspend fun confirmUpload(
+        chatId: Long,
+        messageId: Long,
+        mediaType: com.telepic.domain.cloud.CloudMediaType,
+        contentHash: String?,
+        contentSizeBytes: Long?,
+    ): CloudUploadResult
 }

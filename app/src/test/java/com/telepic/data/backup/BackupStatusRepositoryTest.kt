@@ -33,7 +33,7 @@ class BackupStatusRepositoryTest {
     @After
     fun tearDown() = db.close()
 
-    private fun row(id: Long, state: BackupState) = BackupQueueEntity(
+    private fun row(id: Long, state: BackupState, retryCount: Int = 0) = BackupQueueEntity(
         localMediaId = id.toString(),
         contentUri = "content://m/$id",
         mediaType = "IMAGE",
@@ -42,7 +42,7 @@ class BackupStatusRepositoryTest {
         sizeBytes = 10L,
         modifiedTimeSeconds = 1L,
         state = state.name,
-        retryCount = 0,
+        retryCount = retryCount,
         lastError = null,
         telegramChatId = null,
         telegramMessageId = null,
@@ -69,6 +69,19 @@ class BackupStatusRepositoryTest {
         assertEquals(MediaBackupVisualState.QUEUED, map["3"])
         assertEquals(MediaBackupVisualState.FAILED, map["4"])
         assertEquals(MediaBackupVisualState.NONE, map["5"])
+    }
+
+    @Test
+    fun `a retry-exhausted row maps to STALLED, never to queued`() = runBlocking {
+        val dao = db.backupQueueDao()
+        // Below the budget: still genuinely pending automatic retries.
+        dao.insertIgnore(row(6, BackupState.WAITING_FOR_NETWORK, retryCount = 2))
+        // At the default budget (5): nothing will pick it up again — it must not fake progress.
+        dao.insertIgnore(row(7, BackupState.WAITING_FOR_NETWORK, retryCount = 5))
+
+        val map = DefaultBackupStatusRepository(dao).visualStates.first()
+        assertEquals(MediaBackupVisualState.QUEUED, map["6"])
+        assertEquals(MediaBackupVisualState.STALLED, map["7"])
     }
 
     @Test

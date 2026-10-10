@@ -44,8 +44,12 @@ private const val TOTAL_STEPS = 6
 @Composable
 fun OnboardingScreen(
     backupPreference: BackupPreference?,
+    backupBucketIds: Set<Long>,
+    folders: List<com.telepic.domain.media.Album>,
     telegramController: TelegramAuthController,
     onBackupPreferenceChange: (BackupPreference) -> Unit,
+    onNeedFolders: () -> Unit,
+    onPickFolders: (Set<Long>) -> Unit,
     onComplete: () -> Unit,
 ) {
     var step by rememberSaveable { mutableIntStateOf(0) }
@@ -158,7 +162,14 @@ fun OnboardingScreen(
                         state = telegramState,
                         onContinue = goToNext,
                     )
-                    4 -> BackupPreferencesStep(backupPreference, onBackupPreferenceChange)
+                    4 -> BackupPreferencesStep(
+                        selected = backupPreference,
+                        selectedBucketIds = backupBucketIds,
+                        folders = folders,
+                        onSelect = onBackupPreferenceChange,
+                        onNeedFolders = onNeedFolders,
+                        onPickFolders = onPickFolders,
+                    )
                     5 -> ReadyStep(permission.state, telegramState, backupPreference)
                 }
             },

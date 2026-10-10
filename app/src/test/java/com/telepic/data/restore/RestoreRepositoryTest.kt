@@ -54,7 +54,15 @@ class RestoreRepositoryTest {
         override suspend fun uploadMedia(
             request: CloudUploadRequest,
             onProgress: (CloudUploadProgress) -> Unit,
+            onSent: suspend (Long, Long) -> Unit,
         ): CloudUploadResult? = null
+        override suspend fun confirmUpload(
+            chatId: Long,
+            messageId: Long,
+            mediaType: com.telepic.domain.cloud.CloudMediaType,
+            contentHash: String?,
+            contentSizeBytes: Long?,
+        ): CloudUploadResult = throw NotImplementedError()
     }
 
     private class FakePublisher(private var result: PublishResult) : MediaStorePublisher {

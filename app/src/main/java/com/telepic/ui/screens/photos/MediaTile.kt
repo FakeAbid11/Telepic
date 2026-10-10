@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -213,6 +214,8 @@ private fun BackupBadge(state: MediaBackupVisualState, modifier: Modifier = Modi
                 val (icon, tint) = when (state) {
                     MediaBackupVisualState.BACKED_UP -> Icons.Outlined.CloudDone to Color.White
                     MediaBackupVisualState.FAILED -> Icons.Outlined.CloudOff to MaterialTheme.colorScheme.error
+                    // Retry-exhausted: a distinct warning marker, never the quiet "queued" cloud.
+                    MediaBackupVisualState.STALLED -> Icons.Outlined.ErrorOutline to MaterialTheme.colorScheme.tertiary
                     MediaBackupVisualState.QUEUED -> Icons.Outlined.CloudUpload to Color.White
                     else -> Icons.Outlined.CloudUpload to Color.White
                 }
@@ -252,6 +255,7 @@ private fun MediaBackupVisualState.descriptionRes(): Int = when (this) {
     MediaBackupVisualState.UPLOADING -> R.string.backup_state_uploading
     MediaBackupVisualState.QUEUED -> R.string.backup_state_queued
     MediaBackupVisualState.FAILED -> R.string.backup_state_failed
+    MediaBackupVisualState.STALLED -> R.string.backup_state_stalled
     MediaBackupVisualState.NONE -> R.string.backup_state_none
 }
 

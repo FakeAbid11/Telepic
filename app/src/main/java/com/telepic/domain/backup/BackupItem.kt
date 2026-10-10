@@ -27,13 +27,19 @@ data class BackupItem(
     val contentHash: String? = null,
 )
 
-/** Aggregate queue counts the Backup Center reports. */
+/**
+ * Aggregate queue counts the Backup Center reports. [stalled] is separated from [queued]: those
+ * items stopped being automatically retried (budget exhausted) and need a user action — they are
+ * never presented as in-progress.
+ */
 data class BackupQueueStats(
     val queued: Int = 0,
     val uploading: Int = 0,
     val completed: Int = 0,
     val failed: Int = 0,
+    val stalled: Int = 0,
 ) {
     val activeCount: Int get() = queued + uploading
     val totalProcessed: Int get() = completed + failed
+    val needsAttention: Int get() = failed + stalled
 }

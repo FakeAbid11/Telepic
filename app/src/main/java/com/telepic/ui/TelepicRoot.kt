@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepic.di.AppContainer
+import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingViewModel
 import com.telepic.settings.ThemeViewModel
 import com.telepic.telegram.TelegramAuthController
@@ -31,12 +32,19 @@ fun TelepicRoot(
     TelepicTheme(darkTheme = themeMode.isDarkTheme(isSystemInDarkTheme())) {
         when {
             onboarding.isLoading -> LoadingState()
-            !onboarding.isCompleted -> OnboardingScreen(
-                backupPreference = onboarding.backupPreference,
-                telegramController = telegramController,
-                onBackupPreferenceChange = onboardingViewModel::setBackupPreference,
-                onComplete = onboardingViewModel::completeOnboarding,
-            )
+            !onboarding.isCompleted -> {
+                val folders by onboardingViewModel.folders.collectAsStateWithLifecycle()
+                OnboardingScreen(
+                    backupPreference = onboarding.backupPreference,
+                    backupBucketIds = onboarding.backupBucketIds,
+                    folders = folders,
+                    telegramController = telegramController,
+                    onBackupPreferenceChange = onboardingViewModel::setBackupPreference,
+                    onNeedFolders = onboardingViewModel::loadFolders,
+                    onPickFolders = { ids -> onboardingViewModel.setBackupChoice(BackupPreference.SELECT_FOLDER, ids) },
+                    onComplete = onboardingViewModel::completeOnboarding,
+                )
+            }
             else -> TelepicApp(
                 themeMode = themeMode,
                 onThemeModeChange = themeViewModel::setThemeMode,
