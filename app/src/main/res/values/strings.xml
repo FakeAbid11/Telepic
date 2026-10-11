@@ -122,7 +122,8 @@
     <string name="telegram_connecting">Connecting to Telegram…</string>
     <string name="telegram_authorizing">Signed in. Loading your account…</string>
     <string name="telegram_phone_label">Phone number</string>
-    <string name="telegram_phone_hint">Include your country code, for example +1 555 010 1234</string>
+    <string name="telegram_country_label">Country code</string>
+    <string name="telegram_phone_hint">Enter your number — the country code is added for you</string>
     <string name="telegram_send_code">Send code</string>
     <string name="telegram_code_label">Confirmation code</string>
     <string name="telegram_code_hint">Enter the code Telegram sent you</string>

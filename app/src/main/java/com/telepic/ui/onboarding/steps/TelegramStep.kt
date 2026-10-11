@@ -1,12 +1,16 @@
 package com.telepic.ui.onboarding.steps
 
+import android.content.Context
+import android.telephony.TelephonyManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -15,8 +19,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,14 +38,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.telepic.R
+import com.telepic.telegram.CountryDialCode
+import com.telepic.telegram.PhoneCountries
 import com.telepic.telegram.TelegramAuthController
 import com.telepic.telegram.TelegramAuthState
+import com.telepic.telegram.normalizeE164
 import com.telepic.ui.theme.TelepicTokens
+import java.util.Locale
 
 /**
  * Screen 4 — Telegram Login (Phase 4, real).
@@ -98,21 +111,59 @@ private fun AuthContent(
             }
         }
         is TelegramAuthState.WaitingForPhoneNumber -> {
+            val spacing = TelepicTokens.spacing
             var phone by rememberSaveable { mutableStateOf("") }
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { phone = it },
-                label = { Text(stringResource(R.string.telegram_phone_label)) },
-                supportingText = { Text(state.error ?: stringResource(R.string.telegram_phone_hint)) },
-                isError = state.error != null,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            val defaultCountry = rememberDefaultCountry()
+            var countryIso by rememberSaveable { mutableStateOf(defaultCountry.iso) }
+            val country = PhoneCountries.byIso(countryIso) ?: defaultCountry
+            var menuExpanded by remember { mutableStateOf(false) }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 modifier = Modifier.fillMaxWidth(),
-            )
+            ) {
+                ExposedDropdownMenuBox(
+                    expanded = menuExpanded,
+                    onExpandedChange = { menuExpanded = it },
+                    modifier = Modifier.width(132.dp),
+                ) {
+                    OutlinedTextField(
+                        value = "${country.flag} ${country.dialCode}",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(R.string.telegram_country_label)) },
+                        singleLine = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                    )
+                    ExposedDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        PhoneCountries.All.forEach { entry ->
+                            DropdownMenuItem(
+                                text = { Text("${entry.flag}  ${entry.name}  (${entry.dialCode})") },
+                                onClick = {
+                                    countryIso = entry.iso
+                                    menuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it },
+                    label = { Text(stringResource(R.string.telegram_phone_label)) },
+                    supportingText = { Text(state.error ?: stringResource(R.string.telegram_phone_hint)) },
+                    isError = state.error != null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.weight(1f),
+                )
+            }
             PrimaryButton(
                 label = stringResource(R.string.telegram_send_code),
                 enabled = phone.isNotBlank(),
-                onClick = { controller.submitPhoneNumber(phone) },
+                onClick = { controller.submitPhoneNumber(normalizeE164(phone, country.dialCode)) },
             )
         }
         is TelegramAuthState.WaitingForCode -> {
@@ -191,6 +242,21 @@ private fun AuthContent(
 private fun PrimaryButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
     Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
         Text(label)
+    }
+}
+
+/**
+ * Best-effort preselect for the dial-code dropdown: the SIM's country, else the system locale's
+ * country, else the United States. Both lookups need no runtime permission.
+ */
+@Composable
+private fun rememberDefaultCountry(): CountryDialCode {
+    val context = LocalContext.current
+    return remember(context) {
+        val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+        PhoneCountries.byIso(telephony?.simCountryIso)
+            ?: PhoneCountries.byIso(Locale.getDefault().country)
+            ?: PhoneCountries.Default
     }
 }
 
