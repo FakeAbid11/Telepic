@@ -3,8 +3,13 @@
     <!--
       Base window theme. Compose (TelepicTheme) drives all in-app theming; this XML theme
       only styles the window before Compose renders its first frame.
+
+      The background is the DARK window color even in the day values: Telepic's default
+      ThemeMode is DARK, so a white day background flashed on every cold start (and sat as a
+      white strip above the edge-to-edge Scaffold) for light-system users who never opted into
+      the light theme. Users who explicitly pick LIGHT tolerate a brief dark frame instead.
     -->
     <style name="Theme.Telepic" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@color/telepic_window_light</item>
+        <item name="android:windowBackground">@color/telepic_window_dark</item>
     </style>
 </resources>

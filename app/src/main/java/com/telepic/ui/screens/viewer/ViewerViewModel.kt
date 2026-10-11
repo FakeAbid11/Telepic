@@ -158,9 +158,12 @@ class ViewerViewModel(
      */
     fun loadDetails() {
         val media = (_uiState.value.item as? ViewerItem.Local)?.media ?: return
+        val requestedSource = _uiState.value.source
         viewModelScope.launch {
             val metadata = runCatching { metadataReader?.read(media.contentUri) }
                 .getOrNull() ?: MediaMetadata()
+            // Identity-guarded: a slow EXIF read must never land on an item the user already left.
+            if (_uiState.value.source != requestedSource) return@launch
             _details.value = MediaDetails(
                 fileName = media.displayName,
                 mimeType = media.mimeType,
@@ -205,8 +208,14 @@ class ViewerViewModel(
     private fun mutateFlags(action: suspend (MediaOrganizationRepository, Long, ViewerFlags) -> ViewerFlags) {
         val repo = organizationRepository ?: return
         val id = (_uiState.value.item as? ViewerItem.Local)?.media?.id ?: return
+        val requestedSource = _uiState.value.source
         viewModelScope.launch {
-            _flags.value = action(repo, id, _flags.value)
+            val updated = action(repo, id, _flags.value)
+            // Identity-guarded: the write targets the captured id (always the correct item), but
+            // the UI state must never be overwritten for a source the user has already left.
+            if (_uiState.value.source == requestedSource) {
+                _flags.value = updated
+            }
         }
     }
 

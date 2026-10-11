@@ -52,6 +52,7 @@ fun OnboardingScreen(
     onNeedFolders: () -> Unit,
     onPickFolders: (Set<Long>) -> Unit,
     onComplete: () -> Unit,
+    foldersLoaded: Boolean = true,
 ) {
     var step by rememberSaveable { mutableIntStateOf(0) }
     val permission = rememberMediaPermissionState()
@@ -168,6 +169,7 @@ fun OnboardingScreen(
                         selected = backupPreference,
                         selectedBucketIds = backupBucketIds,
                         folders = folders,
+                        foldersLoaded = foldersLoaded,
                         // Choosing a backup scope is the moment upload progress becomes useful, so
                         // ask here — the request no-ops below API 33 or once notifications are on.
                         onSelect = { pref ->

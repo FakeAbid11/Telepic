@@ -50,7 +50,8 @@ fun AlbumContentsScreen(
     val backupStates by viewModel.backupStates.collectAsStateWithLifecycle()
     val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
     val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
-    val selectionMessage by viewModel.selectionMessage.collectAsStateWithLifecycle()
+    val selectionReport by viewModel.selectionReport.collectAsStateWithLifecycle()
+    val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
     val selectionActive = selectedItems.isNotEmpty()
     val spacing = TelepicTokens.spacing
     val refresh = paging.loadState.refresh
@@ -116,23 +117,27 @@ fun AlbumContentsScreen(
                 }
             }
 
-            if (selectionActive) {
-                SelectionActionBar(
-                    canBackup = selectedItems.isNotEmpty(),
-                    onBackup = viewModel::backupSelected,
-                    onCancel = viewModel::clearSelection,
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
-            }
-
-            // Transient feedback after a bulk enqueue; auto-cleared. Same honest split as the timeline:
-            // new work vs items the engine recognized as already covered (never a fabricated upload).
-            selectionMessage?.let { summary ->
-                TransientMessageBar(
-                    message = stringResource(R.string.photos_selection_result, summary.queued, summary.alreadyCovered),
-                    onDismiss = viewModel::consumeSelectionMessage,
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
+            // Stacked so the transient message never draws on top of the selection action bar.
+            // Same honest split as the timeline: new work vs items already covered.
+            Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+                selectionReport?.let { report ->
+                    TransientMessageBar(
+                        message = stringResource(
+                            R.string.photos_selection_result,
+                            report.summary.queued,
+                            report.summary.alreadyCovered,
+                        ),
+                        onDismiss = viewModel::consumeSelectionMessage,
+                    )
+                }
+                if (selectionActive) {
+                    SelectionActionBar(
+                        canBackup = selectedItems.isNotEmpty(),
+                        busy = isBackingUp,
+                        onBackup = viewModel::backupSelected,
+                        onCancel = viewModel::clearSelection,
+                    )
+                }
             }
         }
     }

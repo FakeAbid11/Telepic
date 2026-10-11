@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -33,7 +34,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,10 +42,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.telepic.R
-import com.telepic.data.organization.DeleteRequest
 import com.telepic.navigation.OrganizationKind
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.LoadingState
@@ -53,7 +53,7 @@ import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.theme.TelepicTokens
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Archive
-import kotlinx.coroutines.launch
+import androidx.compose.material3.CircularProgressIndicator
 
 /**
  * A Favorites / Archive / Trash collection (Phase 10). Thumbnails only (no full decode); selecting a
@@ -70,6 +70,7 @@ fun OrganizationScreen(
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val deletingId by viewModel.deletingId.collectAsStateWithLifecycle()
     val spacing = TelepicTokens.spacing
     val deleteFailedMessage = stringResource(R.string.trash_delete_failed)
 
@@ -80,16 +81,17 @@ fun OrganizationScreen(
     val selected = items?.firstOrNull { it.id == selectedId }
 
     // The consent launcher's result arrives across Activity recreation, so the pending item is
-    // saved as its id; success is reported by id alone.
+    // saved as its id; success is reported by id alone. Finishing the consent always clears the
+    // ViewModel's busy state; selection is cleared only on a confirmed success so a failure
+    // leaves the item selected for a retry.
     var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
-    val scope = rememberCoroutineScope()
     val consentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
         val id = pendingDeleteId
         pendingDeleteId = null
-        if (result.resultCode == Activity.RESULT_OK && id != null) {
-            viewModel.onDeleteConfirmed(id)
+        if (id != null && viewModel.finishConsent(id, result.resultCode == Activity.RESULT_OK)) {
+            selectedId = null
         }
     }
 
@@ -152,6 +154,7 @@ fun OrganizationScreen(
                                 onOpen = { onOpenMedia(media.id) },
                                 onUndo = { viewModel.undo(media.id); selectedId = null },
                                 onDelete = { showDeleteConfirm = true },
+                                busy = deletingId != null,
                             )
                         }
                     }
@@ -176,23 +179,20 @@ fun OrganizationScreen(
             title = { Text(stringResource(R.string.trash_delete_title)) },
             text = { Text(stringResource(R.string.trash_delete_body)) },
             confirmButton = {
-                Button(onClick = {
-                    showDeleteConfirm = false
-                    if (media != null) {
-                        // Deletion is async + consent-gated; the result is handled by the launcher.
-                        scope.launch {
-                            when (val outcome = viewModel.requestDeleteForever(media)) {
-                                is DeleteRequest.NeedsConsent -> {
-                                    pendingDeleteId = media.id
-                                    consentLauncher.launch(IntentSenderRequest.Builder(outcome.intentSender).build())
-                                }
-                                DeleteRequest.Deleted -> viewModel.onDeleteConfirmed(media.id)
-                                DeleteRequest.Failed -> viewModel.reportDeleteFailed()
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        if (media != null) {
+                            // Deletion is async + consent-gated and runs in the ViewModel's scope
+                            // so leaving this screen never cancels a real delete mid-flight. The
+                            // consent result returns through the launcher above.
+                            viewModel.requestDeleteForever(media) { intentSender ->
+                                pendingDeleteId = media.id
+                                consentLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
                             }
                         }
-                    }
-                    selectedId = null
-                }) { Text(stringResource(R.string.trash_delete_confirm)) }
+                    },
+                ) { Text(stringResource(R.string.trash_delete_confirm)) }
             },
             dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.organization_cancel)) } },
         )
@@ -200,16 +200,31 @@ fun OrganizationScreen(
 }
 
 @Composable
-private fun ActionRow(kind: OrganizationKind, onOpen: () -> Unit, onUndo: () -> Unit, onDelete: () -> Unit) {
+private fun ActionRow(
+    kind: OrganizationKind,
+    onOpen: () -> Unit,
+    onUndo: () -> Unit,
+    onDelete: () -> Unit,
+    busy: Boolean = false,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = TelepicTokens.spacing.md, vertical = TelepicTokens.spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.sm, Alignment.End),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(stringResource(titleRes(kind)), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = onUndo) { Text(stringResource(undoLabelRes(kind))) }
+        TextButton(onClick = onUndo, enabled = !busy) { Text(stringResource(undoLabelRes(kind))) }
         if (kind == OrganizationKind.TRASH) {
-            TextButton(onClick = onDelete) { Text(stringResource(R.string.organization_delete_forever)) }
+            TextButton(onClick = onDelete, enabled = !busy) {
+                if (busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text(stringResource(R.string.organization_delete_forever))
+                }
+            }
         }
         Button(onClick = onOpen) { Text(stringResource(R.string.map_selected_open)) }
     }

@@ -12,7 +12,7 @@
     <!-- Photos -->
     <string name="photos_title">Telepic</string>
     <string name="photos_empty_title">Your photos will appear here</string>
-    <string name="photos_empty_description">This is your local media timeline. Telepic will organize your photos and videos here in a fast, beautiful grid — coming in a later phase.</string>
+    <string name="photos_empty_description">This is your local media timeline. Telepic will organize your photos and videos here in a fast, beautiful grid.</string>
 
     <!-- Cloud -->
     <string name="cloud_title">Cloud</string>
@@ -117,7 +117,7 @@
     <string name="onboarding_telegram_body">Telepic uses Telegram as the cloud storage layer for your backed-up media, kept in a private channel only you control.</string>
     <string name="onboarding_telegram_connect">Connect Telegram</string>
     <string name="onboarding_telegram_not_connected">Not connected</string>
-    <string name="onboarding_telegram_not_connected_body">Telegram sign-in arrives in the Telegram integration phase. You can continue now and connect later from Settings — cloud backup stays off until then.</string>
+    <string name="onboarding_telegram_not_connected_body">Telegram sign-in is unavailable in this build. You can continue now and connect later from Settings — cloud backup stays off until then.</string>
     <string name="onboarding_telegram_skip">Set up later</string>
     <string name="telegram_connecting">Connecting to Telegram…</string>
     <string name="telegram_authorizing">Signed in. Loading your account…</string>
@@ -191,10 +191,6 @@
     <string name="photos_date_rail">Jump to date</string>
     <string name="date_rail_selected">current section</string>
     <string name="date_rail_not_selected">tap to jump</string>
-
-    <!-- Viewer (placeholder navigation contract) -->
-    <string name="viewer_title">Viewer</string>
-    <string name="viewer_placeholder_description">The full-screen viewer arrives in a later phase. This media item\'s identifier was passed for navigation.</string>
 
     <!-- ============================ Backup engine (Phase 6) ============================ -->
     <string name="backup_notification_title">Telepic backup</string>
@@ -333,9 +329,9 @@
     <string name="map_permission_title">See your photo locations</string>
     <string name="map_permission_description">Telepic needs photo &amp; video access to read the location data already stored in your media.</string>
     <string name="map_marker_description">Photo taken at this location</string>
+    <string name="map_cluster_description">Group of %1$d photos at this location</string>
     <string name="map_locations_count">%1$d locations</string>
     <string name="map_attribution">© OpenStreetMap contributors</string>
-    <string name="map_offline">Map tiles are unavailable offline. Pinned media still shows; tiles load when you\'re connected.</string>
     <string name="map_selected_open">Open</string>
 
     <!-- ============================ Photos multi-selection (Feature 1) ============================ -->
@@ -357,4 +353,8 @@
     <string name="details_camera">Camera</string>
     <string name="details_location">Location</string>
     <string name="details_unknown">Unknown</string>
+
+    <!-- ============================ Navigation fallback ============================ -->
+    <string name="nav_invalid_title">This screen couldn\'t be opened.</string>
+    <string name="nav_invalid_back">Go back</string>
 </resources>

@@ -242,6 +242,11 @@ private fun UnavailableCard() {
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            Text(
+                text = stringResource(R.string.onboarding_telegram_not_connected_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

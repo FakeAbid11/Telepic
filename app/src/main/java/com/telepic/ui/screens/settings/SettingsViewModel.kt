@@ -58,9 +58,18 @@ class SettingsViewModel(
     private val _folders = MutableStateFlow<List<Album>>(emptyList())
     val folders: StateFlow<List<Album>> = _folders.asStateFlow()
 
+    /** False until [loadFolders] finishes, so the picker shows loading — not a false "empty". */
+    private val _foldersLoaded = MutableStateFlow(true)
+    val foldersLoaded: StateFlow<Boolean> = _foldersLoaded.asStateFlow()
+
     fun loadFolders() {
+        _foldersLoaded.value = false
         viewModelScope.launch {
-            _folders.value = albumRepository?.albums().orEmpty()
+            try {
+                _folders.value = albumRepository?.albums().orEmpty()
+            } finally {
+                _foldersLoaded.value = true
+            }
         }
     }
 

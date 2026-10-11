@@ -238,7 +238,9 @@ private fun CloudTile(
         is CloudPreviewState.Failed -> stringResource(R.string.cloud_preview_failed)
         else -> null
     }
-    LaunchedEffect(media.messageId, previewState) {
+    // Keyed on the full remote identity: the same messageId can exist in another chat, and a
+    // preview-state change must not re-fire a load for an item that already resolved.
+    LaunchedEffect(media.chatId, media.messageId, previewState) {
         if (previewState == null) onLoadPreview()
     }
     Box(
@@ -281,9 +283,11 @@ private fun CloudTile(
 
         when (media.mediaType) {
             CloudMediaType.VIDEO -> {
+                // contentDescription = null: the parent tile already announces the merged
+                // "Video" label, so a second description here made TalkBack say it twice.
                 Icon(
                     imageVector = Icons.Outlined.PlayArrow,
-                    contentDescription = stringResource(R.string.cloud_media_video),
+                    contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier
                         .align(Alignment.BottomStart)

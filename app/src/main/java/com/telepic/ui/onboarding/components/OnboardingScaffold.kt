@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -60,7 +61,9 @@ fun OnboardingScaffold(
     ) {
         // Onboarding renders outside the main Scaffold, so it owns its insets: the progress header
         // clears the status bar and the action row clears the navigation bar (edge-to-edge, §Android 15).
-        Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+        // imePadding lifts the content (and the primary/secondary actions) above the keyboard so
+        // Telegram-step buttons are never covered while typing a phone number, code or password.
+        Column(modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

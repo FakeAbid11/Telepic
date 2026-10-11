@@ -199,7 +199,7 @@ class PhotosViewModelTest {
         assertEquals(setOf(1L, 2L), coordinator.bulk.first().map { it.id }.toSet())
         // Selection is cleared and a queued-count is surfaced for feedback.
         assertTrue(vm.selectedItems.value.isEmpty())
-        assertEquals(2, vm.selectionMessage.value?.queued)
+        assertEquals(2, vm.selectionReport.value?.summary?.queued)
     }
 
     @Test
@@ -210,7 +210,7 @@ class PhotosViewModelTest {
         runCurrent()
         // Still selected (nothing enqueued), no crash, no message.
         assertEquals(setOf(1L), vm.selectedItems.value.keys)
-        assertEquals(null, vm.selectionMessage.value)
+        assertEquals(null, vm.selectionReport.value)
     }
 
     @Test

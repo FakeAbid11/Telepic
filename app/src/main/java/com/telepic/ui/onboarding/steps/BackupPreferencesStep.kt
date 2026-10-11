@@ -15,7 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -47,9 +47,11 @@ fun BackupPreferencesStep(
     onNeedFolders: () -> Unit,
     onPickFolders: (Set<Long>) -> Unit,
     modifier: Modifier = Modifier,
+    foldersLoaded: Boolean = true,
 ) {
     val spacing = TelepicTokens.spacing
-    var showPicker by remember { mutableStateOf(false) }
+    // Survives rotation: closing the picker on recreation read as a lost selection.
+    var showPicker by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -109,6 +111,7 @@ fun BackupPreferencesStep(
         FolderPickerDialog(
             folders = folders,
             initiallySelected = selectedBucketIds,
+            loading = !foldersLoaded,
             onConfirm = { ids ->
                 showPicker = false
                 onPickFolders(ids)

@@ -49,11 +49,22 @@ class MapViewModel(
         locations.map { it.size }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    /**
+     * Bounded rescan of the EXIF location cache. Single-flight: a second call while one is running
+     * is ignored, so concurrent refreshes can never race [_isScanning] (the first finisher used to
+     * clear the flag while a second scan was still going, flashing the empty state). A scan failure
+     * — e.g. permission revoked mid-run — is contained here instead of escaping into the
+     * ViewModelScope and crashing the app; the already-known locations stay on screen.
+     */
     fun refresh() {
+        if (_isScanning.value) return
         viewModelScope.launch {
             _isScanning.value = true
             try {
                 mapLocationRepository.rescan()
+            } catch (_: Exception) {
+                // Deliberately not rethrown: the map keeps whatever it already has, and the
+                // empty state remains an honest "no locations known", never a crash.
             } finally {
                 _isScanning.value = false
             }

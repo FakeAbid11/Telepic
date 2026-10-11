@@ -6,12 +6,12 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupStatusRepository
-import com.telepic.data.backup.BulkBackupSummary
 import com.telepic.data.media.AlbumRepository
 import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
+import com.telepic.ui.components.BulkBackupReport
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -57,9 +57,14 @@ class AlbumContentsViewModel(
     private val _selected = MutableStateFlow<Map<Long, LocalMedia>>(emptyMap())
     val selectedItems: StateFlow<Map<Long, LocalMedia>> = _selected.asStateFlow()
 
-    /** Transient bulk-backup feedback for a snackbar; null when nothing to report. */
-    private val _selectionMessage = MutableStateFlow<BulkBackupSummary?>(null)
-    val selectionMessage: StateFlow<BulkBackupSummary?> = _selectionMessage.asStateFlow()
+    /** Transient bulk-backup feedback for the message bar; null when nothing to report. The report
+     * carries a unique id so an identical summary still re-announces instead of being conflated. */
+    private val _selectionReport = MutableStateFlow<BulkBackupReport?>(null)
+    val selectionReport: StateFlow<BulkBackupReport?> = _selectionReport.asStateFlow()
+
+    /** True while [backupSelected] is hashing/enqueueing — the action bar shows a spinner. */
+    private val _isBackingUp = MutableStateFlow(false)
+    val isBackingUp: StateFlow<Boolean> = _isBackingUp.asStateFlow()
 
     /** Long-press entry: begin a selection containing this item (idempotent if already selecting). */
     fun beginSelection(media: LocalMedia) {
@@ -82,19 +87,26 @@ class AlbumContentsViewModel(
     /**
      * Back up every selected photo through the existing engine (recognition + dedup + queue + schedule).
      * The coordinator recognizes already-backed-up items and skips them, so the count reflects genuine
-     * new work, never a fabricated success.
+     * new work, never a fabricated success. Re-entry while a run is in flight is ignored.
      */
     fun backupSelected() {
         val coordinator = backupCoordinator ?: return
         val items = _selected.value.values.toList()
         if (items.isEmpty()) return
+        if (_isBackingUp.value) return
+        _isBackingUp.value = true
         viewModelScope.launch {
-            _selectionMessage.value = coordinator.backupAll(items)
-            clearSelection()
+            try {
+                val summary = coordinator.backupAll(items)
+                _selectionReport.value = BulkBackupReport(summary, System.nanoTime())
+                clearSelection()
+            } finally {
+                _isBackingUp.value = false
+            }
         }
     }
 
     fun consumeSelectionMessage() {
-        _selectionMessage.value = null
+        _selectionReport.value = null
     }
 }

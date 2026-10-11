@@ -12,10 +12,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -104,6 +108,15 @@ fun ViewerScreen(
         }
     }
 
+    // The Details sheet survives process death via rememberSaveable; if it re-opens with no
+    // details loaded (restored instance, or a swipe to a new item while the sheet was open),
+    // load them instead of spinning forever.
+    LaunchedEffect(showDetails, state.source) {
+        if (showDetails && isLocalReady && details == null) {
+            viewModel.loadDetails()
+        }
+    }
+
     Surface(modifier = modifier.fillMaxSize(), color = TelepicTokens.colors.viewerBackdrop) {
         Box(modifier = Modifier.fillMaxSize()) {
             when (state.status) {
@@ -150,7 +163,13 @@ fun ViewerScreen(
                 }
             } else if (isCloudReady) {
                 // A lone cloud item has no nav bar; offer Save-to-device on its own.
-                AnimatedVisibility(visible = controlsVisible, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = TelepicTokens.spacing.md)) {
+                AnimatedVisibility(
+                    visible = controlsVisible,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .padding(bottom = TelepicTokens.spacing.md),
+                ) {
                     RestoreAction(onRestore = viewModel::restoreToLocal, restore = restore)
                 }
             }
@@ -220,13 +239,17 @@ private fun ViewerContent(
         animationSpec = if (dragging) snap() else spring(),
         label = "viewerSwipe",
     )
-    AsyncImage(
-        model = model,
-        contentDescription = stringResource(R.string.viewer_content_description),
-        contentScale = ContentScale.Fit,
-        alignment = Alignment.Center,
-        modifier = Modifier
-            .fillMaxSize()
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // Shown behind the image while a (possibly slow) cloud preview or local decode loads —
+        // the letterboxed backdrop otherwise read as a dead black screen.
+        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        AsyncImage(
+            model = model,
+            contentDescription = stringResource(R.string.viewer_content_description),
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
             .pointerInput(state.source) {
                 // One gesture pass: two fingers pinch/pan when zoomed, a single-finger horizontal
                 // drag swipes to the adjacent item (only while unzoomed). Taps stay on their own
@@ -297,10 +320,13 @@ private fun ViewerContent(
                             previous = state.previous,
                             next = state.next,
                         )
+                        // Always release the drag offset: a committed swap navigates anyway (and
+                        // swaps the remembered offset), while a rejected or under-threshold drag
+                        // springs back to rest instead of freezing the image sideways.
+                        swipeOffsetX = 0f
                         if (target != null) {
                             // Navigating swaps the remember(state.source) offset anyway; the swap is
                             // immediate, identical to the arrow buttons' path through ViewModel.open.
-                            swipeOffsetX = 0f
                             onNavigate(target)
                         }
                     }
@@ -319,7 +345,8 @@ private fun ViewerContent(
                 translationX = zoom.offsetX + swipeOffset,
                 translationY = zoom.offsetY,
             ),
-    )
+        )
+    }
 }
 
 @Composable
@@ -368,6 +395,7 @@ private fun ViewerTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
             .background(chromeScrim)
             .padding(horizontal = spacing.xs, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
@@ -442,6 +470,7 @@ private fun ViewerBottomBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
             .background(chromeScrim)
             .padding(vertical = spacing.sm),
         horizontalArrangement = Arrangement.SpaceBetween,

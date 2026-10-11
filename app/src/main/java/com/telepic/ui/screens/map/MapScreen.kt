@@ -205,6 +205,8 @@ private fun OsmMap(
                 when (pin) {
                     is MapClusterer.MapPin.Single -> {
                         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        // TalkBack parity with the photo grids: pins are focusable and labelled.
+                        marker.contentDescription = mapView.context.getString(R.string.map_marker_description)
                         marker.setOnMarkerClickListener { _, _ ->
                             onOpenMedia(pin.mediaId)
                             true
@@ -217,6 +219,8 @@ private fun OsmMap(
                             MapPinBadge.clusterDrawable(mapView.context, pin.size, clusterFill),
                         )
                         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        marker.contentDescription =
+                            mapView.context.getString(R.string.map_cluster_description, pin.size)
                         marker.setOnMarkerClickListener { _, _ ->
                             // Center on the cluster, then zoom in — the recluster follows via the
                             // zoom listener; no zoom level is invented here.

@@ -1,6 +1,7 @@
 package com.telepic.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -95,13 +96,19 @@ fun TelepicApp(
             }
         },
     ) { innerPadding ->
+        // The Viewer is immersive: its black backdrop and media draw edge-to-edge behind the
+        // system bars (chrome pads itself with the insets), so it must not receive the Scaffold's
+        // content padding — that padding is what used to leave a light window-background strip
+        // above the full-screen media. Every other route keeps the inset padding.
+        val navPadding =
+            if (route?.startsWith("viewer/") == true) PaddingValues(0) else innerPadding
         TelepicNavHost(
             navController = navController,
             container = container,
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
             modifier = Modifier
-                .padding(innerPadding)
+                .padding(navPadding)
                 .fillMaxSize(),
         )
     }

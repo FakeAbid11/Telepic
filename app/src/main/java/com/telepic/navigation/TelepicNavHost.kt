@@ -1,8 +1,18 @@
 package com.telepic.navigation
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -12,6 +22,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.telepic.R
 import com.telepic.di.AppContainer
 import com.telepic.settings.ThemeMode
 import com.telepic.ui.screens.albums.AlbumContentsScreen
@@ -104,7 +115,11 @@ fun TelepicNavHost(
             arguments = listOf(navArgument(OrganizationRoute.ARG_KIND) { type = NavType.StringType }),
         ) { backStackEntry ->
             val kind = OrganizationRoute.kindOf(backStackEntry.arguments?.getString(OrganizationRoute.ARG_KIND))
-                ?: return@composable
+            if (kind == null) {
+                // Never a silent blank screen: an unparseable arg degrades to an honest fallback.
+                InvalidRouteFallback(onBack = { navController.popBackStack() })
+                return@composable
+            }
             val organizationFactory = remember(container, kind) {
                 viewModelFactory {
                     initializer {
@@ -131,7 +146,11 @@ fun TelepicNavHost(
                 navArgument(AlbumRoute.ARG_TITLE) { type = NavType.StringType },
             ),
         ) { backStackEntry ->
-            val bucketId = backStackEntry.arguments?.getLong(AlbumRoute.ARG_BUCKET_ID) ?: return@composable
+            val bucketId = backStackEntry.arguments?.getLong(AlbumRoute.ARG_BUCKET_ID)
+            if (bucketId == null) {
+                InvalidRouteFallback(onBack = { navController.popBackStack() })
+                return@composable
+            }
             val title = backStackEntry.arguments?.getString(AlbumRoute.ARG_TITLE).orEmpty()
             val contentsFactory = remember(container, bucketId, title) {
                 viewModelFactory {
@@ -248,8 +267,12 @@ fun TelepicNavHost(
                 navArgument(ViewerRoute.ARG_MESSAGE_ID) { type = NavType.LongType },
             ),
         ) { backStackEntry ->
-            val chatId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_CHAT_ID) ?: return@composable
-            val messageId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_MESSAGE_ID) ?: return@composable
+            val chatId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_CHAT_ID)
+            val messageId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_MESSAGE_ID)
+            if (chatId == null || messageId == null) {
+                InvalidRouteFallback(onBack = { navController.popBackStack() })
+                return@composable
+            }
             val viewerFactory = remember(container, chatId, messageId) {
                 viewModelFactory {
                     initializer {
@@ -264,6 +287,28 @@ fun TelepicNavHost(
             }
             val viewerViewModel: ViewerViewModel = viewModel(factory = viewerFactory)
             ViewerScreen(viewModel = viewerViewModel, onBack = { navController.popBackStack() })
+        }
+    }
+}
+
+/**
+ * Shown when a route's arguments fail to parse: an honest message plus a way out, never a
+ * silent blank screen that strands the user.
+ */
+@Composable
+private fun InvalidRouteFallback(onBack: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.nav_invalid_title),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Button(onClick = onBack) {
+                Text(stringResource(R.string.nav_invalid_back))
+            }
         }
     }
 }

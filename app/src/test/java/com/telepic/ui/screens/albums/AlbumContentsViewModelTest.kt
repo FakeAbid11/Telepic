@@ -136,7 +136,7 @@ class AlbumContentsViewModelTest {
         assertEquals(1, coordinator.bulk.size)
         assertEquals(setOf(1L, 2L), coordinator.bulk.first().map { it.id }.toSet())
         assertTrue(vm.selectedItems.value.isEmpty())
-        assertEquals(2, vm.selectionMessage.value?.queued)
+        assertEquals(2, vm.selectionReport.value?.summary?.queued)
     }
 
     @Test
@@ -146,6 +146,6 @@ class AlbumContentsViewModelTest {
         vm.backupSelected()
         runCurrent()
         assertEquals(setOf(1L), vm.selectedItems.value.keys)
-        assertEquals(null, vm.selectionMessage.value)
+        assertEquals(null, vm.selectionReport.value)
     }
 }

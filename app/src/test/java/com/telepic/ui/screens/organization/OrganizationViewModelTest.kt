@@ -166,12 +166,46 @@ class OrganizationViewModelTest {
     }
 
     @Test
-    fun `requestDeleteForever delegates to the deleter seam`() = runTest {
+    fun `requestDeleteForever delegates to the deleter seam and clears the busy state`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val deleter = FakeDeleter(DeleteRequest.Failed)
         val vm = OrganizationViewModel(OrganizationKind.TRASH, FakeRepo(), FakeLookup(), deleter)
-        val outcome = vm.requestDeleteForever(media(7L))
-        assertEquals(DeleteRequest.Failed, outcome)
+        var consentRequested = false
+        vm.requestDeleteForever(media(7L)) { consentRequested = true }
+        runCurrent()
+        // The Failed outcome never needs consent, so the callback must not have fired…
         assertEquals(7L, deleter.requested?.id)
+        org.junit.Assert.assertFalse(consentRequested)
+        // …and the busy state is cleared with an honest failure message.
+        assertNull(vm.deletingId.value)
+        assertEquals(OrgMessage.DeleteFailed, vm.message.value)
+    }
+
+    @Test
+    fun `a direct delete outcome forgets the item and clears the busy state`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo()
+        val deleter = FakeDeleter(DeleteRequest.Deleted)
+        val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FakeLookup(), deleter)
+        vm.requestDeleteForever(media(8L)) { org.junit.Assert.fail("Deleted outcome needs no consent") }
+        runCurrent()
+        assertTrue(repo.deletedFromStore.contains(8L))
+        assertTrue(repo.removed.contains(8L))
+        assertNull(vm.deletingId.value)
+    }
+
+    @Test
+    fun `finishConsent forgets the item only on a consented success`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo()
+        val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FakeLookup(), FakeDeleter(DeleteRequest.Failed))
+        // A cancelled consent: nothing is forgotten, and the screen is told not to clear selection.
+        org.junit.Assert.assertFalse(vm.finishConsent(8L, success = false))
+        assertTrue(repo.removed.isEmpty())
+        // A consented success forgets the item.
+        org.junit.Assert.assertTrue(vm.finishConsent(9L, success = true))
+        runCurrent()
+        assertTrue(repo.removed.contains(9L))
+        assertNull(vm.deletingId.value)
     }
 }

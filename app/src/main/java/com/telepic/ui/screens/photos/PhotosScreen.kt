@@ -79,7 +79,8 @@ fun PhotosScreen(
     val backupStates by viewModel.backupStates.collectAsStateWithLifecycle()
     val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
     val selectionActive = selectedItems.isNotEmpty()
-    val selectionMessage by viewModel.selectionMessage.collectAsStateWithLifecycle()
+    val selectionReport by viewModel.selectionReport.collectAsStateWithLifecycle()
+    val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
 
     // The permission controller above is the single source of truth for permission state; the VM
     // deliberately does not mirror it.
@@ -156,25 +157,30 @@ fun PhotosScreen(
                 }
             }
 
-            // Contextual bulk-action bar for selection mode (§15). "Back up" routes through the existing
-            // engine (recognition + dedup + queue + schedule) — never a parallel uploader.
-            if (selectionActive) {
-                SelectionActionBar(
-                    canBackup = selectedItems.isNotEmpty(),
-                    onBackup = viewModel::backupSelected,
-                    onCancel = viewModel::clearSelection,
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
-            }
-
-            // Transient feedback after a bulk enqueue; auto-cleared. Honest split of new work vs items
-            // the engine recognized as already backed up / in progress (never a fabricated upload claim).
-            selectionMessage?.let { summary ->
-                TransientMessageBar(
-                    message = stringResource(R.string.photos_selection_result, summary.queued, summary.alreadyCovered),
-                    onDismiss = viewModel::consumeSelectionMessage,
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
+            // Contextual bulk-action bar for selection mode (§15), stacked under any transient
+            // feedback so the two BottomCenter surfaces never draw on top of each other. "Back up"
+            // routes through the existing engine (recognition + dedup + queue + schedule).
+            Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+                // Transient feedback after a bulk enqueue; auto-cleared. Honest split of new work vs
+                // items the engine recognized as already backed up / in progress.
+                selectionReport?.let { report ->
+                    TransientMessageBar(
+                        message = stringResource(
+                            R.string.photos_selection_result,
+                            report.summary.queued,
+                            report.summary.alreadyCovered,
+                        ),
+                        onDismiss = viewModel::consumeSelectionMessage,
+                    )
+                }
+                if (selectionActive) {
+                    SelectionActionBar(
+                        canBackup = selectedItems.isNotEmpty(),
+                        busy = isBackingUp,
+                        onBackup = viewModel::backupSelected,
+                        onCancel = viewModel::clearSelection,
+                    )
+                }
             }
         }
     }
@@ -240,8 +246,9 @@ private fun MediaRegion(
             )
         }
 
-        // A refresh failure keeps loaded photos and offers a retry (§48).
-        if (refreshFailed && hasContent) {
+        // A refresh failure keeps loaded photos and offers a retry (§48). Suppressed while a
+        // selection is active so it never stacks under the selection action bar.
+        if (refreshFailed && hasContent && !selectionActive) {
             RefreshErrorBanner(
                 onRetry = { paging.retry() },
                 modifier = Modifier

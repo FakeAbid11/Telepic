@@ -2,6 +2,7 @@ package com.telepic.ui.onboarding.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -9,13 +10,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,8 +46,15 @@ fun FolderPickerDialog(
     initiallySelected: Set<Long>,
     onConfirm: (Set<Long>) -> Unit,
     onDismiss: () -> Unit,
+    loading: Boolean = false,
 ) {
-    var selected by remember { mutableStateOf(initiallySelected) }
+    // Rotation-surviving: the in-progress selection is user input, not seed data.
+    var selected by rememberSaveable(
+        stateSaver = listSaver(
+            save = { it.toList() },
+            restore = { it.toSet() },
+        ),
+    ) { mutableStateOf(initiallySelected) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -55,45 +65,56 @@ fun FolderPickerDialog(
             )
         },
         text = {
-            if (folders.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.onboarding_folder_picker_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.testTag(TAG_FOLDER_PICKER_EMPTY),
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(folders, key = { it.bucketId }) { album ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selected = if (album.bucketId in selected) {
-                                        selected - album.bucketId
-                                    } else {
-                                        selected + album.bucketId
+            when {
+                // While the bucket query is still in flight, show loading — not the empty text,
+                // which would blame permissions for a list that simply hasn't arrived yet.
+                loading -> Box(
+                    modifier = Modifier.fillMaxWidth().padding(TelepicTokens.spacing.lg),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+                folders.isEmpty() -> {
+                    Text(
+                        text = stringResource(R.string.onboarding_folder_picker_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag(TAG_FOLDER_PICKER_EMPTY),
+                    )
+                }
+                else -> {
+                    LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                        items(folders, key = { it.bucketId }) { album ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selected = if (album.bucketId in selected) {
+                                            selected - album.bucketId
+                                        } else {
+                                            selected + album.bucketId
+                                        }
                                     }
-                                }
-                                .padding(vertical = TelepicTokens.spacing.xs),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.sm),
-                        ) {
-                            Checkbox(
-                                checked = album.bucketId in selected,
-                                onCheckedChange = { checked ->
-                                    selected = if (checked) selected + album.bucketId else selected - album.bucketId
-                                },
-                            )
-                            Text(
-                                text = album.title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = stringResource(R.string.albums_item_count, album.count),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                                    .padding(vertical = TelepicTokens.spacing.xs),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.sm),
+                            ) {
+                                Checkbox(
+                                    checked = album.bucketId in selected,
+                                    onCheckedChange = { checked ->
+                                        selected = if (checked) selected + album.bucketId else selected - album.bucketId
+                                    },
+                                )
+                                Text(
+                                    text = album.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    text = stringResource(R.string.albums_item_count, album.count),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }

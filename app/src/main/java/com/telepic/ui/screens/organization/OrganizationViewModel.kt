@@ -39,6 +39,10 @@ class OrganizationViewModel(
     private val _message = MutableStateFlow<OrgMessage?>(null)
     val message: StateFlow<OrgMessage?> = _message.asStateFlow()
 
+    /** The id of a permanent delete currently in flight, or null. Drives the action row's busy state. */
+    private val _deletingId = MutableStateFlow<Long?>(null)
+    val deletingId: StateFlow<Long?> = _deletingId.asStateFlow()
+
     private val idsFlow: Flow<Set<Long>> = when (kind) {
         OrganizationKind.FAVORITES -> organizationRepository.favoriteIds
         OrganizationKind.ARCHIVE -> organizationRepository.archivedIds
@@ -59,8 +63,39 @@ class OrganizationViewModel(
         }
     }
 
-    /** Ask to permanently delete a trashed file. Returns the outcome the UI must act on. */
-    suspend fun requestDeleteForever(media: LocalMedia): DeleteRequest = deleter.requestDelete(media)
+    /**
+     * Request a permanent delete for [media] in [viewModelScope]: the delete work must never be
+     * cancelled by the screen leaving composition (a rememberCoroutineScope would do exactly that).
+     * [onNeedsConsent] hands the system intent-sender to the screen, which owns the Activity result
+     * contract and resolves it back through [finishConsent].
+     */
+    fun requestDeleteForever(media: LocalMedia, onNeedsConsent: (android.content.IntentSender) -> Unit) {
+        if (_deletingId.value != null) return
+        _deletingId.value = media.id
+        viewModelScope.launch {
+            when (val outcome = deleter.requestDelete(media)) {
+                is DeleteRequest.NeedsConsent -> onNeedsConsent(outcome.intentSender)
+                DeleteRequest.Deleted -> {
+                    onDeleteConfirmed(media.id)
+                    _deletingId.value = null
+                }
+                DeleteRequest.Failed -> {
+                    reportDeleteFailed()
+                    _deletingId.value = null
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolve the consent contract: clears the busy state and, only on a consented success,
+     * forgets the item. Returns whether the delete succeeded so the screen can clear selection.
+     */
+    fun finishConsent(id: Long, success: Boolean): Boolean {
+        _deletingId.value = null
+        if (success) onDeleteConfirmed(id)
+        return success
+    }
 
     /** Called only after a consented delete reports success: forget the item entirely. */
     fun onDeleteConfirmed(id: Long) = viewModelScope.launch {

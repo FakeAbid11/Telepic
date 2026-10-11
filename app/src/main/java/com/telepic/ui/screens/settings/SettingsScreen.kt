@@ -17,7 +17,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,15 +67,17 @@ fun SettingsScreen(
     val spacing = TelepicTokens.spacing
     val context = LocalContext.current
     val notifications = rememberNotificationPermissionState()
-    var showThemeDialog by remember { mutableStateOf(false) }
-    var showBackupDialog by remember { mutableStateOf(false) }
-    var showSignOutConfirm by remember { mutableStateOf(false) }
-    var showFolderPicker by remember { mutableStateOf(false) }
+    // Dialog visibility survives rotation: dismissing every dialog on recreation read as a bug.
+    var showThemeDialog by rememberSaveable { mutableStateOf(false) }
+    var showBackupDialog by rememberSaveable { mutableStateOf(false) }
+    var showSignOutConfirm by rememberSaveable { mutableStateOf(false) }
+    var showFolderPicker by rememberSaveable { mutableStateOf(false) }
 
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val preference by viewModel.backupPreference.collectAsStateWithLifecycle()
     val bucketIds by viewModel.backupBucketIds.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val foldersLoaded by viewModel.foldersLoaded.collectAsStateWithLifecycle()
     val storage by viewModel.storageSummary.collectAsStateWithLifecycle()
 
     val accountSummary = when (val state = authState) {
@@ -210,6 +212,7 @@ fun SettingsScreen(
         FolderPickerDialog(
             folders = folders,
             initiallySelected = bucketIds,
+            loading = !foldersLoaded,
             onConfirm = { ids ->
                 showFolderPicker = false
                 viewModel.setBackupChoice(BackupPreference.SELECT_FOLDER, ids)

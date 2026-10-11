@@ -138,7 +138,10 @@ fun MediaGrid(
 ) {
     val spacing = TelepicTokens.spacing
     val scope = rememberCoroutineScope()
-    val today = remember { LocalDate.now() }
+    // Read fresh on every (re)composition: a process-lifetime remember kept labelling "Today"
+    // for a session that crossed midnight. LocalDate.now() is cheap (no I/O), so staleness
+    // only lasts until the next recomposition instead of forever.
+    val today = LocalDate.now()
 
     // Rail anchors grow incrementally as pages append: only items past the last examined index are
     // scanned per change, instead of re-walking the whole loaded list. The head cell's key carries the
