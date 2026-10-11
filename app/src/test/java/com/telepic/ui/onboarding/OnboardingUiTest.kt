@@ -230,16 +230,22 @@ class OnboardingUiTest {
             .assertCountEquals(1)
     }
 
-    /** Renders the real six-step flow with the honest, backend-unavailable Telegram fallback. */
+    /**
+     * Renders the real six-step flow with the honest, backend-unavailable Telegram fallback, and
+     * hosts the backup choice the way a real host would. The selection has to round-trip: with a
+     * no-op callback the preference never becomes non-null, Continue stays disabled on the backup
+     * step, and the Ready step is unreachable.
+     */
     private fun renderOnboarding() {
         composeRule.setContent {
             TelepicTheme(darkTheme = true) {
+                var backup by remember { mutableStateOf<BackupPreference?>(null) }
                 OnboardingScreen(
-                    backupPreference = null,
+                    backupPreference = backup,
                     backupBucketIds = emptySet(),
                     folders = emptyList(),
                     telegramController = FakeTelegramController(),
-                    onBackupPreferenceChange = {},
+                    onBackupPreferenceChange = { backup = it },
                     onNeedFolders = {},
                     onPickFolders = {},
                     onComplete = {},
