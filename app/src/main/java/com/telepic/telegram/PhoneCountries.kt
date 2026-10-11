@@ -92,13 +92,14 @@ object PhoneCountries {
 }
 
 /**
- * E.164-ify [input] for TDLib: an explicit `+`-prefixed international number is passed through
- * untouched; anything else is combined with [dialCode] after dropping non-digits and a leading
- * trunk zero (the `0` in `0300 123 4567` is a national prefix, not part of the subscriber number).
+ * E.164-ify [input] for TDLib: an explicit `+`-prefixed international number keeps its country
+ * code (only separators are stripped); anything else is combined with [dialCode] after dropping
+ * non-digits and a leading trunk zero (the `0` in `0300 123 4567` is a national prefix, not part
+ * of the subscriber number).
  */
 fun normalizeE164(input: String, dialCode: String): String {
     val trimmed = input.trim()
-    if (trimmed.startsWith("+")) return trimmed
+    if (trimmed.startsWith("+")) return "+" + trimmed.drop(1).filter { it.isDigit() }
     val national = trimmed.filter { it.isDigit() }.trimStart('0')
     return if (national.isEmpty()) trimmed else dialCode + national
 }
