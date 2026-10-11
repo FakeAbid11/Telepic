@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.backup.BackupCoordinator
+import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.AlbumRepository
+import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.media.Album
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingRepository
@@ -42,11 +44,24 @@ class SettingsViewModel(
     private val onboardingRepository: OnboardingRepository,
     private val albumRepository: AlbumRepository? = null,
     private val backupCoordinator: BackupCoordinator? = null,
+    private val cloudRepository: CloudRepository? = null,
     appContext: Context,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     val authState: StateFlow<TelegramAuthState> = telegramAuthController.state
+
+    /**
+     * Live Telegram cloud state, read straight from the Cloud layer's own flows (Settings never
+     * mirrors or re-derives it). Falls back to [CloudStatus.Initializing] when no repository is
+     * supplied (tests), so the connection row is honest rather than absent.
+     */
+    val cloudStatus: StateFlow<CloudStatus> =
+        cloudRepository?.status ?: MutableStateFlow<CloudStatus>(CloudStatus.Initializing)
+
+    /** The resolved Telepic Backup channel title, or null until it is set up. */
+    val backupChannelTitle: StateFlow<String?> =
+        cloudRepository?.destinationTitle ?: MutableStateFlow<String?>(null)
 
     val backupPreference: StateFlow<BackupPreference?> =
         onboardingRepository.backupPreference.stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -84,6 +99,20 @@ class SettingsViewModel(
 
     fun logout() {
         telegramAuthController.logout()
+    }
+
+    /**
+     * Manual "back up now": re-runs the same discovery+enqueue path the coordinator uses when
+     * backup is enabled, so new media is recognized and queued immediately instead of waiting for
+     * the next periodic tick. Runs on the IO dispatcher — a library scan must never touch the main
+     * thread. It is a no-op when no automatic backup option is configured (the coordinator gates
+     * NOT_NOW itself), which is why the UI disables the row in that case rather than faking a run.
+     */
+    fun backupNow() {
+        val coordinator = backupCoordinator ?: return
+        viewModelScope.launch {
+            withContext(ioDispatcher) { coordinator.syncFromPreference() }
+        }
     }
 
     // Paths mirror the real owners: TDLib session under noBackupFilesDir/tdlib

@@ -144,6 +144,17 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `manual backup now re-runs the coordinator discovery path`() = runTest {
+        val coordinator = RecordingCoordinator()
+        val vm = viewModel(coordinator = coordinator)
+
+        vm.backupNow()
+        runCurrent()
+
+        assertEquals(1, coordinator.syncCalls)
+    }
+
+    @Test
     fun `folder list loads from the album repository on demand`() = runTest {
         val album = Album(
             bucketId = 8L,

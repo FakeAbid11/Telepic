@@ -202,6 +202,7 @@ fun TelepicNavHost(
                             onboardingRepository = container.onboardingRepository,
                             albumRepository = container.albumRepository,
                             backupCoordinator = container.backupCoordinator,
+                            cloudRepository = container.cloudRepository,
                             appContext = checkNotNull(
                                 this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY],
                             ),

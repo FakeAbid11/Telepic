@@ -51,6 +51,14 @@
     <string name="settings_section_account">Account</string>
     <string name="settings_account_telegram">Telegram account</string>
     <string name="settings_account_status_disconnected">Not connected</string>
+    <string name="settings_account_connection">Connection</string>
+    <string name="settings_account_backup_channel">Backup channel</string>
+    <string name="settings_backup_channel_none">Not set up yet</string>
+    <string name="settings_connection_connecting">Connecting…</string>
+    <string name="settings_connection_ready">Connected</string>
+    <string name="settings_connection_offline">Offline</string>
+    <string name="settings_connection_no_channel">Backup channel not set up</string>
+    <string name="settings_connection_problem">Connection problem</string>
     <string name="settings_account_sign_out">Sign out of Telegram</string>
     <string name="settings_sign_out_title">Sign out?</string>
     <string name="settings_sign_out_body">Telepic will disconnect your Telegram account. Backups stop until you sign in again during setup or after reinstalling.</string>
@@ -60,6 +68,9 @@
     <string name="settings_backup_pref_unset">Not chosen yet</string>
     <string name="settings_backup_pref_folders">%1$d folders selected</string>
     <string name="settings_backup_preferences_dialog_title">Choose your backup</string>
+    <string name="settings_backup_now">Back up now</string>
+    <string name="settings_backup_now_summary">Scan for new photos and back them up</string>
+    <string name="settings_backup_now_unavailable">Choose a backup option first</string>
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_appearance_theme">Theme</string>
     <string name="settings_section_storage">Storage</string>

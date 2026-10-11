@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepic.BuildConfig
 import com.telepic.R
+import com.telepic.domain.cloud.CloudStatus
 import com.telepic.onboarding.BackupPreference
 import com.telepic.permissions.rememberNotificationPermissionState
 import com.telepic.settings.ThemeMode
@@ -48,6 +49,20 @@ val BackupPreference.labelRes: Int
         BackupPreference.BACKUP_ALL -> R.string.onboarding_backup_all_title
         BackupPreference.SELECT_FOLDER -> R.string.onboarding_backup_folder_title
         BackupPreference.NOT_NOW -> R.string.onboarding_backup_not_now_title
+    }
+
+/**
+ * Short, honest wording for the Account section's connection row. It reports exactly what the Cloud
+ * layer currently knows — "empty cloud" reads as connected, and a failure never reads as connected.
+ */
+private val CloudStatus.connectionSummaryRes: Int
+    get() = when (this) {
+        CloudStatus.Ready, CloudStatus.Refreshing, CloudStatus.Empty -> R.string.settings_connection_ready
+        CloudStatus.Connecting, CloudStatus.Initializing -> R.string.settings_connection_connecting
+        CloudStatus.Offline -> R.string.settings_connection_offline
+        CloudStatus.NotAuthenticated -> R.string.settings_account_status_disconnected
+        CloudStatus.DestinationMissing -> R.string.settings_connection_no_channel
+        is CloudStatus.DestinationInvalid, is CloudStatus.Failed -> R.string.settings_connection_problem
     }
 
 /**
@@ -79,6 +94,14 @@ fun SettingsScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val foldersLoaded by viewModel.foldersLoaded.collectAsStateWithLifecycle()
     val storage by viewModel.storageSummary.collectAsStateWithLifecycle()
+    val cloudStatus by viewModel.cloudStatus.collectAsStateWithLifecycle()
+    val channelTitle by viewModel.backupChannelTitle.collectAsStateWithLifecycle()
+
+    // "Back up now" only means something once an automatic option is configured. SELECT_FOLDER with
+    // no folders picked backs up nothing, so it counts as unconfigured — matching the coordinator,
+    // which treats an empty selection as the honest equivalent of NOT_NOW.
+    val backupConfigured = preference == BackupPreference.BACKUP_ALL ||
+        (preference == BackupPreference.SELECT_FOLDER && bucketIds.isNotEmpty())
 
     val accountSummary = when (val state = authState) {
         is TelegramAuthState.Authorized -> state.user.displayName
@@ -106,6 +129,14 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_account_telegram),
                     summary = accountSummary,
                 )
+                SettingsRow(
+                    title = stringResource(R.string.settings_account_connection),
+                    summary = stringResource(cloudStatus.connectionSummaryRes),
+                )
+                SettingsRow(
+                    title = stringResource(R.string.settings_account_backup_channel),
+                    summary = channelTitle ?: stringResource(R.string.settings_backup_channel_none),
+                )
                 if (authState is TelegramAuthState.Authorized) {
                     SettingsRow(
                         title = stringResource(R.string.settings_account_sign_out),
@@ -127,6 +158,16 @@ fun SettingsScreen(
                     summary = backupSummary,
                     enabled = true,
                     onClick = { showBackupDialog = true },
+                )
+                SettingsRow(
+                    title = stringResource(R.string.settings_backup_now),
+                    summary = if (backupConfigured) {
+                        stringResource(R.string.settings_backup_now_summary)
+                    } else {
+                        stringResource(R.string.settings_backup_now_unavailable)
+                    },
+                    enabled = backupConfigured,
+                    onClick = viewModel::backupNow,
                 )
             }
 
