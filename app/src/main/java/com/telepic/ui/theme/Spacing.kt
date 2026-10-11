@@ -32,6 +32,18 @@ data class TelepicSpacing(
     val gridItemRadius: Dp = 10.dp,
     /** Uniform adaptive min-size for every media tile grid (timeline, albums, collections, cloud). */
     val gridTileMinSize: Dp = 108.dp,
-)
+) {
+    /**
+     * Height of one of the Viewer's chrome bars — the bar's own vertical padding plus its 48dp
+     * content row — *excluding* the system-bar inset the bar also covers.
+     *
+     * The video surface reserves exactly this much at each end (see `VideoViewer`). media3 lays its
+     * controller out against `PlayerView`'s edges, so a window-sized `PlayerView` slid the
+     * controller's own bottom bar, its progress line and its whole-surface dim underneath the
+     * chrome. Deriving both sides from this one value is what keeps them from drifting apart: the
+     * bars build their height from [sm] and [touchTarget], and this is the same sum.
+     */
+    val chromeBarHeight: Dp get() = sm + touchTarget + sm
+}
 
 val LocalSpacing = staticCompositionLocalOf { TelepicSpacing() }

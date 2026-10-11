@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -81,6 +82,13 @@ import com.telepic.domain.media.MediaDay
 import com.telepic.navigation.MediaSource
 import com.telepic.ui.theme.TelepicTokens
 import java.io.File
+
+/**
+ * The Viewer's two chrome bars. Tagged so a test can pin their measured heights against
+ * `TelepicSpacing.chromeBarHeight` — the value the video surface reserves for them.
+ */
+internal const val TAG_VIEWER_TOP_BAR = "viewer_top_bar"
+internal const val TAG_VIEWER_BOTTOM_BAR = "viewer_bottom_bar"
 
 /**
  * The full-screen media Viewer (Phase 9) for both local and cloud items. Photos and GIFs render via
@@ -487,6 +495,7 @@ private fun ViewerTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(TAG_VIEWER_TOP_BAR)
             // Background *before* the status-bar inset, so the scrim also covers the strip behind
             // the system icons instead of stopping short and leaving the clock on bare photo.
             // The gradient holds the scrim across the band the text occupies and only fades over the
@@ -610,6 +619,7 @@ private fun ViewerBottomBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(TAG_VIEWER_BOTTOM_BAR)
             // Same treatment as the top bar: the background precedes the nav-bar inset so the scrim
             // also covers the strip behind the system bar, and the fade lives in the empty padding
             // above the controls rather than underneath them.

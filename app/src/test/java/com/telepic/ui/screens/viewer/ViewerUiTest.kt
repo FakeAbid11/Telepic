@@ -1,14 +1,21 @@
 package com.telepic.ui.screens.viewer
 
 import android.net.Uri
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.NeighborDirection
@@ -21,6 +28,7 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import com.telepic.navigation.MediaSource
 import com.telepic.ui.theme.TelepicTheme
+import com.telepic.ui.theme.TelepicTokens
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -116,5 +124,42 @@ class ViewerUiTest {
         composeRule.onNodeWithText("Archive").assertExists()
         composeRule.onNodeWithText("Move to trash").assertExists()
         composeRule.onNodeWithText("Details").assertExists()
+    }
+
+    /**
+     * `VideoViewer` insets the video surface by exactly `TelepicSpacing.chromeBarHeight` at each
+     * end, so media3's own controller — whose bottom bar, progress line and whole-surface dim are all
+     * laid out against `PlayerView`'s edges — cannot slide back underneath the chrome. The two sides
+     * are coupled by that single value, so this pins the coupling: the bars build their height from
+     * `sm` + `touchTarget` + `sm`, and the reservation is the same sum.
+     *
+     * Equality rather than a minimum, because the failure mode runs the *other* way — a bar that
+     * grows taller than the reservation is what puts media3's controls back under the chrome.
+     */
+    @Test
+    fun `the chrome bars are exactly as tall as the band the video surface reserves`() {
+        var topBarExpected = 0.dp
+        var bottomBarExpected = 0.dp
+        val vm = ViewerViewModel(
+            MediaSource.Local(5),
+            Lookup(mapOf(5L to localPhoto(5), 9L to localPhoto(9)), older = 9L),
+            NoCloud,
+        )
+        composeRule.setContent {
+            TelepicTheme {
+                val density = LocalDensity.current
+                val band = TelepicTokens.spacing.chromeBarHeight
+                // Read back the very insets the bars apply, so the expectation holds on whatever the
+                // host reports instead of hard-coding a 24dp system bar.
+                topBarExpected = with(density) { WindowInsets.statusBars.getTop(this).toDp() } + band
+                bottomBarExpected = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() } + band
+                ViewerScreen(vm, onBack = {})
+            }
+        }
+        composeRule.waitForIdle()
+
+        // `older = 9L` gives the item a neighbour, so the navigation row is the bar that renders.
+        composeRule.onNodeWithTag(TAG_VIEWER_TOP_BAR).assertHeightIsEqualTo(topBarExpected)
+        composeRule.onNodeWithTag(TAG_VIEWER_BOTTOM_BAR).assertHeightIsEqualTo(bottomBarExpected)
     }
 }

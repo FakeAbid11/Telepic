@@ -114,14 +114,34 @@ fun VideoViewer(state: ViewerUiState, onDownload: () -> Unit) {
     }
 
     val spacing = TelepicTokens.spacing
-    // Mirrors ViewerTopBar's own vertical padding plus its 48dp content row (8 + 48 + 8), so the
-    // floating control lands just *below* the bar instead of colliding with it.
-    val topBarHeight = spacing.sm + spacing.touchTarget + spacing.sm
+
+    // The video surface gets the frame the chrome leaves free — the system-bar inset plus one chrome
+    // bar at each end — instead of the window. The chrome is composed *over* this component, and on
+    // video it is always visible: ViewerContent hands videos here without wiring onRequestToggle, so
+    // no tap can dismiss it. media3 lays its controller out against PlayerView's edges, so a
+    // window-sized PlayerView slid three things under the chrome: the controller's own bottom bar
+    // (60dp — the same strip the Viewer's navigation row occupies), its progress line (the bottom of
+    // a 48dp band, 52dp up from PlayerView's bottom), and the whole-surface dim (#98000000) that
+    // fills PlayerView whenever the controller is shown. The collision was functional, not just
+    // cosmetic: media3's right-most bottom button sat exactly under the Viewer's "next" arrow, which
+    // is composed later, wins the hit test, and swallowed the taps.
+    //
+    // Reserving the band removes the intersection, keeps the dim off the chrome, and makes the
+    // aspect-fit centre coincide with the visible area. The reserved strip is indistinguishable from
+    // media3's own letterbox — the backdrop behind this component is black in both schemes.
+    //
+    // Reserved at both ends unconditionally: the bottom chrome is conditional (navigation row,
+    // otherwise a lone "Save to device" action, otherwise nothing) but the navigation row is the
+    // tallest of the three, so one reservation covers them all and the video never changes size as
+    // the user moves between items.
+    val chromeBarHeight = spacing.chromeBarHeight
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.navigationBars),
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(top = chromeBarHeight, bottom = chromeBarHeight),
     ) {
         AndroidView(
             factory = { ctx ->
@@ -138,16 +158,15 @@ fun VideoViewer(state: ViewerUiState, onDownload: () -> Unit) {
         // PlayerView exposes no mute/volume setter in media3 1.4.1, and its default controller
         // layout ships no mute button either (checked against exo_player_control_view.xml), so the
         // affordance is ours. It stays mounted whether or not the transport controls are shown.
+        //
+        // Positioned from the Box's content area, which already begins below the top bar. The button
+        // used to repeat that inset itself; the duplication is what let it drift up into the bar's
+        // Details action — composed later, so it also won the hit test and stole the taps.
         IconButton(
             onClick = { muted = !muted },
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                // Same frame as the viewer's top bar: inset the status bar, then clear the bar's own
-                // height. Pinned to the raw screen corner, this button sat inside the status bar and
-                // underneath the bar's Details action — which is composed later, so it also won the
-                // hit test and stole the taps meant for mute.
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(top = topBarHeight, end = spacing.xs)
+                .padding(end = spacing.xs)
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.45f)),
         ) {
