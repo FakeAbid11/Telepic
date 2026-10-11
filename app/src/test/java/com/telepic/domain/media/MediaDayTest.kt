@@ -56,4 +56,27 @@ class MediaDayTest {
         assertNotEquals("2023-11-14", label)
         assertEquals(label, MediaDay.label(millisOf(LocalDate.of(2023, 11, 14))))
     }
+
+    @Test
+    fun `monthDayOrFullDate compacts the current year but never drops the year of an older photo`() {
+        val now = millisOf(LocalDate.of(2026, 10, 8))
+        val thisYear = millisOf(LocalDate.of(2026, 3, 1))
+        val older = millisOf(LocalDate.of(2023, 11, 14))
+
+        // Same year as `now` → the compact month-and-day form, which by construction omits the year.
+        assertEquals(MediaDay.monthDay(thisYear), MediaDay.monthDayOrFullDate(thisYear, now))
+        // A different year → the full date, so the year is never silently lost.
+        assertEquals(MediaDay.label(older), MediaDay.monthDayOrFullDate(older, now))
+        // Asserted as a relationship, not a literal, so the test holds in any default locale.
+        assertNotEquals(MediaDay.monthDay(older), MediaDay.monthDayOrFullDate(older, now))
+    }
+
+    @Test
+    fun `the compact form is shorter than the full date so a per-item header can fit one line`() {
+        val now = millisOf(LocalDate.of(2026, 10, 8))
+        val thisYear = millisOf(LocalDate.of(2026, 9, 30))
+        assertTrue(
+            MediaDay.monthDayOrFullDate(thisYear, now).length < MediaDay.label(thisYear).length,
+        )
+    }
 }

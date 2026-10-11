@@ -1,6 +1,9 @@
 package com.telepic.ui.screens.viewer
 
 import android.net.Uri
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -90,5 +93,28 @@ class ViewerUiTest {
         val vm = ViewerViewModel(MediaSource.Local(404), Lookup(emptyMap()), NoCloud)
         composeRule.setContent { TelepicTheme { ViewerScreen(vm, onBack = {}) } }
         composeRule.onNodeWithText("This media is no longer available").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the item date is exposed as a heading so the chrome has a landmark`() {
+        val vm = ViewerViewModel(MediaSource.Local(5), Lookup(mapOf(5L to localPhoto(5))), NoCloud)
+        composeRule.setContent { TelepicTheme { ViewerScreen(vm, onBack = {}) } }
+
+        // Exactly one: the date. Asserted by key rather than by its text, which is locale-formatted.
+        composeRule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+            .assertCountEquals(1)
+    }
+
+    @Test
+    fun `archive, trash and details stay reachable behind the overflow control`() {
+        val vm = ViewerViewModel(MediaSource.Local(5), Lookup(mapOf(5L to localPhoto(5))), NoCloud)
+        composeRule.setContent { TelepicTheme { ViewerScreen(vm, onBack = {}) } }
+
+        // These three used to be their own 48dp buttons, which starved the date column. They are now
+        // menu items, so the contract worth pinning is that none of them became unreachable.
+        composeRule.onNodeWithContentDescription("More actions").performClick()
+        composeRule.onNodeWithText("Archive").assertExists()
+        composeRule.onNodeWithText("Move to trash").assertExists()
+        composeRule.onNodeWithText("Details").assertExists()
     }
 }

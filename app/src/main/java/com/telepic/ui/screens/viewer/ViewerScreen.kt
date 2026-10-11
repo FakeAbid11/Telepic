@@ -30,12 +30,15 @@ import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,13 +58,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.imageLoader
@@ -473,11 +480,28 @@ private fun ViewerTopBar(
 ) {
     val spacing = TelepicTokens.spacing
     val chromeScrim = TelepicTokens.colors.chromeScrim
+    // Read once, not per recomposition: the header must not flip between the compact and the full
+    // date form while the screen is open.
+    val nowMillis = remember { System.currentTimeMillis() }
+    var menuOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // Background *before* the status-bar inset, so the scrim also covers the strip behind
+            // the system icons instead of stopping short and leaving the clock on bare photo.
+            // The gradient holds the scrim across the band the text occupies and only fades over the
+            // row's own bottom padding — a flat fill left a hard horizontal edge across the photo,
+            // while fading under the text would drop the source label below AA contrast.
+            .background(
+                Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0f to chromeScrim,
+                        0.88f to chromeScrim,
+                        1f to Color.Transparent,
+                    ),
+                ),
+            )
             .windowInsetsPadding(WindowInsets.statusBars)
-            .background(chromeScrim)
             .padding(horizontal = spacing.xs, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -485,8 +509,19 @@ private fun ViewerTopBar(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backDesc, tint = Color.White)
         }
         Column(modifier = Modifier.padding(start = spacing.xs).weight(1f)) {
-            state.dateMillis?.let {
-                Text(text = MediaDay.label(it), style = MaterialTheme.typography.titleSmall, color = Color.White)
+            state.dateMillis?.let { dateMillis ->
+                Text(
+                    // Month-and-day within the current year, the full date otherwise — the year of an
+                    // older photo must not be silently dropped just to make the header fit.
+                    text = MediaDay.monthDayOrFullDate(dateMillis, nowMillis),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.White,
+                    // Without this the date wraps on a 360dp phone and grows the bar from 48dp to
+                    // roughly 68dp, shoving the photo down; ellipsis degrades instead of reflowing.
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { heading() },
+                )
             }
             Text(
                 text = stringResource(
@@ -495,6 +530,8 @@ private fun ViewerTopBar(
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         if (showActions) {
@@ -507,29 +544,51 @@ private fun ViewerTopBar(
                     tint = if (flags.isFavorite) TelepicTokens.colors.favoriteAmber else Color.White,
                 )
             }
-            IconButton(onClick = onToggleArchive) {
-                Icon(
-                    imageVector = Icons.Outlined.Archive,
-                    contentDescription = stringResource(
-                        if (flags.isArchived) R.string.viewer_unarchive else R.string.viewer_archive,
-                    ),
-                    tint = Color.White,
-                )
-            }
-            IconButton(onClick = onMoveToTrash) {
-                Icon(
-                    imageVector = Icons.Outlined.Delete,
-                    contentDescription = stringResource(R.string.viewer_move_to_trash),
-                    tint = Color.White,
-                )
-            }
-            onShowDetails?.let { showDetails ->
-                IconButton(onClick = showDetails) {
+            // Archive, trash and details sit behind one overflow control. As four separate 48dp
+            // buttons they left the date column only 108dp — less than a long month name needs, so
+            // the title wrapped. Favourite stays inline: it is a toggle the user reads at a glance.
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
                     Icon(
-                        imageVector = Icons.Outlined.Info,
-                        contentDescription = stringResource(R.string.viewer_details),
+                        imageVector = Icons.Outlined.MoreVert,
+                        contentDescription = stringResource(R.string.viewer_more_actions),
                         tint = Color.White,
                     )
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (flags.isArchived) R.string.viewer_unarchive
+                                    else R.string.viewer_archive,
+                                ),
+                            )
+                        },
+                        onClick = {
+                            menuOpen = false
+                            onToggleArchive()
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.viewer_move_to_trash)) },
+                        onClick = {
+                            menuOpen = false
+                            onMoveToTrash()
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                    )
+                    onShowDetails?.let { showDetails ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.viewer_details)) },
+                            onClick = {
+                                menuOpen = false
+                                showDetails()
+                            },
+                            leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
+                        )
+                    }
                 }
             }
         }
@@ -551,8 +610,19 @@ private fun ViewerBottomBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // Same treatment as the top bar: the background precedes the nav-bar inset so the scrim
+            // also covers the strip behind the system bar, and the fade lives in the empty padding
+            // above the controls rather than underneath them.
+            .background(
+                Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0f to Color.Transparent,
+                        0.30f to chromeScrim,
+                        1f to chromeScrim,
+                    ),
+                ),
+            )
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .background(chromeScrim)
             .padding(vertical = spacing.sm),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -613,7 +683,7 @@ private fun RestoreAction(onRestore: () -> Unit, restore: RestoreState) {
         )
         is RestoreState.Failed -> Text(
             text = stringResource(restore.reason.messageRes),
-            color = Color(0xFFFF8A80),
+            color = TelepicTokens.colors.mediaErrorText,
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = TelepicTokens.spacing.xs),
         )

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -112,6 +113,11 @@ fun VideoViewer(state: ViewerUiState, onDownload: () -> Unit) {
         }
     }
 
+    val spacing = TelepicTokens.spacing
+    // Mirrors ViewerTopBar's own vertical padding plus its 48dp content row (8 + 48 + 8), so the
+    // floating control lands just *below* the bar instead of colliding with it.
+    val topBarHeight = spacing.sm + spacing.touchTarget + spacing.sm
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -129,14 +135,19 @@ fun VideoViewer(state: ViewerUiState, onDownload: () -> Unit) {
             modifier = Modifier.fillMaxSize(),
         )
 
-        // PlayerView exposes no mute/volume setter in media3 1.4.1 (its built-in mute button is an
-        // XML-layout attribute, and this project has no XML layouts), so the affordance is ours. It
-        // sits above the surface so it is reachable whether or not the transport controls are shown.
+        // PlayerView exposes no mute/volume setter in media3 1.4.1, and its default controller
+        // layout ships no mute button either (checked against exo_player_control_view.xml), so the
+        // affordance is ours. It stays mounted whether or not the transport controls are shown.
         IconButton(
             onClick = { muted = !muted },
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(TelepicTokens.spacing.md)
+                // Same frame as the viewer's top bar: inset the status bar, then clear the bar's own
+                // height. Pinned to the raw screen corner, this button sat inside the status bar and
+                // underneath the bar's Details action — which is composed later, so it also won the
+                // hit test and stole the taps meant for mute.
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(top = topBarHeight, end = spacing.xs)
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.45f)),
         ) {

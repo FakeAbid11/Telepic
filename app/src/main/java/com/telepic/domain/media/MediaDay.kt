@@ -38,6 +38,16 @@ object MediaDay {
     fun monthDay(millis: Long, locale: Locale = Locale.getDefault()): String =
         toLocalDate(millis).format(DateTimeFormatter.ofPattern("MMMM d", locale))
 
+    /**
+     * The label for a *single item* header — the Viewer's top bar — as opposed to [label], which
+     * names a whole day group. Month-and-day while [millis] shares a year with [nowMillis], the full
+     * date otherwise: a compact per-item header must never silently drop the year of an older photo.
+     *
+     * [nowMillis] is a parameter rather than a clock read so the choice is deterministic in tests.
+     */
+    fun monthDayOrFullDate(millis: Long, nowMillis: Long): String =
+        if (toLocalDate(millis).year == toLocalDate(nowMillis).year) monthDay(millis) else label(millis)
+
     /** Localized weekday for the recent-week range ("Monday"). */
     fun weekday(millis: Long, locale: Locale = Locale.getDefault()): String =
         toLocalDate(millis).format(DateTimeFormatter.ofPattern("EEEE", locale))
