@@ -15,6 +15,15 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!--
+      Android 9 and below (API <= 28): publishing a restored original into the public gallery goes
+      through the legacy MediaStore, which needs write access. API 29+ uses scoped storage
+      (RELATIVE_PATH + IS_PENDING) and needs no permission, so this is capped at 29 and is never
+      requested on modern devices. Declared because minSdk is 26.
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
 
     <!--
       Phase 6 backup engine: WorkManager drives long-running uploads. The foreground service is

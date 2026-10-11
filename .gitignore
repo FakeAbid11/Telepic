@@ -25,3 +25,6 @@ secrets.properties
 .tdlib-inspect/
 .ci-scratch/
 /.kotlin/
+
+# Local agent workspace (scratch + notes) — never committed
+.workbuddy-ai/

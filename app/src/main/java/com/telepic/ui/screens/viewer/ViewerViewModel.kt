@@ -276,7 +276,7 @@ class ViewerViewModel(
             if (_uiState.value.source == requestedSource) {
                 _restore.value = when (result) {
                     is RestoreResult.Restored -> RestoreState.Restored(result.localUri)
-                    is RestoreResult.Failed -> RestoreState.Failed(result.reason.name)
+                    is RestoreResult.Failed -> RestoreState.Failed(result.reason)
                 }
             }
         }
@@ -380,5 +380,7 @@ sealed interface RestoreState {
     data object Idle : RestoreState
     data object Restoring : RestoreState
     data class Restored(val localUri: String) : RestoreState
-    data class Failed(val reasonName: String) : RestoreState
+
+    /** Carries the concrete reason so the UI can explain *why* a save failed, not just that it did. */
+    data class Failed(val reason: RestoreFailure) : RestoreState
 }

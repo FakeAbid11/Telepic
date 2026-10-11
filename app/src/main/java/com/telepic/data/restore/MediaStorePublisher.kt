@@ -5,6 +5,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import android.provider.MediaStore
 import java.io.File
 import java.io.IOException
@@ -45,6 +47,12 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
             val scope: CoroutineScope = this
             val source = File(sourcePath)
             if (!source.exists() || source.length() <= 0L) return@withContext PublishResult.Failed
+
+            // Fail honestly BEFORE inserting a row when the destination volume plainly cannot hold the
+            // file; otherwise a full disk would surface as a generic PUBLISH_FAILED and leave a stray
+            // pending row behind. Unmeasurable volumes never block the write (the provider has the
+            // final say), so this can only ever turn a certain failure into a clearer one.
+            if (!hasRoomFor(source.length())) return@withContext PublishResult.NoSpace
 
             val mime = mimeType?.takeIf { it.isNotBlank() } ?: guessMime(displayName)
                 ?: guessMime(source.name) ?: "application/octet-stream"
@@ -123,5 +131,22 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
             "mkv" -> "video/x-matroska"
             else -> null
         }
+    }
+
+    /**
+     * Best-effort free-space check on the volume published media lands on. Returns `true` when the
+     * volume cannot be measured, so an unreadable [StatFs] never blocks a write we cannot judge.
+     */
+    @Suppress("DEPRECATION")
+    private fun hasRoomFor(bytes: Long): Boolean = try {
+        val stat = StatFs(Environment.getExternalStorageDirectory().absolutePath)
+        stat.availableBytes > bytes + SPACE_HEADROOM_BYTES
+    } catch (_: Exception) {
+        true
+    }
+
+    private companion object {
+        /** Keep a little slack so the write itself is not the thing that hits the wall. */
+        const val SPACE_HEADROOM_BYTES = 1L * 1024 * 1024
     }
 }

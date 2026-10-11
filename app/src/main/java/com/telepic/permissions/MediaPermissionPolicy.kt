@@ -15,6 +15,7 @@ object MediaPermissionPolicy {
 
     // Compile-time String constants (inlined), safe to reference from unit tests.
     private const val PERM_READ_EXTERNAL_STORAGE = Manifest.permission.READ_EXTERNAL_STORAGE
+    private const val PERM_WRITE_EXTERNAL_STORAGE = Manifest.permission.WRITE_EXTERNAL_STORAGE
     private const val PERM_READ_MEDIA_IMAGES = Manifest.permission.READ_MEDIA_IMAGES
     private const val PERM_READ_MEDIA_VIDEO = Manifest.permission.READ_MEDIA_VIDEO
     private const val PERM_READ_MEDIA_VISUAL_USER_SELECTED =
@@ -26,7 +27,13 @@ object MediaPermissionPolicy {
             listOf(PERM_READ_MEDIA_IMAGES, PERM_READ_MEDIA_VIDEO, PERM_READ_MEDIA_VISUAL_USER_SELECTED)
         sdkInt == Build.VERSION_CODES.TIRAMISU ->
             listOf(PERM_READ_MEDIA_IMAGES, PERM_READ_MEDIA_VIDEO)
+        sdkInt <= Build.VERSION_CODES.P ->
+            // API 26–28: the legacy MediaStore is used for BOTH reading the library and publishing a
+            // restored original ("Save to device"), so write access must be requested alongside read.
+            listOf(PERM_READ_EXTERNAL_STORAGE, PERM_WRITE_EXTERNAL_STORAGE)
         else ->
+            // API 29–32: scoped storage exposes reads through READ_EXTERNAL_STORAGE; writes into the
+            // app's own MediaStore entries need no permission.
             listOf(PERM_READ_EXTERNAL_STORAGE)
     }
 

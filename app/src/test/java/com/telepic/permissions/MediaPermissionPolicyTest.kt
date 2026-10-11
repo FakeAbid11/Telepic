@@ -49,6 +49,30 @@ class MediaPermissionPolicyTest {
     }
 
     @Test
+    fun `requests write access on Android 9 and below so a restore can publish`() {
+        val request28 = MediaPermissionPolicy.permissionsToRequest(28).toSet()
+        assertTrue(legacyStorage in request28)
+        assertTrue(Manifest.permission.WRITE_EXTERNAL_STORAGE in request28)
+    }
+
+    @Test
+    fun `does not request write access on Android 10 and above`() {
+        val request29 = MediaPermissionPolicy.permissionsToRequest(29).toSet()
+        assertTrue(Manifest.permission.WRITE_EXTERNAL_STORAGE !in request29)
+        assertTrue(legacyStorage in request29)
+    }
+
+    @Test
+    fun `write access is not required for the read-access state on Android 9`() {
+        // Browsing must stay usable when read is granted but write was declined; only restore needs
+        // write, and it reports its own honest failure.
+        assertEquals(
+            MediaPermissionState.Granted,
+            resolve(28, granted = setOf(legacyStorage)),
+        )
+    }
+
+    @Test
     fun `full media grant resolves to granted on Android 13`() {
         assertEquals(
             MediaPermissionState.Granted,

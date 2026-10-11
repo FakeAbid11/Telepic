@@ -278,6 +278,10 @@
     <string name="viewer_save_device">Save to device</string>
     <string name="viewer_saved">Saved to device</string>
     <string name="viewer_save_failed">Couldn\'t save to device</string>
+    <string name="viewer_save_failed_download">Couldn\'t download the original</string>
+    <string name="viewer_save_failed_missing">The original is no longer available</string>
+    <string name="viewer_save_failed_verify">The download couldn\'t be verified</string>
+    <string name="viewer_save_failed_storage">Not enough storage space</string>
 
     <!-- ============================ Organization: Favorites / Archive / Trash (Phase 10) ============================ -->
     <string name="viewer_favorite">Add to favorites</string>

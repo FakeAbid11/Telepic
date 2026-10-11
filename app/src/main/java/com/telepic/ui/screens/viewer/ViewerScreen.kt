@@ -64,6 +64,7 @@ import coil.imageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.telepic.R
+import com.telepic.data.restore.RestoreFailure
 import com.telepic.domain.media.MediaDay
 import com.telepic.navigation.MediaSource
 import com.telepic.ui.theme.TelepicTokens
@@ -507,6 +508,19 @@ private fun ViewerBottomBar(
     }
 }
 
+/**
+ * Human-readable message for a restore failure. Every reason the repository can report has its own
+ * wording, so the user learns *why* a save failed instead of a single generic message.
+ */
+private val RestoreFailure.messageRes: Int
+    get() = when (this) {
+        RestoreFailure.DOWNLOAD_UNAVAILABLE -> R.string.viewer_save_failed_download
+        RestoreFailure.MISSING_REMOTE -> R.string.viewer_save_failed_missing
+        RestoreFailure.VERIFY_FAILED -> R.string.viewer_save_failed_verify
+        RestoreFailure.LOW_STORAGE -> R.string.viewer_save_failed_storage
+        RestoreFailure.PUBLISH_FAILED -> R.string.viewer_save_failed
+    }
+
 @Composable
 private fun RestoreAction(onRestore: () -> Unit, restore: RestoreState) {
     when (restore) {
@@ -518,7 +532,7 @@ private fun RestoreAction(onRestore: () -> Unit, restore: RestoreState) {
             modifier = Modifier.padding(horizontal = TelepicTokens.spacing.sm),
         )
         is RestoreState.Failed -> Text(
-            text = stringResource(R.string.viewer_save_failed),
+            text = stringResource(restore.reason.messageRes),
             color = Color(0xFFFF8A80),
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = TelepicTokens.spacing.xs),
