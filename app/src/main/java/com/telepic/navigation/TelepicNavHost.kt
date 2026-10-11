@@ -235,7 +235,7 @@ fun TelepicNavHost(
             route = ViewerRoute.LOCAL,
             arguments = listOf(
                 navArgument(ViewerRoute.ARG_MEDIA_ID) { type = NavType.LongType },
-                navArgument(ViewerRoute.ARG_BUCKET_ID) { type = NavType.LongType; nullable = true; defaultValue = -1L },
+                navArgument(ViewerRoute.ARG_BUCKET_ID) { type = NavType.LongType; defaultValue = -1L },
                 navArgument(ViewerRoute.ARG_ORG_KIND) { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
         ) { backStackEntry ->
