@@ -279,8 +279,14 @@ private fun OsmMap(
                             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                             // TalkBack parity with the photo grids: the label rides on the marker's
                             // title (osmdroid has no per-marker contentDescription), and the map view
-                            // itself announces how many pins are on screen.
-                            marker.title = mapView.context.getString(R.string.map_marker_description)
+                            // itself announces how many pins are on screen. The coordinates make each
+                            // pin's label distinct — one shared "at this location" for every pin told
+                            // the user nothing about which photo it belonged to. osmdroid markers are
+                            // canvas overlays, so this fixes label identity, not per-pin navigation.
+                            marker.title = mapView.context.getString(
+                                R.string.map_marker_description,
+                                formatCoordinate(pin.latitude, pin.longitude),
+                            )
                             marker.setOnMarkerClickListener { _, _ ->
                                 // Centre and offer a preview rather than throwing the user straight
                                 // into the Viewer — the map keeps its context behind the sheet.

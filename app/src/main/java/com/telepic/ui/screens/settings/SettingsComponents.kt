@@ -42,6 +42,9 @@ fun SettingsSection(
  * disabled to accessibility services — used for features that arrive in later phases so a row
  * never looks actionable but does nothing. The caller's [summary] should state the honest status
  * (e.g. "coming soon"), not fake an outcome.
+ *
+ * A row with no [onClick] is plain information: it is neither clickable nor disabled, and announces
+ * no state at all. Only a row that *has* an action can be switched off.
  */
 @Composable
 fun SettingsRow(
@@ -52,7 +55,6 @@ fun SettingsRow(
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    val clickable = enabled && onClick != null
     val contentColor = if (enabled) {
         MaterialTheme.colorScheme.onSurface
     } else {
@@ -63,6 +65,18 @@ fun SettingsRow(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
     }
+    // The clickable modifier is attached only when the row actually has an action. Attaching it
+    // unconditionally meant an informational row ran through `clickable(enabled = false)`, which
+    // publishes the Disabled accessibility state — so a row sitting at full contrast announced
+    // itself as "disabled". `enabled` now only ever qualifies a real action.
+    val action = onClick
+    val rowModifier = if (action == null) {
+        modifier.fillMaxWidth()
+    } else {
+        modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = action)
+    }
     ListItem(
         headlineContent = { Text(title, color = contentColor) },
         supportingContent = summary?.let { { Text(it, color = supportingColor) } },
@@ -72,9 +86,6 @@ fun SettingsRow(
             headlineColor = contentColor,
             supportingColor = supportingColor,
         ),
-        modifier = modifier
-            .fillMaxWidth()
-            // clickable(enabled = false) already publishes the Disabled accessibility state.
-            .clickable(enabled = clickable, onClick = { onClick?.invoke() }),
+        modifier = rowModifier,
     )
 }

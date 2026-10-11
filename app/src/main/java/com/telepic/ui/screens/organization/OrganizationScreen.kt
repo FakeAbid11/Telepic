@@ -102,7 +102,8 @@ fun OrganizationScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.albums_back))
                     }
-                    Text(stringResource(titleRes(viewModel.kind)), style = MaterialTheme.typography.titleLarge)
+                    // Unified with ScreenHeader's default so every screen's title is 22sp.
+                    Text(stringResource(titleRes(viewModel.kind)), style = MaterialTheme.typography.headlineMedium)
                 }
 
                 // null means the id-set has not resolved yet — show loading, not a false "empty".

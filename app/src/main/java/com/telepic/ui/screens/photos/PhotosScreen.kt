@@ -115,7 +115,10 @@ fun PhotosScreen(
                     ) {
                         Text(
                             text = stringResource(R.string.photos_title),
-                            style = MaterialTheme.typography.displaySmall,
+                            // headlineMedium is the shared screen-title size (ScreenHeader's default).
+                            // displaySmall made Photos the only destination at 28sp, against 19-22sp
+                            // everywhere else — the same "title" role read as three different things.
+                            style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         // The description lives on the Icon only: setting it on the IconButton too
@@ -127,10 +130,21 @@ fun PhotosScreen(
                     }
                 }
 
+                // Partial access honesty (§31): shown as soon as limited access is in effect — it never
+                // claims a full library. It lives in the column flow rather than floated over the grid,
+                // so it reserves its own space instead of covering the first row of photos.
+                if (permissionState == MediaPermissionState.Partial) {
+                    PartialAccessBanner(
+                        modifier = Modifier.padding(
+                            horizontal = TelepicTokens.spacing.screenMargin,
+                            vertical = TelepicTokens.spacing.sm,
+                        ),
+                    )
+                }
+
                 when {
                     permissionState.hasAccess -> MediaRegion(
                         viewModel = viewModel,
-                        permissionState = permissionState,
                         backupStates = backupStates,
                         onMediaSelected = onMediaSelected,
                     )
@@ -193,7 +207,6 @@ fun PhotosScreen(
 @Composable
 private fun MediaRegion(
     viewModel: PhotosViewModel,
-    permissionState: MediaPermissionState,
     backupStates: Map<Long, MediaBackupVisualState>,
     onMediaSelected: (LocalMedia) -> Unit,
 ) {
@@ -235,16 +248,6 @@ private fun MediaRegion(
                     onLongSelect = viewModel::beginSelection,
                 )
             }
-        }
-
-        // Partial access honesty (§31): a subtle banner shown as soon as limited access is in
-        // effect — it never claims a full library, and appears whether or not items are loaded yet.
-        if (permissionState == MediaPermissionState.Partial) {
-            PartialAccessBanner(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(horizontal = TelepicTokens.spacing.screenMargin, vertical = TelepicTokens.spacing.sm),
-            )
         }
 
         // A refresh failure keeps loaded photos and offers a retry (§48). Suppressed while a

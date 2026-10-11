@@ -1,6 +1,5 @@
 package com.telepic.ui.onboarding.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -8,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.telepic.R
@@ -84,26 +85,32 @@ fun FolderPickerDialog(
                 else -> {
                     LazyColumn(modifier = Modifier.fillMaxWidth()) {
                         items(folders, key = { it.bucketId }) { album ->
+                            val isChecked = album.bucketId in selected
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        selected = if (album.bucketId in selected) {
-                                            selected - album.bucketId
-                                        } else {
-                                            selected + album.bucketId
-                                        }
-                                    }
+                                    // The row is the single toggle, so the album name, its count and
+                                    // its checked state are announced together. A plain clickable Row
+                                    // left the Checkbox as a second focus stop that announced
+                                    // "checked" with nothing to say what was checked.
+                                    .toggleable(
+                                        value = isChecked,
+                                        role = Role.Checkbox,
+                                        onValueChange = { checked ->
+                                            selected = if (checked) {
+                                                selected + album.bucketId
+                                            } else {
+                                                selected - album.bucketId
+                                            }
+                                        },
+                                    )
                                     .padding(vertical = TelepicTokens.spacing.xs),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.sm),
                             ) {
-                                Checkbox(
-                                    checked = album.bucketId in selected,
-                                    onCheckedChange = { checked ->
-                                        selected = if (checked) selected + album.bucketId else selected - album.bucketId
-                                    },
-                                )
+                                // onCheckedChange = null: the row owns the toggle, so the checkbox
+                                // must not be a separately focusable control of its own.
+                                Checkbox(checked = isChecked, onCheckedChange = null)
                                 Text(
                                     text = album.title,
                                     style = MaterialTheme.typography.bodyMedium,

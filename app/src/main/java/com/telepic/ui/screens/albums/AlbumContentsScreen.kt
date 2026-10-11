@@ -81,7 +81,8 @@ fun AlbumContentsScreen(
                         }
                         Text(
                             text = viewModel.title,
-                            style = MaterialTheme.typography.titleLarge,
+                            // Unified with ScreenHeader's default so every screen's title is 22sp.
+                            style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                     }

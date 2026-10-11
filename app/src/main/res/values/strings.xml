@@ -283,6 +283,8 @@
     <string name="viewer_content_description">Media viewer image</string>
     <string name="viewer_image_error">This image couldn\'t be loaded</string>
     <string name="viewer_playback_error">Playback error</string>
+    <string name="viewer_mute">Mute</string>
+    <string name="viewer_unmute">Unmute</string>
     <string name="viewer_source_local">On this device</string>
     <string name="viewer_source_cloud">Telegram cloud</string>
     <string name="viewer_download">Download</string>
@@ -344,7 +346,7 @@
     <string name="map_empty_description">Photos and videos that contain GPS coordinates appear on the map. Telepic never invents a location for media without coordinates.</string>
     <string name="map_permission_title">See your photo locations</string>
     <string name="map_permission_description">Telepic needs photo &amp; video access to read the location data already stored in your media.</string>
-    <string name="map_marker_description">Photo taken at this location</string>
+    <string name="map_marker_description">Photo taken at %1$s</string>
     <string name="map_cluster_description">Group of %1$d photos at this location</string>
     <string name="map_locations_count">%1$d locations</string>
     <string name="map_view_description">Map with %1$d photo locations</string>
