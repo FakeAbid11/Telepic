@@ -25,6 +25,10 @@ interface LocalMediaLookup {
      * Hidden (archived/trashed) ids are excluded so the Viewer never lands on media the user has filed
      * away, consistent with the timeline and album grids. When [bucketId] is supplied the search stays
      * within that one bucket, so an album's Viewer wraps around its own contents instead of the library.
+     *
+     * The exclusion is exact at any archive/trash size (see [walkToVisibleNeighbor]); if an unbroken
+     * run of hidden items is longer than the walk's budget, the result is null — "no neighbour" —
+     * rather than an item the user filed away.
      */
     suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long? = null): Long?
 
@@ -73,24 +77,23 @@ class MediaStoreLocalLookup(
 
     override suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long?): Long? =
         withContext(Dispatchers.IO) {
-            val cmp = if (direction == NeighborDirection.OLDER) "<" else ">"
-            val order = if (direction == NeighborDirection.OLDER) "_ID DESC" else "_ID ASC"
-            // Skip media the user archived/trashed so a swipe never lands on a hidden item, and stay
-            // inside the requested bucket when one is given (album context).
-            val hidden = hiddenIdsProvider().take(MAX_LOOKUP_IDS)
-            val sb = StringBuilder("$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} $cmp ?")
-            val args = ArrayList<String>()
-            args += id.toString()
-            if (bucketId != null) {
-                sb.append(" AND ${MediaStore.MediaColumns.BUCKET_ID} = ?")
-                args += bucketId.toString()
-            }
-            if (hidden.isNotEmpty()) {
-                sb.append(" AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { "?" }})")
-                hidden.forEach { args += it.toString() }
-            }
-            queryOne(selection = sb.toString(), args = args.toTypedArray(), sortOrder = order)?.id
+            val hidden = hiddenIdsProvider()
+            walkToVisibleNeighbor(id, hidden) { cursor -> queryNeighbor(cursor, direction, bucketId) }
         }
+
+    /** The nearest neighbour of [id] in [direction], ignoring hidden state; null at the collection end. */
+    private fun queryNeighbor(id: Long, direction: NeighborDirection, bucketId: Long?): Long? {
+        val cmp = if (direction == NeighborDirection.OLDER) "<" else ">"
+        val order = if (direction == NeighborDirection.OLDER) "_ID DESC" else "_ID ASC"
+        val sb = StringBuilder("$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} $cmp ?")
+        val args = ArrayList<String>()
+        args += id.toString()
+        if (bucketId != null) {
+            sb.append(" AND ${MediaStore.MediaColumns.BUCKET_ID} = ?")
+            args += bucketId.toString()
+        }
+        return queryOne(selection = sb.toString(), args = args.toTypedArray(), sortOrder = order)?.id
+    }
 
     override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = withContext(Dispatchers.IO) {
         if (ids.isEmpty()) return@withContext emptyList()
@@ -144,6 +147,42 @@ class MediaStoreLocalLookup(
         const val MAX_LOOKUP_IDS = 500
     }
 }
+
+/**
+ * Walks away from [startId], skipping every id in [hidden], and returns the first visible one.
+ *
+ * The hidden set is applied **here, in memory**, rather than as a SQL `NOT IN (...)`. A placeholder
+ * list has to be truncated to stay inside SQLite's bound on query parameters, and a truncated list
+ * silently let the Viewer swipe onto media the user had archived or trashed — the cap made the
+ * exclusion wrong exactly when it mattered most. A [Set] has no such limit, so the exclusion is exact
+ * however large the archive/trash grows.
+ *
+ * [next] yields the nearest not-yet-examined id. Returns null at the end of the collection, and also
+ * when [maxSteps] consecutive candidates were all hidden: reporting "no neighbour" is honest, whereas
+ * returning a hidden id would defeat the point of hiding it.
+ */
+internal suspend fun walkToVisibleNeighbor(
+    startId: Long,
+    hidden: Set<Long>,
+    maxSteps: Int = MAX_NEIGHBOR_SKIPS,
+    next: suspend (Long) -> Long?,
+): Long? {
+    if (hidden.isEmpty()) return next(startId)
+    var cursor = startId
+    repeat(maxSteps) {
+        val candidate = next(cursor) ?: return null
+        if (candidate !in hidden) return candidate
+        cursor = candidate
+    }
+    return null
+}
+
+/**
+ * How many consecutive hidden items one neighbour lookup steps past before giving up. Each step is a
+ * single indexed `_ID` query, so this bounds the work at a swipe to something a user would not notice
+ * — and the fallback is "no neighbour", never a hidden item.
+ */
+internal const val MAX_NEIGHBOR_SKIPS = 64
 
 /** A no-op lookup used when the caller cannot supply a real MediaStore source (keeps Viewer safe). */
 object EmptyLocalMediaLookup : LocalMediaLookup {

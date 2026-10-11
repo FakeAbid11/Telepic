@@ -72,6 +72,8 @@ class ViewerViewModelTest {
         val arch: Set<Long>,
         val trash: Set<Long>,
     ) : com.telepic.data.organization.MediaOrganizationRepository {
+        /** Records every trash write so a test can prove the action reached the repository. */
+        val trashWrites = mutableListOf<Long>()
         override val favoriteIds: Flow<Set<Long>> = flowOf(favs)
         override val archivedIds: Flow<Set<Long>> = flowOf(arch)
         override val trashedIds: Flow<Set<Long>> = flowOf(trash)
@@ -81,7 +83,7 @@ class ViewerViewModelTest {
         override suspend fun isTrashed(id: Long) = id in trash
         override suspend fun setFavorite(id: Long, favorite: Boolean) = Unit
         override suspend fun setArchived(id: Long, archived: Boolean) = Unit
-        override suspend fun moveToTrash(id: Long) = Unit
+        override suspend fun moveToTrash(id: Long) { trashWrites += id }
         override suspend fun restoreFromTrash(id: Long) = Unit
         override suspend fun markDeletedFromStore(id: Long) = Unit
         override suspend fun remove(id: Long) = Unit
@@ -315,5 +317,38 @@ class ViewerViewModelTest {
         assertEquals(Uri.parse("content://media/4"), vm.displayModelFor(MediaSource.Local(4)))
         assertNull(vm.displayModelFor(MediaSource.Local(99))) // gone items warm nothing
         assertNull(vm.displayModelFor(MediaSource.Cloud(100, 7))) // no TDLib request per neighbor
+    }
+
+    @Test
+    fun `move to trash reaches the repository and flips the viewer flag`() = runBlocking {
+        val org = FakeOrg(favs = emptySet(), arch = emptySet(), trash = emptySet())
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5))),
+            cloudRepository = FakeCloud(emptyList()),
+            organizationRepository = org,
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        vm.moveToTrash()
+
+        // The write runs in viewModelScope, so await the flag it publishes rather than polling.
+        assertTrue(vm.flags.first { it.isTrashed }.isTrashed)
+        assertEquals(listOf(5L), org.trashWrites)
+        // Flag-only, like favourite: the user stays on the item instead of being kicked out, and the
+        // grids behind react to the Room flow on their own.
+        assertEquals(ViewerStatus.READY, vm.uiState.value.status)
+    }
+
+    @Test
+    fun `the trash flag mirrors the item's stored state when the viewer opens it`() = runBlocking {
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5))),
+            cloudRepository = FakeCloud(emptyList()),
+            organizationRepository = FakeOrg(favs = emptySet(), arch = emptySet(), trash = setOf(5L)),
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+        assertTrue(vm.flags.first { it.isTrashed }.isTrashed)
     }
 }
