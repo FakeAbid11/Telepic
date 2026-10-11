@@ -34,6 +34,7 @@ class OnboardingScaffoldTest {
                     progressLabel = "Step 1 of 6",
                     primaryLabel = primaryLabel,
                     onPrimaryAction = {},
+                    content = {},
                 )
             }
         }
