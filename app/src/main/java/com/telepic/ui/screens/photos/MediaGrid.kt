@@ -1,21 +1,15 @@
 package com.telepic.ui.screens.photos
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -26,19 +20,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
@@ -50,9 +38,6 @@ import com.telepic.ui.theme.TelepicTokens
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlinx.coroutines.launch
-
-private const val RAIL_MAX_ENTRIES = 12
 
 /** A loaded day header, its grid index, and its epoch day (for ordering / rail emphasis). */
 data class DateAnchor(val index: Int, val epochDay: Long, val absoluteLabel: String)
@@ -137,27 +122,17 @@ fun MediaGrid(
     onLongSelect: (LocalMedia) -> Unit = {},
 ) {
     val spacing = TelepicTokens.spacing
-    val scope = rememberCoroutineScope()
     // Read fresh on every (re)composition: a process-lifetime remember kept labelling "Today"
     // for a session that crossed midnight. LocalDate.now() is cheap (no I/O), so staleness
     // only lasts until the next recomposition instead of forever.
     val today = LocalDate.now()
 
-    // Rail anchors grow incrementally as pages append: only items past the last examined index are
-    // scanned per change, instead of re-walking the whole loaded list. The head cell's key carries the
-    // Paging generation, so a refresh — even one landing on the same item count — rebuilds from zero.
+    // Scrubber anchors grow incrementally as pages append: only items past the last examined index
+    // are scanned per change, instead of re-walking the whole loaded list. The head cell's key carries
+    // the Paging generation, so a refresh — even one landing on the same item count — rebuilds from zero.
     val anchorHolder = remember { AnchorScanHolder() }
     val anchors: List<DateAnchor> = anchorHolder.update(media.itemCount, media[0]?.key) { index ->
         media[index] as? PhotosItem.Day
-    }
-
-    // The active rail entry is the last anchor at/above the first visible item — derived so it
-    // tracks scrolling without recomputing the anchors.
-    val activeIndex by remember(anchors) {
-        derivedStateOf {
-            val firstVisible = gridState.firstVisibleItemIndex
-            anchors.indices.lastOrNull { anchors[it].index <= firstVisible } ?: 0
-        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -166,7 +141,7 @@ fun MediaGrid(
             state = gridState,
             contentPadding = PaddingValues(
                 start = spacing.gridGutter,
-                end = spacing.railGutter,
+                end = spacing.gridGutter,
                 top = spacing.xs,
                 bottom = spacing.xl,
             ),
@@ -212,11 +187,9 @@ fun MediaGrid(
             }
         }
 
-        DateRail(
+        DateScrubber(
             anchors = anchors,
-            today = today,
-            activeEpochDay = anchors.getOrNull(activeIndex)?.epochDay,
-            onAnchorClick = { index -> scope.launch { gridState.animateScrollToItem(index) } },
+            gridState = gridState,
             modifier = Modifier.align(Alignment.CenterEnd),
         )
     }
@@ -254,88 +227,6 @@ fun DayHeader(epochDay: Long, absoluteLabel: String, today: LocalDate, modifier:
             )
             .semantics { heading() },
     )
-}
-
-/**
- * Right-side date rail: compact localized day labels for the loaded pages, with the active day
- * emphasized. Tapping an entry scrolls the grid to that already-loaded day. Kept narrow and
- * unobtrusive; its column meets the Material touch-target width.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun DateRail(
-    anchors: List<DateAnchor>,
-    today: LocalDate,
-    activeEpochDay: Long?,
-    onAnchorClick: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (anchors.size < 2) return
-    val spacing = TelepicTokens.spacing
-    val railDescription = stringResource(R.string.photos_date_rail)
-    val selectedLabel = stringResource(R.string.date_rail_selected)
-    val notSelectedLabel = stringResource(R.string.date_rail_not_selected)
-    val locale = Locale.getDefault()
-    val shortFormatter = remember(locale) { DateTimeFormatter.ofPattern("MMM d", locale) }
-
-    // Newest-first; show a bounded window that defaults to the recent days and slides to keep the
-    // currently-active day visible as the user scrolls into older dates.
-    val activePos = anchors.indexOfFirst { it.epochDay == activeEpochDay }.coerceAtLeast(0)
-    val window = remember(anchors.size, activePos) {
-        DateRailWindow.window(anchors.size, activePos, RAIL_MAX_ENTRIES)
-    }
-    if (window.isEmpty()) return
-
-    Column(
-        modifier = modifier
-            .width(spacing.railWidth)
-            .padding(top = spacing.sm, bottom = spacing.sm)
-            .semantics { contentDescription = railDescription },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(spacing.xs),
-    ) {
-        anchors.subList(window.first, window.last + 1).forEach { anchor ->
-            val isActive = anchor.epochDay == activeEpochDay
-            val short = when (today.toEpochDay() - anchor.epochDay) {
-                0L -> stringResource(R.string.date_today)
-                1L -> stringResource(R.string.date_yesterday)
-                else -> LocalDate.ofEpochDay(anchor.epochDay).format(shortFormatter)
-            }
-            Box(
-                modifier = Modifier
-                    .heightIn(min = 48.dp, max = 48.dp)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
-                    .combinedClickable(
-                        onClick = { onAnchorClick(anchor.index) },
-                        onLongClick = { onAnchorClick(anchor.index) },
-                    )
-                    .semantics {
-                        contentDescription = "$short, ${if (isActive) selectedLabel else notSelectedLabel}"
-                        if (isActive) { this.selected = true }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Active is signalled by more than color: a leading bar plus bold weight.
-                    if (isActive) {
-                        Box(
-                            modifier = Modifier
-                                .padding(end = spacing.xs)
-                                .size(width = 3.dp, height = 16.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)),
-                        )
-                    }
-                    Text(
-                        text = short,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable
