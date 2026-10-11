@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -19,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.NeighborDirection
+import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudPreview
 import com.telepic.domain.cloud.CloudStatus
@@ -81,6 +83,26 @@ class ViewerUiTest {
             contentHash: String?,
             contentSizeBytes: Long?,
         ): com.telepic.domain.cloud.CloudUploadResult = throw NotImplementedError()
+    }
+
+    /**
+     * An organization repository that holds no state. Needed because the Viewer's organization
+     * actions no-op when the repository is unwired — a test of their feedback has to wire one.
+     */
+    private object NoOrg : MediaOrganizationRepository {
+        override val favoriteIds: Flow<Set<Long>> = flowOf(emptySet())
+        override val archivedIds: Flow<Set<Long>> = flowOf(emptySet())
+        override val trashedIds: Flow<Set<Long>> = flowOf(emptySet())
+        override suspend fun hiddenIds(): Set<Long> = emptySet()
+        override suspend fun isFavorite(id: Long): Boolean = false
+        override suspend fun isArchived(id: Long): Boolean = false
+        override suspend fun isTrashed(id: Long): Boolean = false
+        override suspend fun setFavorite(id: Long, favorite: Boolean) = Unit
+        override suspend fun setArchived(id: Long, archived: Boolean) = Unit
+        override suspend fun moveToTrash(id: Long) = Unit
+        override suspend fun restoreFromTrash(id: Long) = Unit
+        override suspend fun markDeletedFromStore(id: Long) = Unit
+        override suspend fun remove(id: Long) = Unit
     }
 
     @Test
@@ -161,5 +183,41 @@ class ViewerUiTest {
         // `older = 9L` gives the item a neighbour, so the navigation row is the bar that renders.
         composeRule.onNodeWithTag(TAG_VIEWER_TOP_BAR).assertHeightIsEqualTo(topBarExpected)
         composeRule.onNodeWithTag(TAG_VIEWER_BOTTOM_BAR).assertHeightIsEqualTo(bottomBarExpected)
+    }
+
+    /**
+     * The reported defect: trashing wrote to Room correctly but said nothing, so from the user's seat
+     * the button did nothing. The Viewer deliberately stays on the item (popping before the write hid
+     * failures), and the item keeps rendering unchanged — so the confirmation bar is the only
+     * evidence the action happened.
+     */
+    @Test
+    fun `trashing from the viewer reports the outcome and offers an undo`() {
+        val vm = ViewerViewModel(
+            MediaSource.Local(5),
+            Lookup(mapOf(5L to localPhoto(5))),
+            NoCloud,
+            organizationRepository = NoOrg,
+        )
+        composeRule.setContent { TelepicTheme { ViewerScreen(vm, onBack = {}) } }
+
+        composeRule.onNodeWithContentDescription("More actions").performClick()
+        composeRule.onNodeWithText("Move to trash").performClick()
+        // The dialog's confirm button carries the same label as the menu item that opened it, so while
+        // the menu is still animating out, `onNodeWithText("Move to trash")` matches two nodes and
+        // throws. Poll until exactly one remains rather than assuming a fixed wait retires the menu.
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("Move to trash").fetchSemanticsNodes().size == 1
+        }
+        composeRule.onNodeWithText("Move to trash").performClick()
+
+        // The write is async and the bar is on an auto-dismiss timer, so poll for it to appear.
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("Moved to trash").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("Moved to trash").assertExists()
+        // Undo is the whole point: Trash is not reachable from the Viewer, so the confirmation has to
+        // carry the reversal itself.
+        composeRule.onNodeWithText("Undo").assertExists()
     }
 }

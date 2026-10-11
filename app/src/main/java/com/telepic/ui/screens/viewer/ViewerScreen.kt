@@ -80,6 +80,7 @@ import com.telepic.R
 import com.telepic.data.restore.RestoreFailure
 import com.telepic.domain.media.MediaDay
 import com.telepic.navigation.MediaSource
+import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.theme.TelepicTokens
 import java.io.File
 
@@ -109,6 +110,7 @@ fun ViewerScreen(
     val flags by viewModel.flags.collectAsStateWithLifecycle()
     val restore by viewModel.restore.collectAsStateWithLifecycle()
     val details by viewModel.details.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
     // Rotation-surviving chrome state: controls, sheets and the pending confirm dialog should not
     // reset just because the Activity was recreated.
     var controlsVisible by rememberSaveable { mutableStateOf(true) }
@@ -209,6 +211,27 @@ fun ViewerScreen(
                             show(latitude, longitude)
                         }
                     },
+                )
+            }
+
+            // Trashing leaves no other trace on screen — the Viewer deliberately stays on the item
+            // and it keeps rendering unchanged — so this bar is the only thing that makes the action
+            // observable. It offers Undo because Trash is not reachable from the Viewer.
+            message?.let { pending ->
+                TransientMessageBar(
+                    message = stringResource(pending.messageRes),
+                    onDismiss = viewModel::consumeMessage,
+                    // Keyed on the item, so the countdown belongs to this item's event and does not
+                    // inherit a nearly-expired one from a previous action.
+                    messageId = state.source,
+                    actionLabel = stringResource(R.string.viewer_trashed_undo),
+                    onAction = viewModel::restoreFromTrash,
+                    // Clear of the bottom chrome rather than on top of it: this bar is composed
+                    // after the bars, so it would otherwise cover the navigation row.
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .padding(bottom = TelepicTokens.spacing.chromeBarHeight),
                 )
             }
 
@@ -679,6 +702,12 @@ private val RestoreFailure.messageRes: Int
         RestoreFailure.VERIFY_FAILED -> R.string.viewer_save_failed_verify
         RestoreFailure.LOW_STORAGE -> R.string.viewer_save_failed_storage
         RestoreFailure.PUBLISH_FAILED -> R.string.viewer_save_failed
+    }
+
+/** The sentence a [ViewerMessage] is reported with. Stated as the outcome, not the intent. */
+private val ViewerMessage.messageRes: Int
+    get() = when (this) {
+        ViewerMessage.MovedToTrash -> R.string.viewer_trashed_message
     }
 
 @Composable

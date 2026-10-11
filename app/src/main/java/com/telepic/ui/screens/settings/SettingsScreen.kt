@@ -78,6 +78,7 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     modifier: Modifier = Modifier,
     onOpenBackupCenter: () -> Unit = {},
+    onOpenTrash: () -> Unit = {},
 ) {
     val spacing = TelepicTokens.spacing
     val context = LocalContext.current
@@ -181,6 +182,16 @@ fun SettingsScreen(
             }
 
             SettingsSection(title = stringResource(R.string.settings_section_storage)) {
+                // Trash lives here because it is a storage concern, and because the Viewer's own
+                // confirmation can only offer a single-step Undo — anything older has to be
+                // reachable. Its previous sole entry point was a bare text button inside Albums,
+                // which users did not find.
+                SettingsRow(
+                    title = stringResource(R.string.settings_storage_trash),
+                    summary = stringResource(R.string.settings_storage_trash_summary),
+                    enabled = true,
+                    onClick = onOpenTrash,
+                )
                 SettingsRow(
                     title = stringResource(R.string.settings_storage_telegram_cache),
                     summary = if (storage.loaded) {

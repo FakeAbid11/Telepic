@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -74,6 +75,8 @@ class ViewerViewModelTest {
     ) : com.telepic.data.organization.MediaOrganizationRepository {
         /** Records every trash write so a test can prove the action reached the repository. */
         val trashWrites = mutableListOf<Long>()
+        /** Records every restore, so the confirmation's Undo can be proven to reach the repository. */
+        val restoreWrites = mutableListOf<Long>()
         override val favoriteIds: Flow<Set<Long>> = flowOf(favs)
         override val archivedIds: Flow<Set<Long>> = flowOf(arch)
         override val trashedIds: Flow<Set<Long>> = flowOf(trash)
@@ -84,7 +87,7 @@ class ViewerViewModelTest {
         override suspend fun setFavorite(id: Long, favorite: Boolean) = Unit
         override suspend fun setArchived(id: Long, archived: Boolean) = Unit
         override suspend fun moveToTrash(id: Long) { trashWrites += id }
-        override suspend fun restoreFromTrash(id: Long) = Unit
+        override suspend fun restoreFromTrash(id: Long) { restoreWrites += id }
         override suspend fun markDeletedFromStore(id: Long) = Unit
         override suspend fun remove(id: Long) = Unit
     }
@@ -350,5 +353,70 @@ class ViewerViewModelTest {
         )
         vm.uiState.first { it.status != ViewerStatus.LOADING }
         assertTrue(vm.flags.first { it.isTrashed }.isTrashed)
+    }
+
+    @Test
+    fun `trashing confirms the outcome instead of succeeding silently`() = runBlocking {
+        val org = FakeOrg(favs = emptySet(), arch = emptySet(), trash = emptySet())
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5))),
+            cloudRepository = FakeCloud(emptyList()),
+            organizationRepository = org,
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        vm.moveToTrash()
+
+        // The Viewer stays on the item and it keeps rendering unchanged, so this message is the only
+        // evidence the action happened at all. Its absence was the reported "the button does
+        // nothing": the write landed, and nothing on screen said so.
+        assertEquals(ViewerMessage.MovedToTrash, vm.message.first { it != null })
+        assertEquals(listOf(5L), org.trashWrites)
+    }
+
+    @Test
+    fun `undo restores the item and drops the confirmation`() = runBlocking {
+        val org = FakeOrg(favs = emptySet(), arch = emptySet(), trash = emptySet())
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5))),
+            cloudRepository = FakeCloud(emptyList()),
+            organizationRepository = org,
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        vm.moveToTrash()
+        // Await the trashed state before undoing, so both transitions are real and the second action
+        // reads the flags the first one published.
+        assertEquals(ViewerMessage.MovedToTrash, vm.message.first { it != null })
+        assertTrue(vm.flags.first { it.isTrashed }.isTrashed)
+
+        vm.restoreFromTrash()
+
+        assertFalse(vm.flags.first { !it.isTrashed }.isTrashed)
+        // The message is cleared by the action body *after* the repository call returns, so awaiting
+        // its disappearance proves the restore landed rather than the bar merely being hidden.
+        assertNull(vm.message.first { it == null })
+        assertEquals(listOf(5L), org.restoreWrites)
+    }
+
+    @Test
+    fun `the confirmation does not follow the user to the next item`() = runBlocking {
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5), 9L to local(9))),
+            cloudRepository = FakeCloud(emptyList()),
+            organizationRepository = FakeOrg(favs = emptySet(), arch = emptySet(), trash = emptySet()),
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+        vm.moveToTrash()
+        assertEquals(ViewerMessage.MovedToTrash, vm.message.first { it != null })
+
+        vm.open(MediaSource.Local(9))
+
+        // "Moved to trash" describes item 5; leaving it up over item 9 would report an outcome for
+        // something the user is no longer looking at.
+        assertNull(vm.message.value)
     }
 }

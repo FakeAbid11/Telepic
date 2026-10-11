@@ -221,6 +221,7 @@ fun TelepicNavHost(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 onOpenBackupCenter = { navController.navigate(BackupCenterRoute.ROUTE) },
+                onOpenTrash = { navController.navigate(OrganizationRoute.create(OrganizationKind.TRASH)) },
             )
         }
         composable(BackupCenterRoute.ROUTE) {

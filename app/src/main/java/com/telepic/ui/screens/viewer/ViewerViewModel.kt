@@ -56,6 +56,19 @@ data class ViewerFlags(
     val isTrashed: Boolean = false,
 )
 
+/**
+ * A transient outcome the Viewer must report, because the action leaves no other trace on screen.
+ *
+ * Trashing is the case that forced this: the Viewer deliberately stays on the item (popping before
+ * the write hid failures and yanked the user back), and the item keeps rendering exactly as before —
+ * so without a message the user taps "Move to trash", the dialog closes, and *nothing* appears to
+ * happen. A type rather than a magic string, so the screen owns the wording.
+ */
+sealed interface ViewerMessage {
+    /** The item was written to Trash. Posted only after the write returned — never optimistically. */
+    data object MovedToTrash : ViewerMessage
+}
+
 data class ViewerUiState(
     val source: MediaSource,
     val status: ViewerStatus = ViewerStatus.LOADING,
@@ -111,6 +124,10 @@ class ViewerViewModel(
     private val _flags = MutableStateFlow(ViewerFlags())
     val flags: StateFlow<ViewerFlags> = _flags.asStateFlow()
 
+    /** Transient outcome to report for the current item, or null. Cleared on navigation. */
+    private val _message = MutableStateFlow<ViewerMessage?>(null)
+    val message: StateFlow<ViewerMessage?> = _message.asStateFlow()
+
     /** Details for the current LOCAL item, or null when not requested/available. Reset on navigation. */
     private val _details = MutableStateFlow<MediaDetails?>(null)
     val details: StateFlow<MediaDetails?> = _details.asStateFlow()
@@ -137,6 +154,9 @@ class ViewerViewModel(
     /** Navigate to another source (used by next/previous and by the swipe gesture). */
     fun open(newSource: MediaSource) {
         loadJob?.cancel()
+        // A confirmation belongs to the item it describes: carrying "Moved to trash" onto the next
+        // photo would report an outcome for something the user is no longer looking at.
+        _message.value = null
         _uiState.value = ViewerUiState(newSource, ViewerStatus.LOADING)
         load(newSource)
     }
@@ -202,7 +222,26 @@ class ViewerViewModel(
     /** Move the current local item to Trash (app-level; the file is preserved until a delete). */
     fun moveToTrash() = mutateFlags { repo, id, current ->
         repo.moveToTrash(id)
+        // Posted *after* the write returns, so the confirmation can never report a write that did
+        // not land. This is the only feedback the action gets: the Viewer stays on the item and it
+        // keeps rendering unchanged.
+        _message.value = ViewerMessage.MovedToTrash
         current.copy(isTrashed = true)
+    }
+
+    /**
+     * Undo of [moveToTrash] — the action the confirmation offers. Restores the item and drops the
+     * message, so the bar disappears on the same signal that says the restore landed.
+     */
+    fun restoreFromTrash() = mutateFlags { repo, id, current ->
+        repo.restoreFromTrash(id)
+        _message.value = null
+        current.copy(isTrashed = false)
+    }
+
+    /** The user dismissed the confirmation without acting on it. */
+    fun consumeMessage() {
+        _message.value = null
     }
 
     private fun mutateFlags(action: suspend (MediaOrganizationRepository, Long, ViewerFlags) -> ViewerFlags) {

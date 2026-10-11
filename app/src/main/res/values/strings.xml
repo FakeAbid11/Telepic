@@ -79,6 +79,8 @@
     <string name="settings_storage_measuring">Measuring…</string>
     <string name="settings_storage_clear">Clear backup cache</string>
     <string name="settings_storage_clear_summary">Removes transient upload copies; the engine recreates them as needed.</string>
+    <string name="settings_storage_trash">Trash</string>
+    <string name="settings_storage_trash_summary">Review and restore photos and videos you moved to trash.</string>
     <string name="settings_section_about">About</string>
     <string name="settings_about_version">Telepic version</string>
 
@@ -308,6 +310,8 @@
     <string name="viewer_trash_title">Move to trash?</string>
     <string name="viewer_trash_body">This hides the photo from your timeline. You can restore it later from Trash — it is not deleted from your device.</string>
     <string name="viewer_trash_confirm">Move to trash</string>
+    <string name="viewer_trashed_message">Moved to trash</string>
+    <string name="viewer_trashed_undo">Undo</string>
 
     <string name="library_title">Library</string>
     <string name="library_favorites">Favorites</string>
