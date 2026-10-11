@@ -27,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.telepic.R
 import com.telepic.ui.theme.TelepicTokens
@@ -49,6 +51,7 @@ fun HowItWorksStep(modifier: Modifier = Modifier) {
             text = stringResource(R.string.onboarding_how_title),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.semantics { heading() },
         )
         HowCard(
             icon = Icons.Outlined.Smartphone,

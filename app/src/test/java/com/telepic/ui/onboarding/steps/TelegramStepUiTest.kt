@@ -1,5 +1,6 @@
 package com.telepic.ui.onboarding.steps
 
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
@@ -50,7 +51,8 @@ class TelegramStepUiTest {
         override fun submitPhoneNumber(phoneNumber: String) { submittedPhone = phoneNumber }
         override fun submitCode(code: String) { submittedCode = code }
         override fun submitPassword(password: String) { submittedPassword = password }
-        override fun logout() = Unit
+        var logoutCount = 0
+        override fun logout() { logoutCount++ }
     }
 
     private fun render(
@@ -135,5 +137,22 @@ class TelegramStepUiTest {
         // No interactive auth UI when the backend is unavailable.
         composeRule.onNodeWithText("Phone number").assertDoesNotExist()
         composeRule.onNodeWithText("Connected as").assertDoesNotExist()
+    }
+
+    @Test
+    fun `other-device confirmation surfaces the link and never dead-ends`() {
+        val controller = FakeController(isBackendAvailable = true)
+        render(
+            controller,
+            TelegramAuthState.WaitingForOtherDeviceConfirmation("tg://login?token=abc123"),
+        )
+        composeRule
+            .onNodeWithText("Approve the login request on your other Telegram device.")
+            .assertIsDisplayed()
+        // The link TDLib produced has to actually reach the user, wired to a real action...
+        composeRule.onNodeWithText("Open in Telegram").assertIsDisplayed().assertHasClickAction()
+        // ...and the state must always offer a way out instead of stranding the user here.
+        composeRule.onNodeWithText("Use a different account").performClick()
+        assertEquals(1, controller.logoutCount)
     }
 }

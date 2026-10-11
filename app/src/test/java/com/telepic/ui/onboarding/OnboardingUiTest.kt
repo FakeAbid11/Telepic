@@ -6,6 +6,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -187,6 +191,61 @@ class OnboardingUiTest {
         composeRule.onNodeWithTag(TAG_ONBOARDING_START).performClick()
         composeRule.onNodeWithText("MAIN_APP").assertIsDisplayed()
         assertTrue(completed)
+    }
+
+    @Test
+    fun `every onboarding step title is exposed as a heading`() {
+        renderOnboarding()
+        val isHeading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
+
+        // Heading semantics are what let TalkBack jump between steps instead of reading every
+        // paragraph on the way. All six screens must expose one — including Welcome, whose title
+        // is the first thing a screen-reader user lands on.
+        composeRule.onNodeWithText("Telepic").assert(isHeading)
+        composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick() // -> How it works
+        composeRule.onNodeWithText("How Telepic works").assert(isHeading)
+        composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick() // -> Permissions
+        composeRule.onNodeWithText("Media permissions").assert(isHeading)
+        composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Telegram (skip)
+        composeRule.onNodeWithText("Connect Telegram").assert(isHeading)
+        composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Backup
+        composeRule.onNodeWithText("Choose your backup").assert(isHeading)
+        composeRule.onNodeWithTag(TAG_BACKUP_ALL).performClick()
+        composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick() // -> Ready
+        composeRule.onNodeWithText("You're ready to use Telepic").assert(isHeading)
+    }
+
+    @Test
+    fun `the backup cards form a single selectable group`() {
+        renderOnboarding()
+        composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick() // -> How it works
+        composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick() // -> Permissions
+        composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Telegram (skip)
+        composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Backup
+
+        // Exactly one group, so the three cards are announced as "1 of 3" rather than as three
+        // unrelated radio buttons.
+        composeRule
+            .onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup))
+            .assertCountEquals(1)
+    }
+
+    /** Renders the real six-step flow with the honest, backend-unavailable Telegram fallback. */
+    private fun renderOnboarding() {
+        composeRule.setContent {
+            TelepicTheme(darkTheme = true) {
+                OnboardingScreen(
+                    backupPreference = null,
+                    backupBucketIds = emptySet(),
+                    folders = emptyList(),
+                    telegramController = FakeTelegramController(),
+                    onBackupPreferenceChange = {},
+                    onNeedFolders = {},
+                    onPickFolders = {},
+                    onComplete = {},
+                )
+            }
+        }
     }
 
     /**

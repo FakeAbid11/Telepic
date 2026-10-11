@@ -144,6 +144,7 @@
     <string name="telegram_password_label">Two-factor password</string>
     <string name="telegram_password_hint">This account has a cloud password</string>
     <string name="telegram_other_device">Approve the login request on your other Telegram device.</string>
+    <string name="telegram_open_link">Open in Telegram</string>
     <string name="telegram_registration">This phone number doesn\'t have a Telegram account yet. Telepic backs up to an existing account — please create one in the official Telegram app first, then sign in here.</string>
     <string name="telegram_connected_as">Connected as %1$s</string>
     <string name="telegram_retry">Retry</string>

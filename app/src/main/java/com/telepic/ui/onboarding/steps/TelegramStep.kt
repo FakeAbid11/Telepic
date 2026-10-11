@@ -1,6 +1,8 @@
 package com.telepic.ui.onboarding.steps
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.telephony.TelephonyManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -80,6 +84,7 @@ fun TelegramStep(
                 text = stringResource(R.string.onboarding_telegram_title),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() },
             )
             Text(
                 text = stringResource(R.string.onboarding_telegram_body),
@@ -211,8 +216,21 @@ private fun AuthContent(
                 },
             )
         }
-        is TelegramAuthState.WaitingForOtherDeviceConfirmation ->
+        is TelegramAuthState.WaitingForOtherDeviceConfirmation -> {
             StatusRow(stringResource(R.string.telegram_other_device), busy = true)
+            // TDLib hands us the confirmation link precisely so it can be opened where the account
+            // already lives. Discarding it left anyone whose Telegram sits on another device with no
+            // way to approve the login and no exit from this state at all, so surface the link — and
+            // always pair it with a way out, so the state can never become a dead end.
+            val context = LocalContext.current
+            PrimaryButton(
+                label = stringResource(R.string.telegram_open_link),
+                onClick = { context.openTelegramLink(state.link) },
+            )
+            TextButton(onClick = controller::logout, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.telegram_change_account))
+            }
+        }
         TelegramAuthState.WaitingForRegistration -> {
             // Telepic signs an existing Telegram account in as a storage layer; it does not create new
             // Telegram accounts. Be honest about that and offer sign-out rather than a silent dead-end.
@@ -260,6 +278,15 @@ private fun rememberDefaultCountry(): CountryDialCode {
             ?: PhoneCountries.byIso(Locale.getDefault().country)
             ?: PhoneCountries.Default
     }
+}
+
+/**
+ * Hands the TDLib confirmation link to the Telegram app. A `tg://` link has no handler when
+ * Telegram is not installed, and a missing handler surfaces as ActivityNotFoundException, so the
+ * launch stays best-effort — the "use a different account" action beside it is the guaranteed exit.
+ */
+private fun Context.openTelegramLink(link: String) {
+    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }
 }
 
 @Composable

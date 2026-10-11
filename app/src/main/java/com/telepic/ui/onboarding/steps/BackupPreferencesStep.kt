@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudDownload
@@ -19,6 +20,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import com.telepic.R
 import com.telepic.domain.media.Album
@@ -64,6 +67,7 @@ fun BackupPreferencesStep(
                 text = stringResource(R.string.onboarding_backup_title),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() },
             )
             Text(
                 text = stringResource(R.string.onboarding_backup_subtitle),
@@ -73,38 +77,46 @@ fun BackupPreferencesStep(
             )
         }
 
-        OnboardingChoiceCard(
-            selected = selected == BackupPreference.BACKUP_ALL,
-            onClick = { onSelect(BackupPreference.BACKUP_ALL) },
-            icon = Icons.Outlined.PhotoLibrary,
-            title = stringResource(R.string.onboarding_backup_all_title),
-            body = stringResource(R.string.onboarding_backup_all_body),
-            modifier = Modifier.testTag(TAG_BACKUP_ALL),
-        )
-        OnboardingChoiceCard(
-            selected = selected == BackupPreference.SELECT_FOLDER,
-            onClick = {
-                // Open the picker against the live folder list; nothing is persisted until confirm.
-                onNeedFolders()
-                showPicker = true
-            },
-            icon = Icons.Outlined.FolderOpen,
-            title = stringResource(R.string.onboarding_backup_folder_title),
-            body = if (selected == BackupPreference.SELECT_FOLDER && selectedBucketIds.isNotEmpty()) {
-                stringResource(R.string.onboarding_backup_folder_selected, selectedBucketIds.size)
-            } else {
-                stringResource(R.string.onboarding_backup_folder_body)
-            },
-            modifier = Modifier.testTag(TAG_BACKUP_FOLDER),
-        )
-        OnboardingChoiceCard(
-            selected = selected == BackupPreference.NOT_NOW,
-            onClick = { onSelect(BackupPreference.NOT_NOW) },
-            icon = Icons.Outlined.CloudDownload,
-            title = stringResource(R.string.onboarding_backup_not_now_title),
-            body = stringResource(R.string.onboarding_backup_not_now_body),
-            modifier = Modifier.testTag(TAG_BACKUP_NOT_NOW),
-        )
+        // The three cards are one single-select set. Grouping them is what lets TalkBack announce
+        // "1 of 3" and treat the options as a unit instead of reading three loose radio buttons.
+        // The nested column keeps exactly the same md gap between cards the outer one used to give.
+        Column(
+            modifier = Modifier.selectableGroup(),
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+        ) {
+            OnboardingChoiceCard(
+                selected = selected == BackupPreference.BACKUP_ALL,
+                onClick = { onSelect(BackupPreference.BACKUP_ALL) },
+                icon = Icons.Outlined.PhotoLibrary,
+                title = stringResource(R.string.onboarding_backup_all_title),
+                body = stringResource(R.string.onboarding_backup_all_body),
+                modifier = Modifier.testTag(TAG_BACKUP_ALL),
+            )
+            OnboardingChoiceCard(
+                selected = selected == BackupPreference.SELECT_FOLDER,
+                onClick = {
+                    // Open the picker against the live folder list; nothing is persisted until confirm.
+                    onNeedFolders()
+                    showPicker = true
+                },
+                icon = Icons.Outlined.FolderOpen,
+                title = stringResource(R.string.onboarding_backup_folder_title),
+                body = if (selected == BackupPreference.SELECT_FOLDER && selectedBucketIds.isNotEmpty()) {
+                    stringResource(R.string.onboarding_backup_folder_selected, selectedBucketIds.size)
+                } else {
+                    stringResource(R.string.onboarding_backup_folder_body)
+                },
+                modifier = Modifier.testTag(TAG_BACKUP_FOLDER),
+            )
+            OnboardingChoiceCard(
+                selected = selected == BackupPreference.NOT_NOW,
+                onClick = { onSelect(BackupPreference.NOT_NOW) },
+                icon = Icons.Outlined.CloudDownload,
+                title = stringResource(R.string.onboarding_backup_not_now_title),
+                body = stringResource(R.string.onboarding_backup_not_now_body),
+                modifier = Modifier.testTag(TAG_BACKUP_NOT_NOW),
+            )
+        }
     }
 
     if (showPicker) {
