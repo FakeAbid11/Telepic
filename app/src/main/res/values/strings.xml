@@ -158,7 +158,6 @@
     <string name="onboarding_backup_folder_title">Select a folder</string>
     <string name="onboarding_backup_folder_body">Choose exactly which folders Telepic backs up.</string>
     <string name="onboarding_backup_folder_selected">%1$d folders selected</string>
-    <string name="onboarding_ready_value_backup_folders">Selected folders — Telepic will back them up.</string>
     <string name="onboarding_folder_picker_title">Choose folders</string>
     <string name="onboarding_folder_picker_confirm">Back these up</string>
     <string name="onboarding_folder_picker_empty">No folders found yet. Allow photo access first, then reopen this picker.</string>

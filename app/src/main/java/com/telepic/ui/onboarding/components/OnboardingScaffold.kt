@@ -4,9 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -111,9 +111,11 @@ fun OnboardingScaffold(
                         onClick = onPrimaryAction,
                         enabled = primaryEnabled,
                         shape = MaterialTheme.shapes.medium,
+                        // minHeight, not a fixed height: the touch target stays 52dp, but a label that
+                        // wraps to two lines at a large font scale grows instead of being clipped.
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp)
+                            .defaultMinSize(minHeight = 52.dp)
                             .testTag(primaryTestTag),
                     ) {
                         Text(primaryLabel)

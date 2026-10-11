@@ -8,12 +8,14 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepic.R
@@ -65,97 +67,104 @@ fun OnboardingScreen(
 
     val goToNext = remember { { if (step < TOTAL_STEPS - 1) step += 1 } }
 
-    AnimatedContent(
-        targetState = step,
-        transitionSpec = {
-            val forward = targetState > initialState
-            val dir = if (forward) 1 else -1
-            (
-                slideInHorizontally(tween(300)) { width -> dir * width / 5 } +
-                    fadeIn(tween(300))
-                ) togetherWith (
-                slideOutHorizontally(tween(300)) { width -> -dir * width / 5 } +
-                    fadeOut(tween(200))
-                )
-        },
-        label = "onboardingStep",
-    ) { current ->
-        val continueLabel = stringResource(R.string.onboarding_continue)
+    val continueLabel = stringResource(R.string.onboarding_continue)
 
-        var primaryLabel: String? = null
-        var onPrimaryAction: (() -> Unit)? = null
-        var primaryEnabled = true
-        var secondaryLabel: String? = null
-        var onSecondaryAction: (() -> Unit)? = null
-        var primaryTestTag = TAG_ONBOARDING_PRIMARY
+    // The chrome is resolved from `step` — the destination — so the progress header and the action
+    // row are correct the instant the user acts, while only the page body animates (see below).
+    var primaryLabel: String? = null
+    var onPrimaryAction: (() -> Unit)? = null
+    var primaryEnabled = true
+    var secondaryLabel: String? = null
+    var onSecondaryAction: (() -> Unit)? = null
+    var primaryTestTag = TAG_ONBOARDING_PRIMARY
 
-        when (current) {
-            0, 1 -> {
-                primaryLabel = continueLabel
-                onPrimaryAction = goToNext
-            }
-            2 -> when (permission.state) {
-                MediaPermissionState.NotRequested -> {
-                    primaryLabel = stringResource(R.string.onboarding_permissions_grant)
-                    onPrimaryAction = permission.requestPermission
-                    secondaryLabel = continueLabel
-                    onSecondaryAction = goToNext
-                }
-                MediaPermissionState.Denied -> {
-                    primaryLabel = stringResource(R.string.onboarding_permissions_try_again)
-                    onPrimaryAction = permission.requestPermission
-                    secondaryLabel = continueLabel
-                    onSecondaryAction = goToNext
-                }
-                MediaPermissionState.PermanentlyDenied -> {
-                    primaryLabel = stringResource(R.string.onboarding_permissions_open_settings)
-                    onPrimaryAction = permission.openAppSettings
-                    secondaryLabel = continueLabel
-                    onSecondaryAction = goToNext
-                }
-                MediaPermissionState.Granted,
-                MediaPermissionState.Partial,
-                -> {
-                    primaryLabel = continueLabel
-                    onPrimaryAction = goToNext
-                }
-            }
-            3 -> {
-                // TelegramStep owns its interactive controls (connect / phone / code / password /
-                // continue). The scaffold only offers a non-blocking "Set up later" escape so the
-                // flow can never trap the user.
-                secondaryLabel = stringResource(R.string.onboarding_telegram_skip)
+    when (step) {
+        0, 1 -> {
+            primaryLabel = continueLabel
+            onPrimaryAction = goToNext
+        }
+        2 -> when (permission.state) {
+            MediaPermissionState.NotRequested -> {
+                primaryLabel = stringResource(R.string.onboarding_permissions_grant)
+                onPrimaryAction = permission.requestPermission
+                secondaryLabel = continueLabel
                 onSecondaryAction = goToNext
             }
-            4 -> {
+            MediaPermissionState.Denied -> {
+                primaryLabel = stringResource(R.string.onboarding_permissions_try_again)
+                onPrimaryAction = permission.requestPermission
+                secondaryLabel = continueLabel
+                onSecondaryAction = goToNext
+            }
+            MediaPermissionState.PermanentlyDenied -> {
+                primaryLabel = stringResource(R.string.onboarding_permissions_open_settings)
+                onPrimaryAction = permission.openAppSettings
+                secondaryLabel = continueLabel
+                onSecondaryAction = goToNext
+            }
+            MediaPermissionState.Granted,
+            MediaPermissionState.Partial,
+            -> {
                 primaryLabel = continueLabel
                 onPrimaryAction = goToNext
-                // Only advance once a valid backup choice exists.
-                primaryEnabled = backupPreference != null
-            }
-            5 -> {
-                primaryLabel = stringResource(R.string.onboarding_ready_start)
-                onPrimaryAction = onComplete
-                primaryTestTag = TAG_ONBOARDING_START
             }
         }
+        3 -> {
+            // TelegramStep owns its interactive controls (connect / phone / code / password /
+            // continue). The scaffold only offers a non-blocking "Set up later" escape so the
+            // flow can never trap the user.
+            secondaryLabel = stringResource(R.string.onboarding_telegram_skip)
+            onSecondaryAction = goToNext
+        }
+        4 -> {
+            primaryLabel = continueLabel
+            onPrimaryAction = goToNext
+            // Only advance once a valid backup choice exists.
+            primaryEnabled = backupPreference != null
+        }
+        5 -> {
+            primaryLabel = stringResource(R.string.onboarding_ready_start)
+            onPrimaryAction = onComplete
+            primaryTestTag = TAG_ONBOARDING_START
+        }
+    }
 
-        OnboardingScaffold(
-            stepIndex = current,
-            totalSteps = TOTAL_STEPS,
-            progressLabel = stringResource(R.string.onboarding_progress, current + 1, TOTAL_STEPS),
-            onBack = if (current > 0) {
-                { step -= 1 }
-            } else {
-                null
-            },
-            primaryLabel = primaryLabel,
-            onPrimaryAction = onPrimaryAction,
-            primaryEnabled = primaryEnabled,
-            primaryTestTag = primaryTestTag,
-            secondaryLabel = secondaryLabel,
-            onSecondaryAction = onSecondaryAction,
-            content = {
+    OnboardingScaffold(
+        stepIndex = step,
+        totalSteps = TOTAL_STEPS,
+        progressLabel = stringResource(R.string.onboarding_progress, step + 1, TOTAL_STEPS),
+        onBack = if (step > 0) {
+            { step -= 1 }
+        } else {
+            null
+        },
+        primaryLabel = primaryLabel,
+        onPrimaryAction = onPrimaryAction,
+        primaryEnabled = primaryEnabled,
+        primaryTestTag = primaryTestTag,
+        secondaryLabel = secondaryLabel,
+        onSecondaryAction = onSecondaryAction,
+        content = {
+            // Only the page body animates. Keeping the scaffold outside the transition leaves the
+            // progress header and the action row anchored while the step changes, instead of the
+            // entire frame sliding out from under the finger that just tapped it. fillMaxSize also
+            // pins the body region, so AnimatedContent never animates its own height between steps.
+            AnimatedContent(
+                targetState = step,
+                transitionSpec = {
+                    val forward = targetState > initialState
+                    val dir = if (forward) 1 else -1
+                    (
+                        slideInHorizontally(tween(300)) { width -> dir * width / 5 } +
+                            fadeIn(tween(300))
+                        ) togetherWith (
+                        slideOutHorizontally(tween(300)) { width -> -dir * width / 5 } +
+                            fadeOut(tween(200))
+                        )
+                },
+                label = "onboardingStep",
+                modifier = Modifier.fillMaxSize(),
+            ) { current ->
                 when (current) {
                     0 -> WelcomeStep()
                     1 -> HowItWorksStep()
@@ -186,7 +195,7 @@ fun OnboardingScreen(
                     )
                     5 -> ReadyStep(permission.state, telegramState, backupPreference)
                 }
-            },
-        )
-    }
+            }
+        },
+    )
 }

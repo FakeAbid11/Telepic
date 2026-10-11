@@ -3,6 +3,7 @@ package com.telepic.ui
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepic.di.AppContainer
 import com.telepic.onboarding.BackupPreference
@@ -31,7 +32,7 @@ fun TelepicRoot(
 
     TelepicTheme(darkTheme = themeMode.isDarkTheme(isSystemInDarkTheme())) {
         when {
-            onboarding.isLoading -> LoadingState()
+            onboarding.isLoading -> LoadingState(message = stringResource(R.string.onboarding_loading))
             !onboarding.isCompleted -> {
                 val folders by onboardingViewModel.folders.collectAsStateWithLifecycle()
                 val foldersLoaded by onboardingViewModel.foldersLoaded.collectAsStateWithLifecycle()

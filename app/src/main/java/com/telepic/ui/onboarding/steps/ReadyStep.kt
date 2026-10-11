@@ -82,12 +82,13 @@ fun ReadyStep(
 
         // BACKUP_ALL and SELECT_FOLDER (with a confirmed pick) both correspond to real, wired backup.
         // The value states the *intent* ("will back up"), never a completed backup the engine hasn't
-        // confirmed.
+        // confirmed. Values stay noun-short: this column sits beside a weighted label in a single row,
+        // so a full sentence here squeezed the very label it was meant to summarize.
         val backupConfigured = backupPreference == BackupPreference.BACKUP_ALL ||
             backupPreference == BackupPreference.SELECT_FOLDER
         val backupValueRes = when (backupPreference) {
             BackupPreference.BACKUP_ALL -> R.string.onboarding_ready_value_backup_all
-            BackupPreference.SELECT_FOLDER -> R.string.onboarding_ready_value_backup_folders
+            BackupPreference.SELECT_FOLDER -> R.string.onboarding_ready_value_backup_folder
             else -> R.string.onboarding_ready_value_backup_none
         }
         SummaryRow(R.string.onboarding_ready_backup, backupValueRes, backupConfigured)

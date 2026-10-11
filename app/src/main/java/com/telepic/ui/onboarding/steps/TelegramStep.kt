@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.telephony.TelephonyManager
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -322,7 +323,11 @@ private fun UnavailableCard() {
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             Box(
-                modifier = Modifier.size(56.dp).clip(CircleShape).padding(spacing.sm),
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(spacing.sm),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
