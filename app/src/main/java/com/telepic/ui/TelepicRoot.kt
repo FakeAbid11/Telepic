@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.telepic.R
 import com.telepic.di.AppContainer
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingViewModel
