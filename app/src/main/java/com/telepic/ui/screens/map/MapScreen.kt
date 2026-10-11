@@ -47,6 +47,7 @@ import com.telepic.data.media.MapCameraResolver
 import com.telepic.data.media.MapClusterer
 import com.telepic.data.media.MapZoomPrecision
 import com.telepic.data.media.SavedCamera
+import com.telepic.domain.media.GeoLocation
 import com.telepic.domain.media.GeotaggedMedia
 import com.telepic.navigation.MapFocus
 import com.telepic.navigation.MapFocusRequest
@@ -190,7 +191,13 @@ private fun OsmMap(
     }
     // The framing applied when the surface is created, captured once. Priority: an explicit focus
     // (another screen asked for one photo) → the remembered position → all the user's photos.
-    val initialCamera = remember { MapCameraResolver.resolve(focus, savedCamera, plan) }
+    val initialCamera = remember {
+        MapCameraResolver.resolve(
+            focus = focus?.let { GeoLocation(it.latitude, it.longitude) },
+            saved = savedCamera,
+            plan = plan,
+        )
+    }
     var initialApplied by remember { mutableStateOf(false) }
     // An imperative camera move: the recenter button, or a tapped pin. `update` applies it once and
     // clears it, so a plain recomposition can never re-animate the map and fight the user's panning.
