@@ -101,7 +101,7 @@ fun TelepicApp(
         // content padding — that padding is what used to leave a light window-background strip
         // above the full-screen media. Every other route keeps the inset padding.
         val navPadding =
-            if (route?.startsWith("viewer/") == true) PaddingValues(0) else innerPadding
+            if (route?.startsWith("viewer/") == true) PaddingValues(0.dp) else innerPadding
         TelepicNavHost(
             navController = navController,
             container = container,

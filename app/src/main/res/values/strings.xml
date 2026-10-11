@@ -331,6 +331,7 @@
     <string name="map_marker_description">Photo taken at this location</string>
     <string name="map_cluster_description">Group of %1$d photos at this location</string>
     <string name="map_locations_count">%1$d locations</string>
+    <string name="map_view_description">Map with %1$d photo locations</string>
     <string name="map_attribution">© OpenStreetMap contributors</string>
     <string name="map_selected_open">Open</string>
 
