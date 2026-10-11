@@ -15,7 +15,7 @@ class MediaStoreLocalLookupTest {
      * A descending id line, the shape the OLDER direction walks (`_ID < cursor`, nearest first). Given
      * a cursor it yields the largest id below it, or null at the end of the line.
      */
-    private fun descendingLine(ids: LongArray): suspend (Long) -> Long? {
+    private fun descendingLine(ids: Iterable<Long>): suspend (Long) -> Long? {
         val sorted = ids.toList()
         return { cursor -> sorted.filter { it < cursor }.maxOrNull() }
     }
@@ -36,7 +36,7 @@ class MediaStoreLocalLookupTest {
         val result = walkToVisibleNeighbor(
             startId = 10L,
             hidden = setOf(9L, 8L, 7L),
-            next = descendingLine(longArrayOf(9L, 8L, 7L, 6L)),
+            next = descendingLine(9L downTo 6L),
         )
         assertEquals(6L, result)
     }
@@ -46,7 +46,7 @@ class MediaStoreLocalLookupTest {
         val result = walkToVisibleNeighbor(
             startId = 10L,
             hidden = setOf(9L, 8L),
-            next = descendingLine(longArrayOf(9L, 8L)),
+            next = descendingLine(9L downTo 8L),
         )
         assertNull(result)
     }
@@ -58,7 +58,7 @@ class MediaStoreLocalLookupTest {
             startId = 201L,
             hidden = (1L..200L).toSet(),
             maxSteps = 4,
-            next = descendingLine((200L downTo 1L).toLongArray()),
+            next = descendingLine(200L downTo 1L),
         )
         assertNull(result)
     }
@@ -68,12 +68,11 @@ class MediaStoreLocalLookupTest {
         // 1,000 hidden ids — twice the 500 that the SQL placeholder list used to be truncated to.
         // Truncation is exactly what let the Viewer land on filed-away media, so the walk must step
         // past all of them and reach the one visible item beyond.
-        val hidden = (1L..1_000L).toSet()
         val result = walkToVisibleNeighbor(
             startId = 1_001L,
-            hidden = hidden,
+            hidden = (1L..1_000L).toSet(),
             maxSteps = 1_500,
-            next = descendingLine((1_000L downTo 0L).toLongArray()),
+            next = descendingLine(1_000L downTo 0L),
         )
         assertEquals(0L, result)
     }
