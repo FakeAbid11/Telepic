@@ -3,7 +3,6 @@ package com.telepic.ui.screens.map
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -12,6 +11,10 @@ import android.graphics.drawable.Drawable
  * Draws the count badge used for map clusters: a filled circle with the number of photos inside,
  * grown in proportion to digit count. Pure android.graphics (no new dependencies, no layout
  * inflation) — the same result an icon pack would give, generated once per clustering pass.
+ *
+ * [textColor] is required rather than defaulted: the fill is the theme's `primary`, which is a
+ * LIGHT tone in the dark scheme (#7FA9FF), so a white count would land at 2.33:1 contrast and be
+ * unreadable. Callers must pass the matching `onPrimary`.
  */
 object MapPinBadge {
 
@@ -19,7 +22,7 @@ object MapPinBadge {
         context: Context,
         count: Int,
         fillColor: Int,
-        textColor: Int = Color.WHITE,
+        textColor: Int,
     ): Drawable {
         val density = context.resources.displayMetrics.density
         val radius = (if (count < 100) 15f else 18f) * density

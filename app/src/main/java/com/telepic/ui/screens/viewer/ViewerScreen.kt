@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Info
@@ -44,7 +45,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -58,10 +61,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.imageLoader
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.telepic.R
 import com.telepic.data.restore.RestoreFailure
@@ -250,113 +255,178 @@ private fun ViewerContent(
         animationSpec = if (dragging) snap() else spring(),
         label = "viewerSwipe",
     )
+    // Coil's real load state, not an assumption. The indicator used to be composed
+    // unconditionally behind the image, so a failed load spun forever — telling the user
+    // "still working" about work that had already stopped — and a success kept an invisible
+    // animation alive for the life of the screen.
+    var loadState by remember(model) { mutableStateOf(ImageLoadState.Loading) }
+    var retryToken by remember(model) { mutableIntStateOf(0) }
+
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // Shown behind the image while a (possibly slow) cloud preview or local decode loads —
         // the letterboxed backdrop otherwise read as a dead black screen.
-        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-        AsyncImage(
-            model = model,
-            contentDescription = stringResource(R.string.viewer_content_description),
-            contentScale = ContentScale.Fit,
-            alignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxSize()
-            .pointerInput(state.source) {
-                // One gesture pass: two fingers pinch/pan when zoomed, a single-finger horizontal
-                // drag swipes to the adjacent item (only while unzoomed). Taps stay on their own
-                // detector below — they don't consume drags and vice versa. The @RestrictSuspension
-                // gesture scope forbids spawning coroutines, so release feedback is declarative:
-                // snap while dragging, spring back through animateFloatAsState when released.
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    var dragTotalX = 0f
-                    var pinched = false
-                    var lastPinchDist = 0f
-                    var lastCentroid = Offset.Zero
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val pressed = event.changes.filter { it.pressed }
-                        if (pressed.isEmpty()) break
-                        if (pressed.size >= 2) {
-                            pinched = true
-                            val a = pressed[0]
-                            val b = pressed[1]
-                            val dist = (a.position - b.position).getDistance()
-                            val centroid = (a.position + b.position) / 2f
-                            if (lastPinchDist > 0f && dist > 0f) {
-                                val scaled = zoom.onScale(dist / lastPinchDist)
-                                // Re-clamp the pan against the NEW scale so pinch-out can't leave
-                                // the image stranded off-screen.
-                                zoom = scaled.onPan(
-                                    centroid.x - lastCentroid.x,
-                                    centroid.y - lastCentroid.y,
-                                    boundX = (scaled.scale - 1f) * size.width / 2f,
-                                    boundY = (scaled.scale - 1f) * size.height / 2f,
-                                )
-                            }
-                            lastPinchDist = dist
-                            lastCentroid = centroid
-                            pressed.forEach { it.consume() }
-                        } else {
-                            val change = pressed.first()
-                            val delta = if (change.previousPosition != Offset.Unspecified) {
-                                change.position - change.previousPosition
+        if (loadState == ImageLoadState.Loading) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+        // Keyed on the retry token: bumping it discards the failed painter and builds a fresh
+        // one, which re-issues the request. Coil does not cache failures, so the retry is real.
+        key(retryToken) {
+            AsyncImage(
+                model = model,
+                contentDescription = stringResource(R.string.viewer_content_description),
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.Center,
+                // The one line that turns the spinner below into a truthful indicator.
+                onState = { loadState = it.toImageLoadState() },
+                modifier = Modifier
+                    .fillMaxSize()
+                .pointerInput(state.source) {
+                    // One gesture pass: two fingers pinch/pan when zoomed, a single-finger horizontal
+                    // drag swipes to the adjacent item (only while unzoomed). Taps stay on their own
+                    // detector below — they don't consume drags and vice versa. The @RestrictSuspension
+                    // gesture scope forbids spawning coroutines, so release feedback is declarative:
+                    // snap while dragging, spring back through animateFloatAsState when released.
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        var dragTotalX = 0f
+                        var pinched = false
+                        var lastPinchDist = 0f
+                        var lastCentroid = Offset.Zero
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.isEmpty()) break
+                            if (pressed.size >= 2) {
+                                pinched = true
+                                val a = pressed[0]
+                                val b = pressed[1]
+                                val dist = (a.position - b.position).getDistance()
+                                val centroid = (a.position + b.position) / 2f
+                                if (lastPinchDist > 0f && dist > 0f) {
+                                    val scaled = zoom.onScale(dist / lastPinchDist)
+                                    // Re-clamp the pan against the NEW scale so pinch-out can't leave
+                                    // the image stranded off-screen.
+                                    zoom = scaled.onPan(
+                                        centroid.x - lastCentroid.x,
+                                        centroid.y - lastCentroid.y,
+                                        boundX = (scaled.scale - 1f) * size.width / 2f,
+                                        boundY = (scaled.scale - 1f) * size.height / 2f,
+                                    )
+                                }
+                                lastPinchDist = dist
+                                lastCentroid = centroid
+                                pressed.forEach { it.consume() }
                             } else {
-                                Offset.Zero
-                            }
-                            if (zoom.isZoomed) {
-                                // Bound by the viewport half-extent scaled past fit. Deliberate
-                                // approximation: the true limit is the image's painted size, which
-                                // differs per axis under ContentScale.Fit — viewport bounds still
-                                // make "drag it permanently away" impossible without painter metrics.
-                                zoom = zoom.onPan(
-                                    delta.x,
-                                    delta.y,
-                                    boundX = (zoom.scale - 1f) * size.width / 2f,
-                                    boundY = (zoom.scale - 1f) * size.height / 2f,
-                                )
-                                change.consume()
-                            } else if (!pinched) {
-                                dragging = true
-                                dragTotalX += delta.x
-                                swipeOffsetX = dragTotalX
-                                change.consume()
+                                val change = pressed.first()
+                                val delta = if (change.previousPosition != Offset.Unspecified) {
+                                    change.position - change.previousPosition
+                                } else {
+                                    Offset.Zero
+                                }
+                                if (zoom.isZoomed) {
+                                    // Bound by the viewport half-extent scaled past fit. Deliberate
+                                    // approximation: the true limit is the image's painted size, which
+                                    // differs per axis under ContentScale.Fit — viewport bounds still
+                                    // make "drag it permanently away" impossible without painter metrics.
+                                    zoom = zoom.onPan(
+                                        delta.x,
+                                        delta.y,
+                                        boundX = (zoom.scale - 1f) * size.width / 2f,
+                                        boundY = (zoom.scale - 1f) * size.height / 2f,
+                                    )
+                                    change.consume()
+                                } else if (!pinched) {
+                                    dragging = true
+                                    dragTotalX += delta.x
+                                    swipeOffsetX = dragTotalX
+                                    change.consume()
+                                }
                             }
                         }
-                    }
-                    if (!pinched && !zoom.isZoomed && dragTotalX != 0f) {
-                        val target = SwipeResolver.resolve(
-                            deltaPx = dragTotalX,
-                            widthPx = size.width.toFloat(),
-                            previous = state.previous,
-                            next = state.next,
-                        )
-                        // Always release the drag offset: a committed swap navigates anyway (and
-                        // swaps the remembered offset), while a rejected or under-threshold drag
-                        // springs back to rest instead of freezing the image sideways.
-                        swipeOffsetX = 0f
-                        if (target != null) {
-                            // Navigating swaps the remember(state.source) offset anyway; the swap is
-                            // immediate, identical to the arrow buttons' path through ViewModel.open.
-                            onNavigate(target)
+                        if (!pinched && !zoom.isZoomed && dragTotalX != 0f) {
+                            val target = SwipeResolver.resolve(
+                                deltaPx = dragTotalX,
+                                widthPx = size.width.toFloat(),
+                                previous = state.previous,
+                                next = state.next,
+                            )
+                            // Always release the drag offset: a committed swap navigates anyway (and
+                            // swaps the remembered offset), while a rejected or under-threshold drag
+                            // springs back to rest instead of freezing the image sideways.
+                            swipeOffsetX = 0f
+                            if (target != null) {
+                                // Navigating swaps the remember(state.source) offset anyway; the swap is
+                                // immediate, identical to the arrow buttons' path through ViewModel.open.
+                                onNavigate(target)
+                            }
                         }
+                        dragging = false
                     }
-                    dragging = false
                 }
-            }
-            .pointerInput(state.source) {
-                detectTapGestures(
-                    onTap = { onRequestToggle() },
-                    onDoubleTap = { zoom = zoom.reset() },
-                )
-            }
-            .graphicsLayer(
-                scaleX = zoom.scale,
-                scaleY = zoom.scale,
-                translationX = zoom.offsetX + swipeOffset,
-                translationY = zoom.offsetY,
-            ),
+                .pointerInput(state.source) {
+                    detectTapGestures(
+                        onTap = { onRequestToggle() },
+                        onDoubleTap = { zoom = zoom.reset() },
+                    )
+                }
+                .graphicsLayer(
+                    scaleX = zoom.scale,
+                    scaleY = zoom.scale,
+                    translationX = zoom.offsetX + swipeOffset,
+                    translationY = zoom.offsetY,
+                ),
+            )
+        }
+        // Drawn after (i.e. above) the image so its button is hit-tested first: the image's
+        // own gesture layer consumes taps and would otherwise swallow the retry press.
+        if (loadState == ImageLoadState.Error) {
+            ViewerImageError(onRetry = { retryToken++ })
+        }
+    }
+}
+
+/**
+ * The three Coil painter states the Viewer actually reacts to. [AsyncImagePainter.State.Empty]
+ * collapses into [Loading]: a request that has not started yet is, from the user's seat, still
+ * loading.
+ */
+private enum class ImageLoadState { Loading, Success, Error }
+
+private fun AsyncImagePainter.State.toImageLoadState(): ImageLoadState = when (this) {
+    is AsyncImagePainter.State.Success -> ImageLoadState.Success
+    is AsyncImagePainter.State.Error -> ImageLoadState.Error
+    else -> ImageLoadState.Loading
+}
+
+/**
+ * Shown when Coil reports a genuine read/decode failure, instead of a spinner that never stops.
+ * Styled like [CloudUnavailable] (white on the dark media backdrop) rather than reusing
+ * `ErrorState`: that component paints `onSurface`, which is near-black in the light theme and
+ * would be unreadable against this backdrop.
+ */
+@Composable
+private fun ViewerImageError(onRetry: () -> Unit) {
+    val spacing = TelepicTokens.spacing
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(spacing.md, Alignment.CenterVertically),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.BrokenImage,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(40.dp),
         )
+        Text(
+            text = stringResource(R.string.viewer_image_error),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+        )
+        TextButton(onClick = onRetry) {
+            Text(text = stringResource(R.string.common_retry), color = Color.White)
+        }
     }
 }
 

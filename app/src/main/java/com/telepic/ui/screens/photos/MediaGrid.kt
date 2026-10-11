@@ -1,6 +1,5 @@
 package com.telepic.ui.screens.photos
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,15 +14,14 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -268,14 +266,14 @@ private fun AppendErrorFooter(onRetry: () -> Unit, modifier: Modifier = Modifier
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.error,
         )
-        Text(
-            text = stringResource(R.string.photos_retry),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(onClick = onRetry)
-                .padding(horizontal = spacing.sm, vertical = spacing.xs),
-        )
+        // A real button rather than a Text with `clickable`: the old target was roughly 28dp tall
+        // and carried no button role, so it was hard to hit and announced as inert text. TextButton
+        // keeps the primary-coloured label while giving the 48dp minimum touch target.
+        TextButton(onClick = onRetry) {
+            Text(
+                text = stringResource(R.string.photos_retry),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
     }
 }

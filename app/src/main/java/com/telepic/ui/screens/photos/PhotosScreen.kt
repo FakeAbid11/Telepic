@@ -31,8 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -120,10 +118,10 @@ fun PhotosScreen(
                             style = MaterialTheme.typography.displaySmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier.semantics { contentDescription = settingsDescription },
-                        ) {
+                        // The description lives on the Icon only: setting it on the IconButton too
+                        // made TalkBack read "Settings, Settings", because the merge policy for
+                        // ContentDescription is Concat.
+                        IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Outlined.Settings, contentDescription = settingsDescription)
                         }
                     }
@@ -171,6 +169,9 @@ fun PhotosScreen(
                             report.summary.alreadyCovered,
                         ),
                         onDismiss = viewModel::consumeSelectionMessage,
+                        // Two identical summaries render the same sentence; the report's own id
+                        // keeps the second one from inheriting the first one's timer.
+                        messageId = report.id,
                     )
                 }
                 if (selectionActive) {

@@ -216,12 +216,18 @@ private fun ActionRow(
         TextButton(onClick = onUndo, enabled = !busy) { Text(stringResource(undoLabelRes(kind))) }
         if (kind == OrganizationKind.TRASH) {
             TextButton(onClick = onDelete, enabled = !busy) {
-                if (busy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
+                // "Delete forever" stays on screen while busy: replacing the label with a bare
+                // spinner left a destructive action identifiable only by its position in the row.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.xs),
+                ) {
+                    if (busy) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
                     Text(stringResource(R.string.organization_delete_forever))
                 }
             }

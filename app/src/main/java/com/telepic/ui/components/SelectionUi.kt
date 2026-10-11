@@ -88,6 +88,9 @@ fun SelectionActionBar(
                 Text(stringResource(R.string.photos_selection_cancel))
             }
             TextButton(onClick = onBackup, enabled = canBackup && !busy) {
+                // The label stays put while busy. Swapping it for a bare spinner made the button's
+                // own action unreadable at exactly the moment the user needed to know what was
+                // running; only the leading icon changes, so the button also keeps its width.
                 if (busy) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
@@ -95,11 +98,11 @@ fun SelectionActionBar(
                     )
                 } else {
                     Icon(Icons.Outlined.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text(
-                        text = stringResource(R.string.photos_selection_backup),
-                        modifier = Modifier.padding(start = TelepicTokens.spacing.xs),
-                    )
                 }
+                Text(
+                    text = stringResource(R.string.photos_selection_backup),
+                    modifier = Modifier.padding(start = TelepicTokens.spacing.xs),
+                )
             }
         }
     }

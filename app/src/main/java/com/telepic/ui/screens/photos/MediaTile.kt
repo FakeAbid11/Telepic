@@ -35,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -71,13 +72,23 @@ fun MediaTile(
     val spacing = TelepicTokens.spacing
     val context = LocalContext.current
     val label = mediaAccessibilityLabel(context, media, backupState, isFavorite)
+    // Named distinctly from the `selected` parameter: inside `semantics { }` the receiver also
+    // exposes a `selected` property, and shadowing between the two reads as a bug.
+    val tileSelected = selectionActive && selected
 
     Box(
         modifier = modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(spacing.gridItemRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .semantics { contentDescription = label }
+            .semantics {
+                contentDescription = label
+                // Only meaningful while selecting: outside selection mode the tile is not a
+                // toggle, and announcing "not selected" on every cell would be noise.
+                // `this.` is explicit because the receiver's `selected` would otherwise be
+                // ambiguous with the composable's `selected` parameter.
+                if (selectionActive) this.selected = tileSelected
+            }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         AsyncImage(
@@ -155,7 +166,9 @@ private fun SelectionCheck(selected: Boolean, modifier: Modifier = Modifier) {
             Icon(
                 imageVector = Icons.Filled.Check,
                 contentDescription = null,
-                tint = Color.White,
+                // onPrimary, not White: the fill is `primary`, a light tone in the dark scheme,
+                // where a white check measured 2.33:1 and was effectively invisible.
+                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(16.dp),
             )
         }

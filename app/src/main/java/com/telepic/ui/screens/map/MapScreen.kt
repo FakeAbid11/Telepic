@@ -204,7 +204,10 @@ private fun OsmMap(
     var pendingCamera by remember { mutableStateOf<MapCameraResolver.Decision?>(null) }
     var selected by remember { mutableStateOf<MapClusterer.MapPin.Single?>(null) }
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+    // The badge draws its count onto a `primary` fill, so the count must use `onPrimary`: in the
+    // dark scheme `primary` is a light blue, and white on it measured 2.33:1 (unreadable).
     val clusterFill = MaterialTheme.colorScheme.primary.toArgb()
+    val clusterCountColor = MaterialTheme.colorScheme.onPrimary.toArgb()
 
     // Persist where the map was left. Written on pause *and* on teardown: leaving the map for another
     // tab disposes it without a pause, and that final position is the one worth remembering.
@@ -290,7 +293,12 @@ private fun OsmMap(
                             // A count badge (drawn, never an icon pack) so clusters read differently from
                             // singles at any zoom band.
                             marker.setIcon(
-                                MapPinBadge.clusterDrawable(mapView.context, pin.size, clusterFill),
+                                MapPinBadge.clusterDrawable(
+                                    mapView.context,
+                                    pin.size,
+                                    clusterFill,
+                                    clusterCountColor,
+                                ),
                             )
                             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             marker.title =

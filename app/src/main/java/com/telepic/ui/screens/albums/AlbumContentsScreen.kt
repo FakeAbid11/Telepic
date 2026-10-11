@@ -128,6 +128,9 @@ fun AlbumContentsScreen(
                             report.summary.alreadyCovered,
                         ),
                         onDismiss = viewModel::consumeSelectionMessage,
+                        // Two identical summaries render the same sentence; the report's own id
+                        // keeps the second one from inheriting the first one's timer.
+                        messageId = report.id,
                     )
                 }
                 if (selectionActive) {

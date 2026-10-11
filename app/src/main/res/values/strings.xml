@@ -273,6 +273,7 @@
     <!-- Shared state components -->
     <string name="common_retry">Try again</string>
     <string name="common_loading">Loading</string>
+    <string name="common_dismiss">Dismiss</string>
 
     <!-- ============================ Viewer (Phase 9) ============================ -->
     <string name="viewer_back">Back</string>
@@ -280,6 +281,7 @@
     <string name="viewer_next">Next item</string>
     <string name="viewer_missing">This media is no longer available</string>
     <string name="viewer_content_description">Media viewer image</string>
+    <string name="viewer_image_error">This image couldn\'t be loaded</string>
     <string name="viewer_playback_error">Playback error</string>
     <string name="viewer_source_local">On this device</string>
     <string name="viewer_source_cloud">Telegram cloud</string>
