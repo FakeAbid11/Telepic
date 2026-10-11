@@ -32,3 +32,6 @@ secrets.properties
 # Local analysis reports — kept out of the repository on purpose
 /Telepic_Code_Review_Report.md
 /Telepic_Partial_Feature_Completion_Plan.md
+
+# Product requirements doc — local working copy only, never committed
+/PRD.md
