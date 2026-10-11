@@ -28,3 +28,7 @@ secrets.properties
 
 # Local agent workspace (scratch + notes) — never committed
 .workbuddy-ai/
+
+# Local analysis reports — kept out of the repository on purpose
+/Telepic_Code_Review_Report.md
+/Telepic_Partial_Feature_Completion_Plan.md
