@@ -3,13 +3,16 @@ package com.telepic.ui.screens.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.media.MapLocationRepository
+import com.telepic.data.media.SavedCamera
 import com.telepic.domain.media.GeotaggedMedia
+import com.telepic.settings.MapCameraRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -29,6 +32,7 @@ import kotlinx.coroutines.launch
 class MapViewModel(
     private val mapLocationRepository: MapLocationRepository,
     private val hiddenIds: Flow<Set<Long>> = flowOf(emptySet()),
+    private val cameraRepository: MapCameraRepository? = null,
 ) : ViewModel() {
 
     private val _isScanning = MutableStateFlow(false)
@@ -48,6 +52,51 @@ class MapViewModel(
     val locationCount: StateFlow<Int> =
         locations.map { it.size }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    private val _savedCamera = MutableStateFlow<SavedCamera?>(null)
+
+    /** Where the map was last left, or null when nothing has been remembered yet. */
+    val savedCamera: StateFlow<SavedCamera?> = _savedCamera.asStateFlow()
+
+    private val _cameraResolved = MutableStateFlow(cameraRepository == null)
+
+    /**
+     * Whether the remembered camera has been read. The screen waits for this before creating the map
+     * surface so it opens already framed, instead of visibly re-animating away from the default view.
+     * Resolves immediately when no camera repository is supplied.
+     */
+    val cameraResolved: StateFlow<Boolean> = _cameraResolved.asStateFlow()
+
+    init {
+        val repository = cameraRepository
+        if (repository != null) {
+            viewModelScope.launch {
+                _savedCamera.value = try {
+                    repository.camera.first()
+                } catch (_: Exception) {
+                    null
+                }
+                _cameraResolved.value = true
+            }
+        }
+    }
+
+    /**
+     * Remembers where the map was left. The write runs on [viewModelScope] rather than the screen's
+     * composition scope: leaving the map cancels a composition scope immediately, which would drop
+     * the final position — the one that matters most.
+     */
+    fun rememberCamera(camera: SavedCamera) {
+        _savedCamera.value = camera
+        val repository = cameraRepository ?: return
+        viewModelScope.launch {
+            try {
+                repository.save(camera)
+            } catch (_: Exception) {
+                // Losing a remembered camera is not worth surfacing; the map still opens correctly.
+            }
+        }
+    }
 
     /**
      * Bounded rescan of the EXIF location cache. Single-flight: a second call while one is running

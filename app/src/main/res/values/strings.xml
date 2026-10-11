@@ -348,6 +348,8 @@
     <string name="map_view_description">Map with %1$d photo locations</string>
     <string name="map_attribution">© OpenStreetMap contributors</string>
     <string name="map_selected_open">Open</string>
+    <string name="map_recenter">Show all photo locations</string>
+    <string name="map_preview_thumbnail">Preview of the photo at this location</string>
 
     <!-- ============================ Photos multi-selection (Feature 1) ============================ -->
     <string name="photos_selection_count">%1$d selected</string>
@@ -367,6 +369,7 @@
     <string name="details_date_added">Added to library</string>
     <string name="details_camera">Camera</string>
     <string name="details_location">Location</string>
+    <string name="details_show_on_map">Show on map</string>
     <string name="details_unknown">Unknown</string>
 
     <!-- ============================ Navigation fallback ============================ -->

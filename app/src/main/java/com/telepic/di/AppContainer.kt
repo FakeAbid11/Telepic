@@ -52,6 +52,8 @@ import com.telepic.data.restore.DefaultRestoreRepository
 import com.telepic.data.restore.RestoreRepository
 import com.telepic.onboarding.OnboardingRepository
 import com.telepic.onboarding.OnboardingRepositoryImpl
+import com.telepic.settings.MapCameraRepository
+import com.telepic.settings.MapCameraRepositoryImpl
 import com.telepic.settings.SettingsRepository
 import com.telepic.settings.SettingsRepositoryImpl
 import com.telepic.telegram.KeystoreTdLibKeyProvider
@@ -85,6 +87,7 @@ interface AppContainer {
     val mediaOrganizationRepository: MediaOrganizationRepository
     val mediaDeleter: LocalMediaDeleter
     val mapLocationRepository: MapLocationRepository
+    val mapCameraRepository: MapCameraRepository
     val mediaMetadataReader: MediaMetadataReader
     val restoreRepository: RestoreRepository
     val mediaChangeWatcher: MediaChangeWatcher
@@ -183,6 +186,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             pageLoader = mediaLoader,
             extractor = AndroidLocationExtractor(appContext),
         )
+    }
+
+    override val mapCameraRepository: MapCameraRepository by lazy {
+        MapCameraRepositoryImpl(appContext.telepicDataStore)
     }
 
     override val mediaMetadataReader: MediaMetadataReader by lazy {

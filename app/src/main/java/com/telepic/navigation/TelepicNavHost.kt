@@ -61,6 +61,9 @@ fun TelepicNavHost(
     onThemeModeChange: (ThemeMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // One handoff channel for "show this photo on the map", hoisted above the graph so the Viewer's
+    // Details sheet and the Map tab share it without touching the Map route (see [MapFocusRequest]).
+    val mapFocusRequest = remember { MapFocusRequest() }
     NavHost(
         navController = navController,
         startDestination = TelepicDestination.Start.route,
@@ -183,6 +186,7 @@ fun TelepicNavHost(
                                 container.mediaOrganizationRepository.archivedIds,
                                 container.mediaOrganizationRepository.trashedIds,
                             ) { archived, trashed -> archived + trashed },
+                            cameraRepository = container.mapCameraRepository,
                         )
                     }
                 }
@@ -191,6 +195,7 @@ fun TelepicNavHost(
             MapScreen(
                 viewModel = mapViewModel,
                 onOpenMedia = { mediaId -> navController.navigate(ViewerRoute.local(mediaId)) },
+                focusRequest = mapFocusRequest,
             )
         }
         composable(TelepicDestination.Settings.route) {
@@ -259,7 +264,14 @@ fun TelepicNavHost(
                 }
             }
             val viewerViewModel: ViewerViewModel = viewModel(factory = viewerFactory)
-            ViewerScreen(viewModel = viewerViewModel, onBack = { navController.popBackStack() })
+            ViewerScreen(
+                viewModel = viewerViewModel,
+                onBack = { navController.popBackStack() },
+                onShowOnMap = { latitude, longitude ->
+                    mapFocusRequest.request(latitude, longitude)
+                    navController.navigateToTopLevel(TelepicDestination.Map)
+                },
+            )
         }
         composable(
             route = ViewerRoute.CLOUD,

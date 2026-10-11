@@ -83,6 +83,7 @@ fun ViewerScreen(
     viewModel: ViewerViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onShowOnMap: ((latitude: Double, longitude: Double) -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val flags by viewModel.flags.collectAsStateWithLifecycle()
@@ -179,6 +180,15 @@ fun ViewerScreen(
                 MediaDetailsSheet(
                     details = details,
                     onDismiss = { showDetails = false; viewModel.clearDetails() },
+                    // Close the sheet before handing off: returning from the map should land on the
+                    // photo, not on a sheet the user had already acted on.
+                    onShowOnMap = onShowOnMap?.let { show ->
+                        { latitude: Double, longitude: Double ->
+                            showDetails = false
+                            viewModel.clearDetails()
+                            show(latitude, longitude)
+                        }
+                    },
                 )
             }
 
