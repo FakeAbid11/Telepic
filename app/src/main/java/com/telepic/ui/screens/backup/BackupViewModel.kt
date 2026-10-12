@@ -19,8 +19,15 @@ data class BackupUiState(
     val stats: BackupQueueStats = BackupQueueStats(),
     val items: List<BackupItem> = emptyList(),
     val isAuthorized: Boolean = false,
+    /**
+     * False until the queue has actually been read. The initial value cannot tell "nothing queued"
+     * from "not read yet", so without this the screen asserted "no backups yet" — a claim about the
+     * user's data — for the frame before Room's first emission, over a queue that had rows in it.
+     */
+    val isLoaded: Boolean = false,
 ) {
-    val isEmpty: Boolean get() = items.isEmpty()
+    /** Genuinely nothing queued — never true before the queue has been read. */
+    val isEmpty: Boolean get() = isLoaded && items.isEmpty()
     val hasWaitingForAuth: Boolean get() = items.any { it.state == BackupState.WAITING_FOR_AUTH }
     val hasWaitingForNetwork: Boolean get() = items.any { it.state == BackupState.WAITING_FOR_NETWORK }
     val isRunning: Boolean get() = stats.uploading > 0
@@ -43,6 +50,7 @@ class BackupViewModel(
                 stats = stats,
                 items = items,
                 isAuthorized = auth is TelegramAuthState.Authorized,
+                isLoaded = true,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BackupUiState())
 

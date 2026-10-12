@@ -369,6 +369,8 @@
     <string name="map_title">Map</string>
     <string name="map_empty_title">No locations yet</string>
     <string name="map_empty_description">Photos and videos that contain GPS coordinates appear on the map. Telepic never invents a location for media without coordinates.</string>
+    <string name="map_scan_failed_title">Couldn\'t scan your library</string>
+    <string name="map_scan_failed_description">Reading location data failed. Your photos are unaffected — try again.</string>
     <string name="map_permission_title">See your photo locations</string>
     <string name="map_permission_description">Telepic needs photo &amp; video access to read the location data already stored in your media.</string>
     <string name="map_marker_description">Photo taken at %1$s</string>

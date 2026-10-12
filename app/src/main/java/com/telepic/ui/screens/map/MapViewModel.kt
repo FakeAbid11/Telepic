@@ -6,6 +6,7 @@ import com.telepic.data.media.MapLocationRepository
 import com.telepic.data.media.SavedCamera
 import com.telepic.domain.media.GeotaggedMedia
 import com.telepic.settings.MapCameraRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -37,6 +38,16 @@ class MapViewModel(
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    private val _scanFailed = MutableStateFlow(false)
+
+    /**
+     * Whether the last scan failed. Surfaced so the screen can tell a failed scan apart from a
+     * library that genuinely holds no geotagged media: both used to render the identical "no
+     * locations" empty state, which told the user their photos carried no GPS data when the scan
+     * had in fact thrown.
+     */
+    val scanFailed: StateFlow<Boolean> = _scanFailed.asStateFlow()
 
     /** Geotagged items minus anything the user archived or trashed. */
     private val visibleLocations =
@@ -122,9 +133,16 @@ class MapViewModel(
             _isScanning.value = true
             try {
                 mapLocationRepository.rescan()
+                _scanFailed.value = false
+            } catch (cancellation: CancellationException) {
+                // A cancelled scan is not a failure: rethrown so it neither reports an error nor
+                // counts as one, the same rule the rest of the app follows.
+                throw cancellation
             } catch (_: Exception) {
-                // Deliberately not rethrown: the map keeps whatever it already has, and the
-                // empty state remains an honest "no locations known", never a crash.
+                // Recorded rather than swallowed. The map still keeps whatever it already has — the
+                // empty state is not a lie either — but the failure is now reportable instead of
+                // being indistinguishable from an empty library.
+                _scanFailed.value = true
             } finally {
                 _isScanning.value = false
             }

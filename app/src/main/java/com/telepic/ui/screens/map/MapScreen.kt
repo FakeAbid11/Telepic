@@ -55,6 +55,7 @@ import com.telepic.permissions.MediaPermissionState
 import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
+import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.LoadingState
 import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.StateAction
@@ -99,6 +100,7 @@ fun MapScreen(
     val locations by viewModel.locations.collectAsStateWithLifecycle()
     val locationCount by viewModel.locationCount.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
+    val scanFailed by viewModel.scanFailed.collectAsStateWithLifecycle()
     val savedCamera by viewModel.savedCamera.collectAsStateWithLifecycle()
     val cameraResolved by viewModel.cameraResolved.collectAsStateWithLifecycle()
     val focus by focusRequest.pending.collectAsStateWithLifecycle()
@@ -142,6 +144,16 @@ fun MapScreen(
                 // the surface exists, for the same reason: the map must open already framed.
                 !cameraResolved || (isScanning && locations.isEmpty()) ->
                     LoadingState(modifier = Modifier.weight(1f))
+                // A failed scan used to fall into the branch below and read as "no locations yet" —
+                // telling the user their photos carry no GPS data when the scan had thrown. Gated on
+                // `locations.isEmpty()` so an already-known set stays on screen instead.
+                scanFailed && locations.isEmpty() -> ErrorState(
+                    title = stringResource(R.string.map_scan_failed_title),
+                    explanation = stringResource(R.string.map_scan_failed_description),
+                    onRetry = viewModel::refresh,
+                    retryLabel = stringResource(R.string.common_retry),
+                    modifier = Modifier.weight(1f),
+                )
                 locations.isEmpty() -> EmptyState(
                     icon = Icons.Outlined.LocationOff,
                     title = stringResource(R.string.map_empty_title),

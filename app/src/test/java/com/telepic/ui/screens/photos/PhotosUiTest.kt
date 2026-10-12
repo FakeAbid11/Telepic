@@ -47,6 +47,12 @@ class PhotosUiTest {
             all.drop(offset).take(limit)
     }
 
+    /** A library that cannot be read at all — the first load fails rather than returning nothing. */
+    private class ThrowingLoader : MediaPageLoader {
+        override suspend fun load(offset: Int, limit: Int): List<LocalMedia> =
+            throw IllegalStateException("library unreadable")
+    }
+
     private class CountingRepository(private val delegate: LocalMediaRepository) : LocalMediaRepository {
         var refreshCount = 0
         override val media get() = delegate.media
@@ -132,6 +138,20 @@ class PhotosUiTest {
         val before = repository.refreshCount
         composeRule.onNodeWithText("Refresh").performClick()
         assertTrue(repository.refreshCount > before)
+    }
+
+    @Test
+    fun `a failed first load reports the failure instead of a blank screen`() {
+        val repository = LocalMediaRepositoryImpl(ThrowingLoader())
+        photosScreen(PhotosViewModel(repository, NoopWatcher), MediaPermissionState.Granted)
+
+        // The failure banner is gated on already having content, so a *first* load failure used to
+        // fall through to an empty grid: no message, no retry, nothing said about the library
+        // failing to open.
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("Couldn't load your library").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("Try again").assertIsDisplayed()
     }
 
     @Test

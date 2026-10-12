@@ -217,6 +217,27 @@ class MapViewModelTest {
         assertEquals(1, repo.rescanCalls)
         // The already-known locations stay on screen — the empty state is not a lie either.
         assertEquals(listOf(1L), vm.locations.value.map { it.mediaId })
+        // …and the failure is now reportable instead of being indistinguishable from an empty library.
+        assertTrue(vm.scanFailed.value)
+    }
+
+    @Test
+    fun `a failed scan is reported and a later success clears it`() {
+        val repo = FakeMapRepo(MutableStateFlow(emptyList())).apply { failNext = true }
+        val vm = MapViewModel(repo)
+
+        vm.refresh()
+        settle()
+        assertTrue(vm.scanFailed.value)
+
+        repo.failNext = false
+        vm.refresh()
+        settle()
+        repo.gate.complete(Unit)
+        settle()
+
+        assertFalse(vm.scanFailed.value)
+        assertEquals(2, repo.rescanCalls)
     }
 
     @Test

@@ -43,6 +43,7 @@ import com.telepic.permissions.MediaPermissionState
 import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
+import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.StateAction
@@ -223,6 +224,15 @@ private fun MediaRegion(
     Box(modifier = Modifier.fillMaxSize()) {
         when {
             isInitialLoading -> PhotosSkeleton()
+            // A failed *first* load used to fall through to the grid below: no message, no retry, and
+            // a blank screen that said nothing about the library having failed to open. A refresh
+            // failure *with* content keeps its own banner further down instead.
+            refreshFailed && !hasContent -> ErrorState(
+                title = stringResource(R.string.photos_error_title),
+                explanation = stringResource(R.string.photos_error_description),
+                onRetry = { paging.retry() },
+                retryLabel = stringResource(R.string.common_retry),
+            )
             refresh is LoadState.NotLoading && !hasContent -> EmptyState(
                 icon = Icons.Outlined.PhotoLibrary,
                 title = stringResource(R.string.photos_no_media_title),
