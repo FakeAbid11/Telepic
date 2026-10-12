@@ -85,15 +85,26 @@ class MapViewModel(
      * Remembers where the map was left. The write runs on [viewModelScope] rather than the screen's
      * composition scope: leaving the map cancels a composition scope immediately, which would drop
      * the final position — the one that matters most.
+     *
+     * The in-memory [savedCamera] is published only *after* the write lands. It is what the screen
+     * reads as "where the map was left", so it may only ever assert a position the repository
+     * actually holds — publishing before the write is what silently lost a failed save while the app
+     * behaved as if it had been remembered.
      */
     fun rememberCamera(camera: SavedCamera) {
-        _savedCamera.value = camera
-        val repository = cameraRepository ?: return
+        val repository = cameraRepository
+        if (repository == null) {
+            // Nothing to persist; the in-memory value is the best available answer.
+            _savedCamera.value = camera
+            return
+        }
         viewModelScope.launch {
             try {
                 repository.save(camera)
+                _savedCamera.value = camera
             } catch (_: Exception) {
-                // Losing a remembered camera is not worth surfacing; the map still opens correctly.
+                // Losing a remembered camera is not worth surfacing; the map still opens correctly —
+                // at the last position that was actually persisted, which is the honest fallback.
             }
         }
     }
