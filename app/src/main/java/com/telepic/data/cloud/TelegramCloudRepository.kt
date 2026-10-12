@@ -301,35 +301,32 @@ class TelegramCloudRepository(
             // Record the confirmed remote in the manifest under its identity, carrying the trusted
             // content hash from the queue row so content recognition dedups this upload too — even
             // when its confirmation arrived late, via this path instead of the original send run.
-            upsertPreservingTrusted(
-                CloudMedia(
-                    messageId = confirmed.messageId,
-                    chatId = confirmed.chatId,
-                    mediaType = confirmed.mediaType,
-                    mimeType = null,
-                    fileName = null,
-                    sizeBytes = contentSizeBytes,
-                    width = null,
-                    height = null,
-                    durationMs = null,
-                    dateEpochSec = clock() / 1000L,
-                    previewFileId = null,
-                    originalFileId = confirmed.telegramFileId,
-                    isDownloaded = false,
-                    contentHash = contentHash,
-                ).toEntity(clock()),
+            manifestDao.upsertAll(
+                listOf(
+                    mergePreservingTrusted(
+                        CloudMedia(
+                            messageId = confirmed.messageId,
+                            chatId = confirmed.chatId,
+                            mediaType = confirmed.mediaType,
+                            mimeType = null,
+                            fileName = null,
+                            sizeBytes = contentSizeBytes,
+                            width = null,
+                            height = null,
+                            durationMs = null,
+                            dateEpochSec = clock() / 1000L,
+                            previewFileId = null,
+                            originalFileId = confirmed.telegramFileId,
+                            isDownloaded = false,
+                            contentHash = contentHash,
+                        ).toEntity(clock()),
+                    ),
+                ),
             )
             confirmed
         }
     }
 
-    /**
-     * Upserts a manifest row while preserving app-trusted local metadata a remote discovery cannot
-     * reconstruct: an existing non-null `contentHash`, a prior `isDownloaded`, preview/original ids
-     * and the original `createdAt` are kept unless the incoming row supplies a real value. Identity
-     * is (chatId, messageId), so a preserved hash always belongs to the same Telegram message, and
-     * repeated refreshes are idempotent.
-     */
     /**
      * The row to write for [entity]: the remote row wins, except for the fields only this device
      * knows — a trusted content hash, a completed download, resolved file ids, and the original
@@ -337,7 +334,8 @@ class TelegramCloudRepository(
      *
      * Returns the merged entity rather than writing it, so a page of N rows costs one upsert instead
      * of N transactions. The read-then-write is not atomic on its own, so every caller holds the
-     * repository mutex.
+     * repository mutex — and identity is (chatId, messageId), so a preserved hash always belongs to
+     * the same Telegram message and repeated refreshes stay idempotent.
      */
     private suspend fun mergePreservingTrusted(
         entity: com.telepic.data.cloud.db.CloudMediaManifestEntity,
