@@ -72,6 +72,13 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - Dark (default), Light, and System themes, all driven by centralized design tokens.
 - Accessibility-minded: merged content descriptions, labeled actions, and Material-standard touch targets.
 
+**Settings, details & security**
+- Backup transport controls — Wi-Fi only, charge only, battery-not-low — enforced as WorkManager constraints, so a run simply does not start until the condition holds rather than failing.
+- Media preferences — show/hide videos and GIFs in the library views (backups unaffected), and whether videos start muted.
+- Media Details for both local and cloud items: kind, format, dimensions, size, duration, folder/path, capture time, camera, the EXIF exposure set (ISO / aperture / shutter / focal length), GPS, backup status and remote identity — with every unavailable field omitted rather than guessed.
+- App lock behind your device PIN/pattern/password, with an honest "unavailable" state on a device that has no credential.
+- Local and cloud library counts, measured cache sizes with safe cache clearing, and an open-source licence list.
+
 ---
 
 ## Requirements
@@ -315,10 +322,10 @@ device yet.
 | Backup engine (queue, state machine, WorkManager) | Code complete *(live upload device-gated)* |
 | Recognition & deduplication (SHA-256) | Code complete *(remote half device-gated)* |
 | Restore / save-to-device | Code complete *(download + MediaStore write device-gated)* |
-| Settings | **Partial** — see [Limitations](#limitations) |
-| Media Details | Not implemented |
+| Settings | Complete *(app lock + cache clearing device-gated)* |
+| Media Details | Complete |
 | Search | Not implemented (deliberately deferred) |
-| App lock | Not implemented (reserved) |
+| App lock | Complete *(device-credential prompt device-gated)* |
 
 ### Device validation status
 
@@ -335,10 +342,11 @@ never run against the real thing.
 | Backup upload (`SendMessage` + `InputFile`) | Same bring-up; until then `TdLibCloudDataSource.upload` throws an honest transient failure and items stay `QUEUED`/`WAITING` — never falsely `BACKED_UP` |
 | MediaStore write (restore) and delete consent | Provider behaviour and the system consent dialog are device-only |
 | ExoPlayer playback, osmdroid rendering, Coil GIF decode | Rendering is device-only |
+| App lock (`KeyguardManager` device-credential prompt) | The credential prompt and the activity `ON_STOP`/`ON_START` round trip are device-only |
 
 ### Roadmap
 
-Next up: **Media Details**, **Settings & security hardening**, and **full-device integration & hardening** (Phases 11–12).
+Next up: **full-device integration & hardening** (Phases 11–12), plus **Search**.
 
 <details>
 <summary>Development history (phase by phase)</summary>
@@ -502,15 +510,17 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 
 ## Limitations
 
-- **Device validation is outstanding.** The entire live Telegram path (auth, cloud browse/preview, upload, download), MediaStore write/delete consent, and all rendering (ExoPlayer, osmdroid, GIF decode) are unverified on a device. See [Device validation status](#device-validation-status).
-- **Settings is incomplete** relative to the product spec. Present: Account (account, connection, backup channel, sign-out), Backup (preferences, manual backup, Backup Center link), Appearance (theme), Storage (cache sizes, clear cache), About (version). Missing: Wi-Fi / mobile-data / charging backup preferences, backup quality/strategy, the Media section (GIF behaviour, video behaviour, thumbnail/cache settings), local/cloud information, open-source licenses, and app lock.
+- **Device validation is outstanding.** The entire live Telegram path (auth, cloud browse/preview, upload, download), MediaStore write/delete consent, all rendering (ExoPlayer, osmdroid, GIF decode), and the app lock's credential prompt are unverified on a device. See [Device validation status](#device-validation-status).
+- **App lock re-locks on a grace window, not instantly.** Returning to the foreground within 30 seconds does not re-prompt, because launching a system activity (the photo picker, the delete-consent dialog, the Telegram link) stops this activity and an instant re-lock would interrupt the user's own flow. It locks on cold start and after longer background trips; see `AppLockTimer` for the exact rule.
+- **Hiding videos or GIFs does not change what gets backed up.** The Media preferences filter the library *views* only; backup eligibility stays governed by the backup preference.
 - **No instrumented tests.** All tests are JVM/Robolectric; there is no `app/src/androidTest` source set, so nothing device-bound is covered by automated tests.
 - **No logging.** The app performs no logging at all today, which makes field diagnosis of a device-gated failure difficult. Structured logging is planned.
 - **No offline map tiles.** The map requires connectivity.
 - **`SELECT_FOLDER` has no real folder filter.** Folder selection is persisted, but the backup engine treats it as "nothing automatic" rather than faking enforcement.
 - **Restored images are not byte-for-byte identical** to the source, because Telegram may recompress photos; only the *restored* bytes are hashed.
+- **The open-source licence list is hand-maintained** (`OpenSourceLicenses.kt`), so it has to be updated whenever a runtime dependency changes. It mirrors `gradle/libs.versions.toml` rather than being generated.
 - **ARM-only**, `minSdk 26`.
-- **No CI job builds a release** (R8/minified) artifact — only the debug APK is produced today.
+- **No shipping release is built.** The `release-smoke` CI job compiles the R8/minified configuration on every push (so shrinking cannot rot unnoticed), but only the debug APK is published as an artifact.
 
 ---
 

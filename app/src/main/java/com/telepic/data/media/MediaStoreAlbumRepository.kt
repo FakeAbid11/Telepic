@@ -20,10 +20,16 @@ import kotlinx.coroutines.withContext
  * limited, newest-first query — never a full-library load of every media record. Bucket contents
  * reuse the exact Photos paging pipeline ([MediaPagingSource] + [MediaStoreMediaMapper]), filtered
  * by bucket, so an album grid behaves identically to the timeline.
+ *
+ * [typeFilterProvider] carries the user's hide-videos / hide-GIFs preferences. It is applied to the
+ * album *grouping* as well as to the contents, so an album's cover and count describe what the user
+ * can actually see rather than counting media the grid refuses to show — the same reasoning that
+ * already excludes archived/trashed ids here.
  */
 class MediaStoreAlbumRepository(
     context: Context,
     private val hiddenIdsProvider: suspend () -> Set<Long> = { emptySet() },
+    private val typeFilterProvider: suspend () -> TimelineMediaFilter = { TimelineMediaFilter.All },
 ) : AlbumRepository {
 
     private val appContext = context.applicationContext
@@ -50,10 +56,11 @@ class MediaStoreAlbumRepository(
         val rows = ArrayList<AlbumGrouper.Row>()
         // Exclude archived/trashed media the same way the timeline and bucket loaders do, so album
         // counts and covers reflect only what the user can actually see. Done in-query to keep the
-        // projection-light grouping honest rather than filtering a partial cursor afterward.
+        // projection-light grouping honest rather than filtering a partial cursor afterward. The
+        // media-kind filter rides along for the same reason: a count must describe the visible set.
         val hidden = hiddenIdsProvider().take(MAX_EXCLUDED_IDS)
         val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { "?" }})"
-        val realSelection = mediaSelection + exclusion
+        val realSelection = mediaSelection + typeFilterProvider().selectionSuffix() + exclusion
         val args = hidden.map { it.toString() }.toTypedArray()
         val cancellation = CancellationSignal()
         contentResolver.query(
@@ -102,7 +109,7 @@ class MediaStoreAlbumRepository(
             enablePlaceholders = false,
         ),
         pagingSourceFactory = {
-            MediaPagingSource(MediaStoreBucketLoader(appContext, bucketId, hiddenIdsProvider))
+            MediaPagingSource(MediaStoreBucketLoader(appContext, bucketId, hiddenIdsProvider, typeFilterProvider))
                 .also { currentSource = it }
         },
     ).flow
@@ -124,6 +131,7 @@ class MediaStoreBucketLoader(
     context: Context,
     private val bucketId: Long,
     private val hiddenIdsProvider: suspend () -> Set<Long> = { emptySet() },
+    private val typeFilterProvider: suspend () -> TimelineMediaFilter = { TimelineMediaFilter.All },
 ) : MediaPageLoader {
 
     private val contentResolver = context.applicationContext.contentResolver
@@ -151,7 +159,9 @@ class MediaStoreBucketLoader(
                 " AND ${MediaStore.MediaColumns.BUCKET_ID} = ?"
         val hidden = hiddenIdsProvider().take(MAX_EXCLUDED_IDS)
         val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { "?" }})"
-        val realSelection = base + exclusion
+        // The kind filter carries no bound arguments (a constant MIME literal), so it can be appended
+        // without disturbing the positional order of `bucketId` followed by the hidden ids.
+        val realSelection = base + typeFilterProvider().selectionSuffix() + exclusion
         val args = (listOf(bucketId.toString()) + hidden.map { it.toString() }).toTypedArray()
         val results = ArrayList<LocalMedia>(limit)
         contentResolver.query(

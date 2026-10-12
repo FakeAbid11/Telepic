@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.NeighborDirection
+import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
 import com.telepic.domain.cloud.CloudPreview
@@ -313,6 +314,79 @@ class ViewerViewModelTest {
         vm.open(MediaSource.Local(6))
         vm.uiState.first { it.source == MediaSource.Local(6) && it.status != ViewerStatus.LOADING }
         assertNull(vm.details.value) // cleared on navigation
+    }
+
+    @Test
+    fun `local details carry the kind, duration and folder`() = runBlocking {
+        val video = local(5).copy(
+            type = MediaType.VIDEO,
+            durationMillis = 4_000L,
+            bucketName = "Camera",
+            relativePath = "DCIM/Camera/",
+        )
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to video)),
+            cloudRepository = FakeCloud(emptyList()),
+            metadataReader = FakeMetadataReader(com.telepic.data.media.MediaMetadata()),
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        vm.loadDetails()
+        val details = vm.details.first { it != null }!!
+
+        assertEquals(MediaType.VIDEO, details.mediaType)
+        assertEquals(4_000L, details.durationMillis)
+        assertEquals("Camera", details.bucketName)
+        assertEquals("DCIM/Camera/", details.relativePath)
+        // No backup status repository is wired here, so the state stays unknown. It must not become
+        // NONE: "the queue has no row" is not the same claim as "this is not backed up".
+        assertNull(details.backupState)
+    }
+
+    @Test
+    fun `details are produced for a cloud item from its manifest entry`() = runBlocking {
+        val media = CloudMedia(
+            messageId = 77L,
+            chatId = 9L,
+            mediaType = CloudMediaType.VIDEO,
+            mimeType = "video/mp4",
+            fileName = "clip.mp4",
+            sizeBytes = 4_096L,
+            width = 1920,
+            height = 1080,
+            durationMs = 12_000L,
+            dateEpochSec = 1_700_000_000L,
+            previewFileId = 1,
+            originalFileId = 2,
+            isDownloaded = false,
+        )
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Cloud(9L, 77L),
+            localLookup = FakeLookup(emptyMap()),
+            cloudRepository = FakeCloud(listOf(media)),
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        vm.loadDetails()
+        val details = vm.details.first { it != null }!!
+
+        // A cloud item has no local file to open, so this used to return early and leave the sheet on
+        // its spinner forever. Everything now comes from the manifest entry.
+        assertTrue(details.isCloud)
+        assertEquals("clip.mp4", details.fileName)
+        assertEquals(MediaType.VIDEO, details.mediaType)
+        assertEquals(12_000L, details.durationMillis)
+        assertEquals(9L, details.cloudChatId)
+        assertEquals(77L, details.cloudMessageId)
+        assertFalse(details.cloudOriginalDownloaded)
+        // A manifest row exists only because Telegram confirmed the message, so the item is backed up
+        // by definition — and the local-only fields are absent rather than guessed at.
+        assertEquals(MediaBackupVisualState.BACKED_UP, details.backupState)
+        assertNull(details.cameraMake)
+        assertNull(details.captureMillis)
+        assertNull(details.latitude)
+        assertNull(details.bucketName)
     }
 
     @Test

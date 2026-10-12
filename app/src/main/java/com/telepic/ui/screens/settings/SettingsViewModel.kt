@@ -1,17 +1,23 @@
 package com.telepic.ui.screens.settings
 
+import android.app.KeyguardManager
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import coil.imageLoader
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.AlbumRepository
+import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.media.Album
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingRepository
+import com.telepic.settings.BackupNetworkPreference
+import com.telepic.settings.SettingsRepository
 import com.telepic.telegram.TelegramAuthController
 import com.telepic.telegram.TelegramAuthState
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -19,10 +25,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /** On-disk footprint of Telepic's caches, in bytes. Never estimated — measured. */
 data class StorageSummary(
@@ -36,17 +42,21 @@ data class StorageSummary(
 /**
  * Backs the Settings screen: the real Telegram account state (read from the same controller the
  * auth flow owns — Settings never mirrors it), the persisted backup preference (editable after
- * onboarding, applied immediately through the coordinator's own preference sync), and measured
- * cache sizes. Sign-out delegates to [TelegramAuthController.logout] only; wiping the local TDLib
- * database on logout is a known follow-up, so this screen never claims the session data is gone.
+ * onboarding, applied immediately through the coordinator's own preference sync), the transport and
+ * media preferences, the app-lock switch, measured cache sizes and library counts.
+ *
+ * Every write goes through [persist], so no row on this screen can take the app down: a tap on a
+ * setting is a tap the app must survive, and the preference flows are the single source of truth, so
+ * a write that did not land simply re-emits its previous value instead of showing a false change.
  */
 class SettingsViewModel(
     private val telegramAuthController: TelegramAuthController,
     private val onboardingRepository: OnboardingRepository,
+    private val settingsRepository: SettingsRepository,
     private val albumRepository: AlbumRepository? = null,
     private val backupCoordinator: BackupCoordinator? = null,
     private val cloudRepository: CloudRepository? = null,
-    appContext: Context,
+    private val appContext: Context,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
@@ -70,6 +80,51 @@ class SettingsViewModel(
     val backupBucketIds: StateFlow<Set<Long>> =
         onboardingRepository.backupBucketIds.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
+    // --- Transport preferences (enforced by WorkManager constraints) ---------------------------
+
+    val backupNetworkPreference: StateFlow<BackupNetworkPreference> =
+        settingsRepository.backupNetworkPreference
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BackupNetworkPreference.Default)
+
+    val backupRequiresCharging: StateFlow<Boolean> =
+        settingsRepository.backupRequiresCharging
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val backupRequiresBatteryNotLow: StateFlow<Boolean> =
+        settingsRepository.backupRequiresBatteryNotLow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    // --- Media preferences (enforced by the MediaStore query and the video player) --------------
+
+    val showVideosInTimeline: StateFlow<Boolean> =
+        settingsRepository.showVideosInTimeline
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val showGifsInTimeline: StateFlow<Boolean> =
+        settingsRepository.showGifsInTimeline
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val startVideosMuted: StateFlow<Boolean> =
+        settingsRepository.startVideosMuted
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    // --- App lock -------------------------------------------------------------------------------
+
+    val appLockEnabled: StateFlow<Boolean> =
+        settingsRepository.appLockEnabled
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
+     * Whether the device has a PIN, pattern or password configured.
+     *
+     * The app lock is enforced by the *device's* credential, so with none configured there is nothing
+     * to authenticate against. The switch is shown as unavailable rather than letting the user enable
+     * a lock that would never fire — a setting that silently does nothing is exactly the kind of claim
+     * this codebase avoids making.
+     */
+    val isDeviceSecure: Boolean =
+        appContext.getSystemService(KeyguardManager::class.java)?.isDeviceSecure == true
+
     /** Device folders for the folder picker, loaded on demand (same source as onboarding). */
     private val _folders = MutableStateFlow<List<Album>>(emptyList())
     val folders: StateFlow<List<Album>> = _folders.asStateFlow()
@@ -77,6 +132,38 @@ class SettingsViewModel(
     /** False until [loadFolders] finishes, so the picker shows loading — not a false "empty". */
     private val _foldersLoaded = MutableStateFlow(true)
     val foldersLoaded: StateFlow<Boolean> = _foldersLoaded.asStateFlow()
+
+    // --- Library information (local / cloud) ----------------------------------------------------
+
+    /**
+     * How many local items the library views currently show, or null while unknown.
+     *
+     * Summed from the album grouping rather than a second MediaStore count query: that read already
+     * applies the same archived/trashed and hide-videos/GIFs filters the timeline does, so this number
+     * and the grid cannot disagree. Null means "not measured yet" — never 0, which would be a claim
+     * about the user's library that nothing had actually checked.
+     */
+    private val _localLibraryCount = MutableStateFlow<Int?>(null)
+    val localLibraryCount: StateFlow<Int?> = _localLibraryCount.asStateFlow()
+
+    /** False until the local-library measurement finishes, so the row can say "Counting…". */
+    private val _localLibraryCountLoaded = MutableStateFlow(false)
+    val localLibraryCountLoaded: StateFlow<Boolean> = _localLibraryCountLoaded.asStateFlow()
+
+    /** How many items the Telegram cloud manifest holds, or null when there is no cloud layer. */
+    val cloudLibraryCount: StateFlow<Int?> =
+        if (cloudRepository == null) {
+            MutableStateFlow<Int?>(null)
+        } else {
+            cloudRepository.media
+                .map { media: List<CloudMedia> -> media.size }
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        }
+
+    init {
+        refreshStorage()
+        loadLocalLibraryCount()
+    }
 
     fun loadFolders() {
         _foldersLoaded.value = false
@@ -96,21 +183,44 @@ class SettingsViewModel(
     }
 
     fun setBackupChoice(preference: BackupPreference, bucketIds: Set<Long>? = null) {
-        viewModelScope.launch {
-            try {
-                onboardingRepository.setBackupPreference(preference)
-                if (bucketIds != null) onboardingRepository.setBackupBucketIds(bucketIds)
-                // Same immediate-apply path onboarding uses; the coordinator gates NOT_NOW itself.
-                backupCoordinator?.syncFromPreference()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                // Nothing is claimed on failure: the preference flow is the single source of truth
-                // and the screen re-reads it, so a choice that did not persist shows as unchanged
-                // rather than as applied.
-            }
+        persist {
+            onboardingRepository.setBackupPreference(preference)
+            if (bucketIds != null) onboardingRepository.setBackupBucketIds(bucketIds)
+            // Same immediate-apply path onboarding uses; the coordinator gates NOT_NOW itself.
+            backupCoordinator?.syncFromPreference()
         }
     }
+
+    fun setBackupNetworkPreference(preference: BackupNetworkPreference) =
+        persist { settingsRepository.setBackupNetworkPreference(preference) }
+
+    fun setBackupRequiresCharging(required: Boolean) =
+        persist { settingsRepository.setBackupRequiresCharging(required) }
+
+    fun setBackupRequiresBatteryNotLow(required: Boolean) =
+        persist { settingsRepository.setBackupRequiresBatteryNotLow(required) }
+
+    /**
+     * Hiding videos or GIFs changes what the library queries return, so the timeline's paging source
+     * has to be invalidated — otherwise a `cachedIn` pager keeps serving pages built with the old
+     * filter until the process restarts. [AlbumRepository.refresh] is the same seam the Viewer uses
+     * after archiving, and it invalidates the album/timeline source in one place.
+     */
+    fun setShowVideosInTimeline(show: Boolean) = persist {
+        settingsRepository.setShowVideosInTimeline(show)
+        albumRepository?.refresh()
+    }
+
+    fun setShowGifsInTimeline(show: Boolean) = persist {
+        settingsRepository.setShowGifsInTimeline(show)
+        albumRepository?.refresh()
+    }
+
+    fun setStartVideosMuted(muted: Boolean) =
+        persist { settingsRepository.setStartVideosMuted(muted) }
+
+    fun setAppLockEnabled(enabled: Boolean) =
+        persist { settingsRepository.setAppLockEnabled(enabled) }
 
     fun logout() {
         telegramAuthController.logout()
@@ -125,16 +235,7 @@ class SettingsViewModel(
      */
     fun backupNow() {
         val coordinator = backupCoordinator ?: return
-        viewModelScope.launch {
-            try {
-                withContext(ioDispatcher) { coordinator.syncFromPreference() }
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                // The queue is the only thing that ever reports a backup, so a failed manual pass
-                // leaves it unchanged and honest — and must never close the app.
-            }
-        }
+        persist { withContext(ioDispatcher) { coordinator.syncFromPreference() } }
     }
 
     // Paths mirror the real owners: TDLib session under noBackupFilesDir/tdlib
@@ -145,12 +246,8 @@ class SettingsViewModel(
     private val _storageSummary = MutableStateFlow(StorageSummary())
     val storageSummary: StateFlow<StorageSummary> = _storageSummary.asStateFlow()
 
-    init {
-        refreshStorage()
-    }
-
     fun refreshStorage() {
-        viewModelScope.launch {
+        persist {
             val summary = withContext(ioDispatcher) {
                 StorageSummary(
                     tdlibBytes = directorySize(tdlibDir),
@@ -168,11 +265,67 @@ class SettingsViewModel(
      * database, and that is sign-out's (not this button's) semantic.
      */
     fun clearBackupCache() {
-        viewModelScope.launch {
+        persist {
             withContext(ioDispatcher) {
                 stagingDir.listFiles()?.forEach { child -> child.deleteRecursively() }
             }
             refreshStorage()
+        }
+    }
+
+    /**
+     * Drops Coil's decoded-image caches. Both are pure caches: every entry is re-derivable from the
+     * media it came from, so clearing can lose nothing. Only the *image* caches are touched — the
+     * TDLib session and the backup staging copies are owned elsewhere and are not this row's business.
+     */
+    fun clearImageCache() {
+        persist {
+            withContext(ioDispatcher) {
+                val loader = appContext.imageLoader
+                loader.memoryCache?.clear()
+                loader.diskCache?.clear()
+            }
+        }
+    }
+
+    /** Measures the visible local library. Failure leaves the count null — "unknown", never zero. */
+    fun loadLocalLibraryCount() {
+        val albums = albumRepository
+        if (albums == null) {
+            _localLibraryCountLoaded.value = true
+            return
+        }
+        viewModelScope.launch {
+            try {
+                _localLibraryCount.value = withContext(ioDispatcher) {
+                    albums.albums().sumOf { it.count }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                _localLibraryCount.value = null
+            } finally {
+                _localLibraryCountLoaded.value = true
+            }
+        }
+    }
+
+    /**
+     * The one exception boundary for every action on this screen.
+     *
+     * Anything that escapes `viewModelScope` is an uncaught exception on the main thread and the app
+     * closes itself with no message. Nothing is claimed when a write fails: the preference flows are
+     * observed, so a change that did not persist shows as unchanged rather than as applied.
+     */
+    private fun persist(action: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                action()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Deliberately silent: the observed preference flow is the honest report.
+            }
         }
     }
 

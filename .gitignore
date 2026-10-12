@@ -29,9 +29,13 @@ secrets.properties
 # Local agent workspace (scratch + notes) — never committed
 .workbuddy-ai/
 
-# Local analysis reports — kept out of the repository on purpose
+# Local analysis reports — kept out of the repository on purpose. The date-stamped review
+# reports are matched by pattern so a new one never has to be remembered here.
 /Telepic_Code_Review_Report.md
 /Telepic_Partial_Feature_Completion_Plan.md
+/Telepic_Codebase_Review_*.md
+/Telepic_Static_Code_Review_*.md
+/Telepic_Technical_Review_*.md
 
 # Product requirements doc — local working copy only, never committed
 /PRD.md

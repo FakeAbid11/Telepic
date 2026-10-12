@@ -13,6 +13,9 @@ import com.telepic.domain.media.Album
 import com.telepic.domain.media.LocalMedia
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingRepository
+import com.telepic.settings.BackupNetworkPreference
+import com.telepic.settings.SettingsRepository
+import com.telepic.settings.ThemeMode
 import com.telepic.telegram.TelegramAuthController
 import com.telepic.telegram.TelegramAuthState
 import com.telepic.telegram.TelegramUser
@@ -32,6 +35,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -83,6 +88,46 @@ class SettingsViewModelTest {
         override fun refresh() = Unit
     }
 
+    /**
+     * The settings store, in memory. Every preference is a real flow so the ViewModel's own
+     * `stateIn` mappings are exercised rather than bypassed.
+     */
+    private class FakeSettings : SettingsRepository {
+        val theme = MutableStateFlow(ThemeMode.DARK)
+        val network = MutableStateFlow(BackupNetworkPreference.Default)
+        val charging = MutableStateFlow(false)
+        val batteryNotLow = MutableStateFlow(false)
+        val videos = MutableStateFlow(true)
+        val gifs = MutableStateFlow(true)
+        val startMuted = MutableStateFlow(true)
+        val appLock = MutableStateFlow(false)
+
+        override val themeMode: Flow<ThemeMode> get() = theme
+        override suspend fun setThemeMode(mode: ThemeMode) { theme.value = mode }
+        override val backupNetworkPreference: Flow<BackupNetworkPreference> get() = network
+        override suspend fun setBackupNetworkPreference(preference: BackupNetworkPreference) { network.value = preference }
+        override val backupRequiresCharging: Flow<Boolean> get() = charging
+        override suspend fun setBackupRequiresCharging(required: Boolean) { charging.value = required }
+        override val backupRequiresBatteryNotLow: Flow<Boolean> get() = batteryNotLow
+        override suspend fun setBackupRequiresBatteryNotLow(required: Boolean) { batteryNotLow.value = required }
+        override val showVideosInTimeline: Flow<Boolean> get() = videos
+        override suspend fun setShowVideosInTimeline(show: Boolean) { videos.value = show }
+        override val showGifsInTimeline: Flow<Boolean> get() = gifs
+        override suspend fun setShowGifsInTimeline(show: Boolean) { gifs.value = show }
+        override val startVideosMuted: Flow<Boolean> get() = startMuted
+        override suspend fun setStartVideosMuted(muted: Boolean) { startMuted.value = muted }
+        override val appLockEnabled: Flow<Boolean> get() = appLock
+        override suspend fun setAppLockEnabled(enabled: Boolean) { appLock.value = enabled }
+    }
+
+    /** Records album-source invalidations, which is how a media-filter change reaches the timeline. */
+    private class RefreshableAlbums(private val albums: List<Album>) : AlbumRepository {
+        var refreshCalls = 0
+        override suspend fun albums() = albums
+        override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() { refreshCalls++ }
+    }
+
     private class RecordingCoordinator : BackupCoordinator {
         var syncCalls = 0
         override val repository: BackupRepository get() = throw NotImplementedError()
@@ -107,12 +152,15 @@ class SettingsViewModelTest {
     private fun viewModel(
         auth: FakeAuthController = FakeAuthController(),
         onboarding: FakeOnboarding = FakeOnboarding(),
+        settings: FakeSettings = FakeSettings(),
         coordinator: RecordingCoordinator = RecordingCoordinator(),
         albums: List<Album> = emptyList(),
+        albumRepository: AlbumRepository = FakeAlbums(albums),
     ) = SettingsViewModel(
         telegramAuthController = auth,
         onboardingRepository = onboarding,
-        albumRepository = FakeAlbums(albums),
+        settingsRepository = settings,
+        albumRepository = albumRepository,
         backupCoordinator = coordinator,
         appContext = ApplicationProvider.getApplicationContext<Context>(),
         ioDispatcher = Dispatchers.Unconfined,
@@ -193,4 +241,88 @@ class SettingsViewModelTest {
         // Nothing outside staging is touched.
         assertTrue(File(otherCache, "keep.bin").exists())
     }
+
+    @Test
+    fun `transport preferences persist and are reflected by the screen's own flows`() = runTest {
+        val settings = FakeSettings()
+        val vm = viewModel(settings = settings)
+
+        vm.setBackupNetworkPreference(BackupNetworkPreference.WIFI_ONLY)
+        vm.setBackupRequiresCharging(true)
+        vm.setBackupRequiresBatteryNotLow(true)
+        runCurrent()
+
+        assertEquals(BackupNetworkPreference.WIFI_ONLY, settings.network.value)
+        assertTrue(settings.charging.value)
+        assertTrue(settings.batteryNotLow.value)
+        // The rows read the ViewModel's flows, so they must re-emit what the store now holds.
+        assertEquals(BackupNetworkPreference.WIFI_ONLY, vm.backupNetworkPreference.value)
+        assertTrue(vm.backupRequiresCharging.value)
+    }
+
+    @Test
+    fun `hiding a media kind persists it and invalidates the album source`() = runTest {
+        val settings = FakeSettings()
+        val albums = RefreshableAlbums(emptyList())
+        val vm = viewModel(settings = settings, albumRepository = albums)
+
+        vm.setShowVideosInTimeline(false)
+        runCurrent()
+        assertFalse(settings.videos.value)
+        assertEquals(1, albums.refreshCalls)
+
+        vm.setShowGifsInTimeline(false)
+        runCurrent()
+        assertFalse(settings.gifs.value)
+        // A `cachedIn` pager keeps serving pages built with the old filter until it is invalidated, so
+        // every filter change has to reach refresh() — not just the first one.
+        assertEquals(2, albums.refreshCalls)
+    }
+
+    @Test
+    fun `the app lock preference persists and reports unsupported without a device credential`() = runTest {
+        val settings = FakeSettings()
+        val vm = viewModel(settings = settings)
+
+        // Robolectric's default KeyguardManager reports no device credential, so the row must be
+        // switched off rather than offering a lock the device could never enforce.
+        assertFalse(vm.isDeviceSecure)
+
+        vm.setAppLockEnabled(true)
+        runCurrent()
+        assertTrue(settings.appLock.value)
+    }
+
+    @Test
+    fun `the local library count is the sum of the visible albums`() = runTest {
+        val vm = viewModel(
+            albums = listOf(album(bucketId = 1L, count = 12), album(bucketId = 2L, count = 30)),
+        )
+
+        assertEquals(42, vm.localLibraryCount.value)
+        assertTrue(vm.localLibraryCountLoaded.value)
+    }
+
+    @Test
+    fun `an unreadable library leaves the count unknown rather than zero`() = runTest {
+        val failing = object : AlbumRepository {
+            override suspend fun albums(): List<Album> = throw IllegalStateException("provider unavailable")
+            override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+            override fun refresh() = Unit
+        }
+        val vm = viewModel(albumRepository = failing)
+
+        // Null, never 0: "0 photos" would be a claim about the user's library that nothing verified.
+        assertNull(vm.localLibraryCount.value)
+        assertTrue(vm.localLibraryCountLoaded.value)
+    }
+
+    private fun album(bucketId: Long, count: Int) = Album(
+        bucketId = bucketId,
+        title = "Album $bucketId",
+        coverUri = Uri.parse("content://media/$bucketId"),
+        coverIsVideo = false,
+        count = count,
+        latestMillis = 1L,
+    )
 }

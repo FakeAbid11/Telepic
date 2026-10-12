@@ -24,6 +24,14 @@ data class MediaMetadata(
     /** MediaStore DATE_ADDED (epoch seconds → millis) for "added to the library", or null. */
     val libraryAddedMillis: Long? = null,
     val location: GeoLocation? = null,
+    /** EXIF PhotographicSensitivity (ISO speed). Null when absent, or when the value is not positive. */
+    val iso: Int? = null,
+    /** EXIF FNumber — the lens aperture, e.g. `2.8` for f/2.8. Null when absent. */
+    val fNumber: Double? = null,
+    /** EXIF ExposureTime in seconds (a 1/250s shutter is `0.004`). Null when absent. */
+    val exposureTimeSeconds: Double? = null,
+    /** EXIF FocalLength in millimetres. Null when absent. */
+    val focalLengthMm: Double? = null,
 )
 
 /** Seam so the Viewer's Details flow is unit-testable with a fake while the real EXIF read stays here. */
@@ -32,11 +40,16 @@ interface MediaMetadataReader {
 }
 
 /**
- * Reads EXIF metadata (make/model, capture time, GPS) via [ExifInterface], opening the stream only
- * for the metadata header — never a full-resolution image decode — on [Dispatchers.IO], plus a
- * single-row MediaStore query for the library-added date. Missing sections simply stay null; the
- * caller decides what to show. It never confuses the file's modified time with the actual capture
- * time: [MediaMetadata.captureMillis] is EXIF-only.
+ * Reads EXIF metadata (make/model, capture time, GPS, and the exposure set: ISO, aperture, shutter
+ * and focal length) via [ExifInterface], opening the stream only for the metadata header — never a
+ * full-resolution image decode — on [Dispatchers.IO], plus a single-row MediaStore query for the
+ * library-added date. Missing sections simply stay null; the caller decides what to show. It never
+ * confuses the file's modified time with the actual capture time: [MediaMetadata.captureMillis] is
+ * EXIF-only.
+ *
+ * The exposure fields are read as *numbers* rather than raw strings so the presentation layer can
+ * format them (f/2.8, 1/250 s), and every one of them is discarded when it is zero or negative — EXIF
+ * writers commonly emit `0/0` for an unset tag, and `0` would otherwise render as a real value.
  */
 class AndroidMediaMetadataReader(context: Context) : MediaMetadataReader {
 
@@ -56,6 +69,10 @@ class AndroidMediaMetadataReader(context: Context) : MediaMetadataReader {
                     location = if (exif.getLatLong(latLong)) {
                         GeoLocation(latLong[0].toDouble(), latLong[1].toDouble()).takeIf { it.isValid }
                     } else null,
+                    iso = exif.safeInt(ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY),
+                    fNumber = exif.safeDouble(ExifInterface.TAG_F_NUMBER),
+                    exposureTimeSeconds = exif.safeDouble(ExifInterface.TAG_EXPOSURE_TIME),
+                    focalLengthMm = exif.safeDouble(ExifInterface.TAG_FOCAL_LENGTH),
                 )
             } ?: MediaMetadata(libraryAddedMillis = added)
         } catch (_: Throwable) {
@@ -78,6 +95,17 @@ class AndroidMediaMetadataReader(context: Context) : MediaMetadataReader {
 
     private fun ExifInterface.safeAttribute(tag: String): String? =
         runCatching { getAttribute(tag)?.trim()?.takeIf { it.isNotEmpty() } }.getOrNull()
+
+    /**
+     * A positive EXIF integer, or null. Zero and negatives are discarded rather than shown: an unset
+     * tag commonly serialises as `0`, and reporting "ISO 0" would be a fabricated reading.
+     */
+    private fun ExifInterface.safeInt(tag: String): Int? =
+        runCatching { getAttributeInt(tag, 0) }.getOrNull()?.takeIf { it > 0 }
+
+    /** A positive EXIF rational/decimal, or null. See [safeInt] for why non-positive values are dropped. */
+    private fun ExifInterface.safeDouble(tag: String): Double? =
+        runCatching { getAttributeDouble(tag, 0.0) }.getOrNull()?.takeIf { it > 0.0 && it.isFinite() }
 }
 
 /**

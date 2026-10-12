@@ -19,10 +19,16 @@ import kotlinx.coroutines.withContext
  * [hiddenIdsProvider] is consulted per load and its ids are excluded **in the query itself**
  * (`_ID NOT IN (...)`), so archived/trashed media never occupies a timeline slot. Keeping the filter
  * database-side means paging offsets stay correct without loading anything extra.
+ *
+ * [typeFilterProvider] is the same idea for the user's hide-videos / hide-GIFs preferences: the
+ * exclusion is part of the `WHERE` clause, so a hidden kind never occupies a page slot either. It
+ * defaults to [TimelineMediaFilter.All], which emits no SQL at all — callers that must never filter
+ * (the backup discovery loader) simply do not pass one.
  */
 class MediaStoreMediaLoader(
     context: Context,
     private val hiddenIdsProvider: suspend () -> Set<Long> = { emptySet() },
+    private val typeFilterProvider: suspend () -> TimelineMediaFilter = { TimelineMediaFilter.All },
 ) : MediaPageLoader {
 
     private val contentResolver = context.applicationContext.contentResolver
@@ -54,7 +60,7 @@ class MediaStoreMediaLoader(
         withContext(Dispatchers.IO) {
             val scope = this
             val hidden = hiddenIdsProvider()
-            val (where, args) = buildSelection(hidden)
+            val (where, args) = buildSelection(hidden, typeFilterProvider())
             val collection = MediaStore.Files.getContentUri("external")
             val cancellation = CancellationSignal()
             val results = ArrayList<LocalMedia>(limit)
@@ -85,16 +91,18 @@ class MediaStoreMediaLoader(
         }
 
     /**
-     * Appends `_ID NOT IN (...)` for the hidden ids, bounded to a safe argument count so an extreme
-     * archive/trash size never exceeds SQLite's parameter limit. Beyond the bound the surplus ids are
-     * simply not excluded this pass (an accepted, documented edge case for ordinary libraries).
+     * Appends the media-kind exclusion and then `_ID NOT IN (...)` for the hidden ids, bounded to a
+     * safe argument count so an extreme archive/trash size never exceeds SQLite's parameter limit.
+     * Beyond the bound the surplus ids are simply not excluded this pass (an accepted, documented edge
+     * case for ordinary libraries).
      */
-    private fun buildSelection(hidden: Set<Long>): Pair<String, Array<String>?> {
-        if (hidden.isEmpty()) return selection to null
+    private fun buildSelection(hidden: Set<Long>, filter: TimelineMediaFilter): Pair<String, Array<String>?> {
+        val base = selection + filter.selectionSuffix()
+        if (hidden.isEmpty()) return base to null
         val bounded = hidden.take(MAX_EXCLUDED_IDS)
-        if (bounded.isEmpty()) return selection to null
+        if (bounded.isEmpty()) return base to null
         val placeholders = bounded.joinToString(",") { "?" }
-        val where = "$selection AND ${MediaStore.MediaColumns._ID} NOT IN ($placeholders)"
+        val where = "$base AND ${MediaStore.MediaColumns._ID} NOT IN ($placeholders)"
         return where to bounded.map { it.toString() }.toTypedArray()
     }
 

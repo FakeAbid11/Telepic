@@ -84,10 +84,12 @@ import kotlinx.coroutines.delay
  * [VideoTransport] owns the one bar that's left — play/pause, seek, the clock, prev/next and the
  * cloud save action — sized to `chromeBarHeight`, the same band the surface reserves for it.
  *
- * Videos open **muted**. Autoplaying with sound hijacks whatever the user was already listening to,
- * and media3 gives no middle ground: while the player holds audio focus it ducks or stops other apps,
- * and `setVolume` never releases that focus. So the player is built with `handleAudioFocus = false`
- * and only claims focus at the moment the user actually asks for sound via the unmute control.
+ * Videos open **muted** by default ([startMuted], from the "Start videos muted" preference).
+ * Autoplaying with sound hijacks whatever the user was already listening to, and media3 gives no
+ * middle ground: while the player holds audio focus it ducks or stops other apps, and `setVolume`
+ * never releases that focus. So the player is built with `handleAudioFocus = false` and only claims
+ * focus at the moment the user actually asks for sound via the unmute control — which is also why the
+ * preference changes the *initial* state only, and never mutes a video the user has already unmuted.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
@@ -99,6 +101,7 @@ fun VideoViewer(
     onNext: () -> Unit = {},
     onRestore: (() -> Unit)? = null,
     restore: RestoreState = RestoreState.Idle,
+    startMuted: Boolean = true,
 ) {
     val videoUri: Uri? = when (val item = state.item) {
         is ViewerItem.Local -> item.media.contentUri
@@ -138,8 +141,9 @@ fun VideoViewer(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Mute is per-video user input, not seed data: moving to the next clip starts muted again.
-    var muted by remember(videoUri) { mutableStateOf(true) }
+    // Mute is per-video user input, not seed data: moving to the next clip returns to [startMuted],
+    // the value of the "Start videos muted" preference (true unless the user turned it off).
+    var muted by remember(videoUri) { mutableStateOf(startMuted) }
     LaunchedEffect(player, muted) {
         if (muted) {
             // Silence first, then hand focus back — so no frame of sound outlives the focus request.

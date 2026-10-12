@@ -1,18 +1,27 @@
 package com.telepic.data.backup.work
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.telepic.settings.BackupNetworkPreference
+import com.telepic.settings.SettingsRepository
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 
 /**
  * The WorkManager orchestration seam. Keeping it behind an interface lets the coordinator be tested
- * with a fake scheduler, while the real one drives a network-constrained, resumable [BackupWorker].
+ * with a fake scheduler, while the real one drives a constrained, resumable [BackupWorker].
+ *
+ * Both methods are `suspend` because the constraints they build come from the user's persisted
+ * transport preferences, which have to be read first.
  *
  * There is deliberately no cancel/isScheduled pair: opting out of backup is enforced by the
  * preference gate inside [BackupDiscoveryWorker] on every tick, and killing the unique one-time work
@@ -21,42 +30,112 @@ import java.util.concurrent.TimeUnit
  */
 interface BackupWorkScheduler {
     /** Ensure a run is scheduled (unique; won't stack duplicate workers). */
-    fun schedule()
+    suspend fun schedule()
 
     /** Ensure the recurring discovery+processing cadence is installed (unique; idempotent). */
-    fun schedulePeriodic()
+    suspend fun schedulePeriodic()
 }
 
 const val BACKUP_WORK_NAME = "telepic_backup"
 const val BACKUP_PERIODIC_WORK_NAME = "telepic_backup_periodic"
 
-class WorkManagerBackupScheduler(private val context: Context) : BackupWorkScheduler {
+/**
+ * The real scheduler. Two things make the user's transport preferences actually mean something:
+ *
+ * 1. The constraints are rebuilt from [SettingsRepository] on every call, so "Wi-Fi only" becomes
+ *    `NetworkType.UNMETERED` and WorkManager simply never starts the run on mobile data — the queue
+ *    stays `QUEUED` and nothing is failed for a condition the user chose.
+ * 2. A changed preference has to reach work that is already enqueued. `KEEP` would ignore the new
+ *    request entirely, so the old constraints would keep applying until the current run drained —
+ *    which, because the worker returns `Result.retry()` while rows remain, can be a very long time.
+ *    The one-time path therefore uses `REPLACE`, but only when nothing is currently *running*:
+ *    replacing a running upload would cancel a TDLib send mid-flight and strand its row in UPLOADING,
+ *    which is the exact failure the old `KEEP` existed to avoid. The periodic path can use `UPDATE`,
+ *    which applies the new spec without cancelling a running instance at all.
+ */
+class WorkManagerBackupScheduler(
+    private val context: Context,
+    private val settingsRepository: SettingsRepository,
+) : BackupWorkScheduler {
 
     private val workManager: WorkManager
         get() = WorkManager.getInstance(context)
 
-    override fun schedule() {
+    override suspend fun schedule() {
         val request = OneTimeWorkRequestBuilder<BackupWorker>()
-            .setConstraints(
-                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
-            )
-            .setBackoffCriteria(androidx.work.BackoffPolicy.EXPONENTIAL, BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
+            .setConstraints(transportConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
             .build()
-        // KEEP: if a run is already pending/running, don't restart it — new enqueues will be picked
-        // up by the running worker's loop. REPLACE would cancel an in-flight upload for no reason.
-        workManager.enqueueUniqueWork(BACKUP_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+        // KEEP while a run is in flight — new enqueues are picked up by the running worker's own
+        // loop, and REPLACE would cancel an in-flight upload for no reason. Otherwise REPLACE, so a
+        // just-changed constraint takes effect now instead of after the current work drains.
+        val policy = if (isRunning(BACKUP_WORK_NAME)) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE
+        workManager.enqueueUniqueWork(BACKUP_WORK_NAME, policy, request)
     }
 
-    override fun schedulePeriodic() {
+    override suspend fun schedulePeriodic() {
         val request = PeriodicWorkRequestBuilder<BackupDiscoveryWorker>(PERIOD_HOURS, TimeUnit.HOURS)
-            .setConstraints(
-                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
-            )
-            .setBackoffCriteria(androidx.work.BackoffPolicy.EXPONENTIAL, BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
+            .setConstraints(transportConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
             .build()
-        // KEEP, same rationale as the one-time path: the periodic spec is static, so UPDATE would
-        // only risk interrupting an in-flight discovery run for zero benefit.
-        workManager.enqueueUniquePeriodicWork(BACKUP_PERIODIC_WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+        // UPDATE rewrites the existing spec in place without cancelling a running discovery pass, so
+        // a changed constraint applies from the next period on and an in-flight pass is never cut off.
+        workManager.enqueueUniquePeriodicWork(BACKUP_PERIODIC_WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
+    }
+
+    /**
+     * The user's transport preferences as WorkManager constraints.
+     *
+     * An unreadable preference falls back to the same defaults the repository declares (any network,
+     * no charging/battery requirement), so a DataStore failure relaxes the run rather than silently
+     * wedging backup forever behind a constraint nobody chose.
+     */
+    private suspend fun transportConstraints(): Constraints {
+        val network = readPreference(BackupNetworkPreference.Default) {
+            settingsRepository.backupNetworkPreference.first()
+        }
+        val requiresCharging = readPreference(false) { settingsRepository.backupRequiresCharging.first() }
+        val requiresBatteryNotLow = readPreference(false) {
+            settingsRepository.backupRequiresBatteryNotLow.first()
+        }
+        return Constraints.Builder()
+            .setRequiredNetworkType(
+                if (network == BackupNetworkPreference.WIFI_ONLY) NetworkType.UNMETERED else NetworkType.CONNECTED,
+            )
+            .setRequiresCharging(requiresCharging)
+            .setRequiresBatteryNotLow(requiresBatteryNotLow)
+            .build()
+    }
+
+    /**
+     * Whether work with [name] is currently executing.
+     *
+     * Fails closed (reports "running") so an unreadable WorkManager state makes the caller keep the
+     * existing work rather than replace it — the safe direction is always "do not cancel an upload".
+     */
+    private suspend fun isRunning(name: String): Boolean = try {
+        workManager.getWorkInfosForUniqueWorkFlow(name).first()
+            .any { it.state == WorkInfo.State.RUNNING }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        true
+    }
+
+    /**
+     * Reads one preference, falling back to [fallback] when it cannot be read.
+     *
+     * A cancelled read is rethrown rather than treated as a fallback: the caller's scope is going away,
+     * and substituting a default would let a cancelled pass still enqueue work under constraints the
+     * user did not choose. (The repository's own flows already degrade a read error to their default,
+     * so this is the second line of defence.)
+     */
+    private suspend fun <T> readPreference(fallback: T, read: suspend () -> T): T = try {
+        read()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        fallback
     }
 
     private companion object {

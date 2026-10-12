@@ -43,6 +43,7 @@ interface LocalMediaLookup {
 class MediaStoreLocalLookup(
     context: Context,
     private val hiddenIdsProvider: suspend () -> Set<Long> = { emptySet() },
+    private val typeFilterProvider: suspend () -> TimelineMediaFilter = { TimelineMediaFilter.All },
 ) : LocalMediaLookup {
 
     private val contentResolver = context.applicationContext.contentResolver
@@ -78,11 +79,22 @@ class MediaStoreLocalLookup(
     override suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long?): Long? =
         withContext(Dispatchers.IO) {
             val hidden = hiddenIdsProvider()
-            walkToVisibleNeighbor(id, hidden) { cursor -> queryNeighbor(cursor, direction, bucketId) }
+            // The neighbour walk honours the hide-videos / hide-GIFs preferences so a swipe can never
+            // land on a kind the grid refuses to show. byId/byIdList deliberately do NOT: an item
+            // opened by id, or listed in a Favorites/Trash collection, must still resolve.
+            val filter = typeFilterProvider()
+            walkToVisibleNeighbor(id, hidden) { cursor ->
+                queryNeighbor(cursor, direction, bucketId, filter)
+            }
         }
 
     /** The nearest neighbour of [id] in [direction], ignoring hidden state; null at the collection end. */
-    private fun queryNeighbor(id: Long, direction: NeighborDirection, bucketId: Long?): Long? {
+    private fun queryNeighbor(
+        id: Long,
+        direction: NeighborDirection,
+        bucketId: Long?,
+        filter: TimelineMediaFilter,
+    ): Long? {
         val cmp = if (direction == NeighborDirection.OLDER) "<" else ">"
         val order = if (direction == NeighborDirection.OLDER) "_ID DESC" else "_ID ASC"
         val sb = StringBuilder("$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} $cmp ?")
@@ -92,6 +104,8 @@ class MediaStoreLocalLookup(
             sb.append(" AND ${MediaStore.MediaColumns.BUCKET_ID} = ?")
             args += bucketId.toString()
         }
+        // No bound arguments (a constant MIME literal), so appending cannot disturb the arg order.
+        sb.append(filter.selectionSuffix())
         return queryOne(selection = sb.toString(), args = args.toTypedArray(), sortOrder = order)?.id
     }
 

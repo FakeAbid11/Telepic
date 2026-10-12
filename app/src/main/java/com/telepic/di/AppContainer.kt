@@ -42,6 +42,7 @@ import com.telepic.data.media.MediaStoreAlbumRepository
 import com.telepic.data.media.MediaStoreLocalLookup
 import com.telepic.data.media.MediaStoreBucketLoader
 import com.telepic.data.media.MediaStoreMediaLoader
+import com.telepic.data.media.TimelineMediaFilter
 import com.telepic.data.organization.DefaultMediaOrganizationRepository
 import com.telepic.data.organization.LocalMediaDeleter
 import com.telepic.data.organization.MediaOrganizationRepository
@@ -105,6 +106,22 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         SettingsRepositoryImpl(appContext.telepicDataStore)
     }
 
+    /**
+     * The user's hide-videos / hide-GIFs preferences, read per query.
+     *
+     * Shared by every *library-view* loader (timeline, album contents, album grouping, Viewer
+     * neighbour walk) so all of them agree about what the library contains. It is deliberately NOT
+     * given to [backupDiscoveryLoader] or to the SELECT_FOLDER discovery loaders: what gets backed up
+     * is decided by the backup preference, and a display filter must never silently shrink a backup
+     * the user asked for.
+     */
+    private val timelineFilterProvider: suspend () -> TimelineMediaFilter = {
+        TimelineMediaFilter(
+            showVideos = settingsRepository.showVideosInTimeline.first(),
+            showGifs = settingsRepository.showGifsInTimeline.first(),
+        )
+    }
+
     override val onboardingRepository: OnboardingRepository by lazy {
         OnboardingRepositoryImpl(appContext.telepicDataStore)
     }
@@ -161,7 +178,11 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     private val mediaLoader: MediaStoreMediaLoader by lazy {
-        MediaStoreMediaLoader(appContext) { mediaOrganizationRepository.hiddenIds() }
+        MediaStoreMediaLoader(
+            context = appContext,
+            hiddenIdsProvider = { mediaOrganizationRepository.hiddenIds() },
+            typeFilterProvider = timelineFilterProvider,
+        )
     }
 
     /**
@@ -174,7 +195,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
      * the worker reads the queue rather than MediaStore, so the two paths no longer disagree.)
      */
     private val backupDiscoveryLoader: MediaStoreMediaLoader by lazy {
-        MediaStoreMediaLoader(appContext) { mediaOrganizationRepository.trashedIds.first() }
+        MediaStoreMediaLoader(
+            context = appContext,
+            hiddenIdsProvider = { mediaOrganizationRepository.trashedIds.first() },
+        )
     }
 
     override val localMediaRepository: LocalMediaRepository by lazy {
@@ -182,7 +206,11 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val localMediaLookup: LocalMediaLookup by lazy {
-        MediaStoreLocalLookup(appContext) { mediaOrganizationRepository.hiddenIds() }
+        MediaStoreLocalLookup(
+            context = appContext,
+            hiddenIdsProvider = { mediaOrganizationRepository.hiddenIds() },
+            typeFilterProvider = timelineFilterProvider,
+        )
     }
 
     override val mediaOrganizationRepository: MediaOrganizationRepository by lazy {
@@ -217,7 +245,11 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val albumRepository: AlbumRepository by lazy {
-        MediaStoreAlbumRepository(appContext) { mediaOrganizationRepository.hiddenIds() }
+        MediaStoreAlbumRepository(
+            context = appContext,
+            hiddenIdsProvider = { mediaOrganizationRepository.hiddenIds() },
+            typeFilterProvider = timelineFilterProvider,
+        )
     }
 
     override val mediaChangeWatcher: MediaChangeWatcher by lazy {
@@ -253,7 +285,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val backupWorkScheduler: BackupWorkScheduler by lazy {
-        WorkManagerBackupScheduler(appContext)
+        WorkManagerBackupScheduler(appContext, settingsRepository)
     }
 
     override val backupCoordinator: BackupCoordinator by lazy {
@@ -269,7 +301,11 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                 if (bucketId == null) {
                     backupDiscoveryLoader
                 } else {
-                    MediaStoreBucketLoader(appContext, bucketId) { mediaOrganizationRepository.trashedIds.first() }
+                    MediaStoreBucketLoader(
+                        context = appContext,
+                        bucketId = bucketId,
+                        hiddenIdsProvider = { mediaOrganizationRepository.trashedIds.first() },
+                    )
                 }
             },
         )

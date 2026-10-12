@@ -2,6 +2,7 @@ package com.telepic.ui.screens.viewer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.MediaMetadata
@@ -11,6 +12,7 @@ import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.data.restore.RestoreFailure
 import com.telepic.data.restore.RestoreRepository
 import com.telepic.data.restore.RestoreResult
+import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
 import com.telepic.domain.media.LocalMedia
@@ -18,11 +20,16 @@ import com.telepic.domain.media.MediaType
 import com.telepic.navigation.MediaSource
 import com.telepic.navigation.OrganizationKind
 import com.telepic.navigation.ViewerScope
+import com.telepic.settings.SettingsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -100,6 +107,16 @@ data class ViewerUiState(
  * Presentation metadata for the Viewer's Details sheet. Every field is null when it cannot be
  * obtained reliably — the UI omits null rows rather than showing a fabricated value. [captureMillis]
  * comes only from EXIF (never the file-modified time), and [latitude]/[longitude] only from EXIF GPS.
+ *
+ * The sheet covers **both** sources, which is why the cloud fields exist: a cloud item has no local
+ * file to open, so previously `loadDetails()` returned early for it and the sheet sat on its spinner
+ * forever. Its details come from the manifest entry instead, and [isCloud] tells the sheet which set
+ * of rows is meaningful.
+ *
+ * [backupState] is null when the backup queue holds no row for the item, and the sheet then omits the
+ * row entirely. That is deliberate: the queue is the only source of `BACKED_UP`, but an *absent* row
+ * is not proof of "not backed up" — after a reinstall the queue is empty while the cloud still holds
+ * every item, so rendering "Not backed up" there would be a false claim about the user's data.
  */
 data class MediaDetails(
     val fileName: String?,
@@ -114,6 +131,27 @@ data class MediaDetails(
     val cameraModel: String?,
     val latitude: Double?,
     val longitude: Double?,
+    /** Photo / video / GIF, when known. */
+    val mediaType: MediaType? = null,
+    /** Playback duration for a video; null for photos, GIFs and cloud items without one. */
+    val durationMillis: Long? = null,
+    /** The MediaStore bucket (folder) name the item lives in. Local items only. */
+    val bucketName: String? = null,
+    /** The item's path relative to the storage root, e.g. `DCIM/Camera/`. Local items only. */
+    val relativePath: String? = null,
+    /** The backup queue's state for this item, or null when the queue has no row for it. */
+    val backupState: MediaBackupVisualState? = null,
+    /** True for a Telegram cloud item — the sheet then reports remote identity instead of local paths. */
+    val isCloud: Boolean = false,
+    val cloudChatId: Long? = null,
+    val cloudMessageId: Long? = null,
+    /** Whether the cloud item's original has been downloaded to this device. */
+    val cloudOriginalDownloaded: Boolean = false,
+    /** EXIF exposure set. All null when the file carries no such metadata. */
+    val iso: Int? = null,
+    val fNumber: Double? = null,
+    val exposureTimeSeconds: Double? = null,
+    val focalLengthMm: Double? = null,
 )
 
 /**
@@ -131,7 +169,18 @@ class ViewerViewModel(
     private val restoreRepository: RestoreRepository? = null,
     private val scope: ViewerScope = ViewerScope.Global,
     private val metadataReader: MediaMetadataReader? = null,
+    private val backupStatusRepository: BackupStatusRepository? = null,
+    private val settingsRepository: SettingsRepository? = null,
 ) : ViewModel() {
+
+    /**
+     * Whether a video should open with sound. Read once per session and handed to [VideoViewer] as
+     * its *initial* mute state — the setting means "start muted", not "force muted", so the user's
+     * own unmute for the clip they are watching is never overridden.
+     */
+    val startVideosMuted: StateFlow<Boolean> =
+        (settingsRepository?.startVideosMuted ?: flowOf(true))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     private val _uiState = MutableStateFlow(ViewerUiState(initialSource))
     val uiState: StateFlow<ViewerUiState> = _uiState.asStateFlow()
@@ -188,16 +237,36 @@ class ViewerViewModel(
     }
 
     /**
-     * Load Details for the current LOCAL item on demand — EXIF (capture/camera/GPS) is read off the
-     * main thread via [metadataReader] and merged with the MediaStore fields already on the item. Cloud
-     * items have no local file to read, so nothing loads; a missing reader yields MediaStore fields only.
+     * Load Details for the current item on demand.
+     *
+     * Local items read EXIF off the main thread via [metadataReader] and merge it with the MediaStore
+     * fields already on the item. Cloud items have no local file to read, so their details come from
+     * the manifest entry — which is what makes the sheet work for them at all: this used to return
+     * early on a cloud item, leaving the sheet on its spinner forever with no way out.
      */
     fun loadDetails() {
-        val media = (_uiState.value.item as? ViewerItem.Local)?.media ?: return
-        val requestedSource = _uiState.value.source
+        val state = _uiState.value
+        val requestedSource = state.source
+        when (val item = state.item) {
+            is ViewerItem.Local -> loadLocalDetails(item.media, requestedSource)
+            is ViewerItem.Cloud -> loadCloudDetails(item.media, requestedSource)
+            null -> return
+        }
+    }
+
+    private fun loadLocalDetails(media: LocalMedia, requestedSource: MediaSource) {
         viewModelScope.launch {
-            val metadata = runCatching { metadataReader?.read(media.contentUri) }
-                .getOrNull() ?: MediaMetadata()
+            val metadata = try {
+                metadataReader?.read(media.contentUri) ?: MediaMetadata()
+            } catch (cancellation: CancellationException) {
+                // A cancelled read must not publish: the identity guard below cannot tell a cancelled
+                // scope from a live one, so swallowing this would set details for a dead session.
+                throw cancellation
+            } catch (_: Throwable) {
+                // Corrupt file, unsupported format, or a stream we cannot open → MediaStore fields only.
+                MediaMetadata()
+            }
+            val backup = backupStateOf(media.id)
             // Identity-guarded: a slow EXIF read must never land on an item the user already left.
             if (_uiState.value.source != requestedSource) return@launch
             _details.value = MediaDetails(
@@ -213,7 +282,72 @@ class ViewerViewModel(
                 cameraModel = metadata.cameraModel,
                 latitude = metadata.location?.latitude,
                 longitude = metadata.location?.longitude,
+                mediaType = media.type,
+                durationMillis = media.durationMillis,
+                bucketName = media.bucketName,
+                relativePath = media.relativePath,
+                backupState = backup,
+                isCloud = false,
+                iso = metadata.iso,
+                fNumber = metadata.fNumber,
+                exposureTimeSeconds = metadata.exposureTimeSeconds,
+                focalLengthMm = metadata.focalLengthMm,
             )
+        }
+    }
+
+    /**
+     * A cloud item's details come entirely from its manifest entry — there is no local file to read,
+     * and nothing is invented to fill the gap: the EXIF fields stay null and the sheet omits them.
+     *
+     * [MediaDetails.backupState] is reported as [MediaBackupVisualState.BACKED_UP] rather than looked
+     * up in the local queue. A manifest row exists only because Telegram confirmed the message, so a
+     * cloud item *is* backed up by definition; any local queue row would belong to a restored copy.
+     */
+    private fun loadCloudDetails(media: CloudMedia, requestedSource: MediaSource) {
+        viewModelScope.launch {
+            if (_uiState.value.source != requestedSource) return@launch
+            _details.value = MediaDetails(
+                fileName = media.fileName,
+                mimeType = media.mimeType,
+                sizeBytes = media.sizeBytes ?: 0L,
+                width = media.width ?: 0,
+                height = media.height ?: 0,
+                captureMillis = null,
+                libraryDateMillis = media.dateEpochSec?.times(1000L) ?: 0L,
+                libraryAddedMillis = null,
+                cameraMake = null,
+                cameraModel = null,
+                latitude = null,
+                longitude = null,
+                mediaType = media.mediaType.toDomainMediaType(),
+                durationMillis = media.durationMs,
+                bucketName = null,
+                relativePath = null,
+                backupState = MediaBackupVisualState.BACKED_UP,
+                isCloud = true,
+                cloudChatId = media.chatId,
+                cloudMessageId = media.messageId,
+                cloudOriginalDownloaded = media.isDownloaded,
+            )
+        }
+    }
+
+    /**
+     * The item's backup state, or null when the queue holds no row for it.
+     *
+     * Null is deliberately *not* reported as "not backed up" — see [MediaDetails.backupState] — so a
+     * failed lookup and a genuinely absent row both make the sheet omit the row rather than assert a
+     * fact about the user's data that nothing verified.
+     */
+    private suspend fun backupStateOf(localMediaId: Long): MediaBackupVisualState? {
+        val repository = backupStatusRepository ?: return null
+        return try {
+            repository.visualStates.first()[localMediaId.toString()]
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
         }
     }
 
@@ -278,7 +412,17 @@ class ViewerViewModel(
         val id = (_uiState.value.item as? ViewerItem.Local)?.media?.id ?: return
         val requestedSource = _uiState.value.source
         viewModelScope.launch {
-            val updated = action(repo, id, _flags.value)
+            val updated = try {
+                action(repo, id, _flags.value)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // A database failure must not escape `viewModelScope`: that is an uncaught exception on
+                // the main thread and the app closes itself with no message. Nothing is claimed on
+                // failure either — the flags stay as they were, which is the truth, and the next load
+                // re-reads them from the repository.
+                return@launch
+            }
             // Identity-guarded: the write targets the captured id (always the correct item), but
             // the UI state must never be overwritten for a source the user has already left.
             if (_uiState.value.source == requestedSource) {
@@ -442,6 +586,13 @@ private fun CloudMediaType.toViewerKind(): ViewerKind = when (this) {
     CloudMediaType.IMAGE -> ViewerKind.PHOTO
     CloudMediaType.VIDEO -> ViewerKind.VIDEO
     CloudMediaType.GIF -> ViewerKind.GIF
+}
+
+/** The domain kind for a cloud item, so the Details sheet can label it with the same wording as a local one. */
+private fun CloudMediaType.toDomainMediaType(): MediaType = when (this) {
+    CloudMediaType.IMAGE -> MediaType.PHOTO
+    CloudMediaType.VIDEO -> MediaType.VIDEO
+    CloudMediaType.GIF -> MediaType.GIF
 }
 
 /** Restore-to-device state for the current cloud item. */

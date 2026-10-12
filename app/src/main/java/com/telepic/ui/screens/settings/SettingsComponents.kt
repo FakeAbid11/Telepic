@@ -5,12 +5,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import com.telepic.ui.theme.TelepicTokens
 
 /** A titled group of settings rows. */
@@ -87,5 +90,54 @@ fun SettingsRow(
             supportingColor = supportingColor,
         ),
         modifier = rowModifier,
+    )
+}
+
+/**
+ * A settings row that switches something on or off.
+ *
+ * The whole row is the control (`toggleable` with [Role.Switch]) rather than only the switch itself,
+ * so the tap target is the full 56dp list item instead of a 32dp thumb — and a screen reader
+ * announces one control with its label, not a bare switch next to a stray heading. The [Switch]
+ * therefore takes `onCheckedChange = null`: it renders the state, and the row owns the interaction.
+ */
+@Composable
+fun SettingsToggleRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    summary: String? = null,
+    enabled: Boolean = true,
+) {
+    val contentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    val supportingColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
+    ListItem(
+        headlineContent = { Text(title, color = contentColor) },
+        supportingContent = summary?.let { { Text(it, color = supportingColor) } },
+        trailingContent = {
+            Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            headlineColor = contentColor,
+            supportingColor = supportingColor,
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            ),
     )
 }

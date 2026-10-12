@@ -29,6 +29,7 @@ import com.telepic.R
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.onboarding.BackupPreference
 import com.telepic.permissions.rememberNotificationPermissionState
+import com.telepic.settings.BackupNetworkPreference
 import com.telepic.settings.ThemeMode
 import com.telepic.telegram.TelegramAuthState
 import com.telepic.ui.components.ScreenHeader
@@ -51,6 +52,13 @@ val BackupPreference.labelRes: Int
         BackupPreference.NOT_NOW -> R.string.onboarding_backup_not_now_title
     }
 
+/** Human-readable label resource for the transport the backup engine may upload over. */
+val BackupNetworkPreference.labelRes: Int
+    get() = when (this) {
+        BackupNetworkPreference.ANY_NETWORK -> R.string.settings_backup_network_any
+        BackupNetworkPreference.WIFI_ONLY -> R.string.settings_backup_network_wifi
+    }
+
 /**
  * Short, honest wording for the Account section's connection row. It reports exactly what the Cloud
  * layer currently knows — "empty cloud" reads as connected, and a failure never reads as connected.
@@ -70,9 +78,10 @@ private val CloudStatus.connectionSummaryRes: Int
 
 /**
  * Settings: the real Telegram account status (with sign-out), the backup preference editor (the same
- * persisted choice onboarding writes, applied immediately through the coordinator), the theme picker,
- * measured cache sizes with a safe staging-cache clear, and version info. Rows reflect behavior that
- * exists — nothing here reports a state the app cannot honor.
+ * persisted choice onboarding writes, applied immediately through the coordinator), the transport and
+ * media preferences, the app lock, measured cache sizes and library counts, the theme picker and
+ * version/licence information. Rows reflect behavior that exists — nothing here reports a state the
+ * app cannot honor, which is why the app-lock switch is disabled on a device with no credential.
  */
 @Composable
 fun SettingsScreen(
@@ -89,8 +98,10 @@ fun SettingsScreen(
     // Dialog visibility survives rotation: dismissing every dialog on recreation read as a bug.
     var showThemeDialog by rememberSaveable { mutableStateOf(false) }
     var showBackupDialog by rememberSaveable { mutableStateOf(false) }
+    var showNetworkDialog by rememberSaveable { mutableStateOf(false) }
     var showSignOutConfirm by rememberSaveable { mutableStateOf(false) }
     var showFolderPicker by rememberSaveable { mutableStateOf(false) }
+    var showLicenses by rememberSaveable { mutableStateOf(false) }
 
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val preference by viewModel.backupPreference.collectAsStateWithLifecycle()
@@ -100,6 +111,16 @@ fun SettingsScreen(
     val storage by viewModel.storageSummary.collectAsStateWithLifecycle()
     val cloudStatus by viewModel.cloudStatus.collectAsStateWithLifecycle()
     val channelTitle by viewModel.backupChannelTitle.collectAsStateWithLifecycle()
+    val networkPreference by viewModel.backupNetworkPreference.collectAsStateWithLifecycle()
+    val requiresCharging by viewModel.backupRequiresCharging.collectAsStateWithLifecycle()
+    val requiresBatteryNotLow by viewModel.backupRequiresBatteryNotLow.collectAsStateWithLifecycle()
+    val showVideos by viewModel.showVideosInTimeline.collectAsStateWithLifecycle()
+    val showGifs by viewModel.showGifsInTimeline.collectAsStateWithLifecycle()
+    val startMuted by viewModel.startVideosMuted.collectAsStateWithLifecycle()
+    val appLockEnabled by viewModel.appLockEnabled.collectAsStateWithLifecycle()
+    val localCount by viewModel.localLibraryCount.collectAsStateWithLifecycle()
+    val localCountLoaded by viewModel.localLibraryCountLoaded.collectAsStateWithLifecycle()
+    val cloudCount by viewModel.cloudLibraryCount.collectAsStateWithLifecycle()
 
     // "Back up now" only means something once an automatic option is configured. SELECT_FOLDER with
     // no folders picked backs up nothing, so it counts as unconfigured — matching the coordinator,
@@ -117,6 +138,21 @@ fun SettingsScreen(
             stringResource(R.string.settings_backup_pref_folders, bucketIds.size)
         BackupPreference.NOT_NOW -> stringResource(BackupPreference.NOT_NOW.labelRes)
         null -> stringResource(R.string.settings_backup_pref_unset)
+    }
+
+    // A null count is "not measured", never zero — the row must not claim the library is empty.
+    val measuredLocalCount = localCount
+    val localLibrarySummary = when {
+        !localCountLoaded -> stringResource(R.string.settings_library_local_counting)
+        measuredLocalCount != null ->
+            stringResource(R.string.settings_library_local_summary, measuredLocalCount)
+        else -> stringResource(R.string.settings_library_local_unknown)
+    }
+    val measuredCloudCount = cloudCount
+    val cloudLibrarySummary = if (measuredCloudCount != null) {
+        stringResource(R.string.settings_library_cloud_summary, measuredCloudCount)
+    } else {
+        stringResource(R.string.settings_library_cloud_unknown)
     }
 
     Surface(modifier = modifier.fillMaxSize()) {
@@ -173,6 +209,64 @@ fun SettingsScreen(
                     enabled = backupConfigured,
                     onClick = viewModel::backupNow,
                 )
+                // The three rows below are WorkManager constraints: a run is simply not started until
+                // the condition holds, so nothing is ever failed for a condition the user chose.
+                SettingsRow(
+                    title = stringResource(R.string.settings_backup_network),
+                    summary = stringResource(networkPreference.labelRes),
+                    enabled = true,
+                    onClick = { showNetworkDialog = true },
+                )
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_backup_charge_only),
+                    summary = stringResource(R.string.settings_backup_charge_only_summary),
+                    checked = requiresCharging,
+                    onCheckedChange = viewModel::setBackupRequiresCharging,
+                )
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_backup_battery_not_low),
+                    summary = stringResource(R.string.settings_backup_battery_not_low_summary),
+                    checked = requiresBatteryNotLow,
+                    onCheckedChange = viewModel::setBackupRequiresBatteryNotLow,
+                )
+                // Informational: Telepic has no re-encoding path, so "Original" is the only truthful
+                // value and the row states it rather than offering a choice it cannot honour.
+                SettingsRow(
+                    title = stringResource(R.string.settings_backup_quality),
+                    summary = stringResource(R.string.settings_backup_quality_value),
+                )
+            }
+
+            SettingsSection(title = stringResource(R.string.settings_section_library)) {
+                SettingsRow(
+                    title = stringResource(R.string.settings_library_local),
+                    summary = localLibrarySummary,
+                )
+                SettingsRow(
+                    title = stringResource(R.string.settings_library_cloud),
+                    summary = cloudLibrarySummary,
+                )
+            }
+
+            SettingsSection(title = stringResource(R.string.settings_section_media)) {
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_media_show_videos),
+                    summary = stringResource(R.string.settings_media_show_videos_summary),
+                    checked = showVideos,
+                    onCheckedChange = viewModel::setShowVideosInTimeline,
+                )
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_media_show_gifs),
+                    summary = stringResource(R.string.settings_media_show_gifs_summary),
+                    checked = showGifs,
+                    onCheckedChange = viewModel::setShowGifsInTimeline,
+                )
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_media_start_muted),
+                    summary = stringResource(R.string.settings_media_start_muted_summary),
+                    checked = startMuted,
+                    onCheckedChange = viewModel::setStartVideosMuted,
+                )
             }
 
             SettingsSection(title = stringResource(R.string.settings_section_appearance)) {
@@ -181,6 +275,23 @@ fun SettingsScreen(
                     summary = stringResource(themeMode.labelRes),
                     enabled = true,
                     onClick = { showThemeDialog = true },
+                )
+            }
+
+            SettingsSection(title = stringResource(R.string.settings_section_security)) {
+                // The lock is enforced by the device's own credential, so with none configured there
+                // is nothing to authenticate against: the row says so and is switched off rather than
+                // offering a toggle that would silently never fire.
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_security_app_lock),
+                    summary = if (viewModel.isDeviceSecure) {
+                        stringResource(R.string.settings_security_app_lock_summary)
+                    } else {
+                        stringResource(R.string.settings_security_app_lock_unavailable)
+                    },
+                    checked = appLockEnabled,
+                    enabled = viewModel.isDeviceSecure,
+                    onCheckedChange = viewModel::setAppLockEnabled,
                 )
             }
 
@@ -217,12 +328,24 @@ fun SettingsScreen(
                     enabled = true,
                     onClick = viewModel::clearBackupCache,
                 )
+                SettingsRow(
+                    title = stringResource(R.string.settings_storage_image_cache),
+                    summary = stringResource(R.string.settings_storage_image_cache_summary),
+                    enabled = true,
+                    onClick = viewModel::clearImageCache,
+                )
             }
 
             SettingsSection(title = stringResource(R.string.settings_section_about)) {
                 SettingsRow(
                     title = stringResource(R.string.settings_about_version),
                     summary = BuildConfig.VERSION_NAME,
+                )
+                SettingsRow(
+                    title = stringResource(R.string.settings_about_licenses),
+                    summary = stringResource(R.string.settings_about_licenses_summary),
+                    enabled = true,
+                    onClick = { showLicenses = true },
                 )
             }
 
@@ -263,6 +386,17 @@ fun SettingsScreen(
         )
     }
 
+    if (showNetworkDialog) {
+        BackupNetworkDialog(
+            current = networkPreference,
+            onSelect = { choice ->
+                showNetworkDialog = false
+                viewModel.setBackupNetworkPreference(choice)
+            },
+            onDismiss = { showNetworkDialog = false },
+        )
+    }
+
     if (showFolderPicker) {
         FolderPickerDialog(
             folders = folders,
@@ -275,6 +409,10 @@ fun SettingsScreen(
             },
             onDismiss = { showFolderPicker = false },
         )
+    }
+
+    if (showLicenses) {
+        OpenSourceLicensesDialog(onDismiss = { showLicenses = false })
     }
 
     if (showSignOutConfirm) {
@@ -309,6 +447,46 @@ private fun BackupPreferenceDialog(
         text = {
             Column {
                 BackupPreference.entries.forEach { preference ->
+                    val selected = preference == current
+                    Surface(onClick = { onSelect(preference) }, color = MaterialTheme.colorScheme.surface) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = TelepicTokens.spacing.xs, horizontal = TelepicTokens.spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = selected, onClick = { onSelect(preference) })
+                            Text(
+                                text = stringResource(preference.labelRes),
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.padding(start = TelepicTokens.spacing.md),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        },
+    )
+}
+
+/** Picks which connection the backup engine may upload over. Applied as a WorkManager constraint. */
+@Composable
+private fun BackupNetworkDialog(
+    current: BackupNetworkPreference,
+    onSelect: (BackupNetworkPreference) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_backup_network_dialog_title)) },
+        text = {
+            Column {
+                BackupNetworkPreference.entries.forEach { preference ->
                     val selected = preference == current
                     Surface(onClick = { onSelect(preference) }, color = MaterialTheme.colorScheme.surface) {
                         Row(

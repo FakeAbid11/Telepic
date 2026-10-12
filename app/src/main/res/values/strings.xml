@@ -87,6 +87,63 @@
     <string name="settings_section_about">About</string>
     <string name="settings_about_version">Telepic version</string>
 
+    <!-- Settings — backup transport. These are WorkManager constraints, not advisory flags: a run
+         simply does not start until the condition holds, so the queue stays queued rather than
+         failing. -->
+    <string name="settings_backup_network">Upload over</string>
+    <string name="settings_backup_network_any">Any connection</string>
+    <string name="settings_backup_network_wifi">Wi-Fi only</string>
+    <string name="settings_backup_network_dialog_title">Upload over</string>
+    <string name="settings_backup_charge_only">Only while charging</string>
+    <string name="settings_backup_charge_only_summary">Wait for a charger before uploading.</string>
+    <string name="settings_backup_battery_not_low">Only when battery isn\'t low</string>
+    <string name="settings_backup_battery_not_low_summary">Pause uploads when the battery runs low.</string>
+    <string name="settings_backup_quality">Upload quality</string>
+    <string name="settings_backup_quality_value">Original — Telepic uploads your files exactly as they are and never re-compresses photos or videos.</string>
+
+    <!-- Settings — library information (local vs cloud) -->
+    <string name="settings_section_library">Library</string>
+    <string name="settings_library_local">On this device</string>
+    <string name="settings_library_local_summary">%1$d photos &amp; videos</string>
+    <string name="settings_library_local_counting">Counting…</string>
+    <string name="settings_library_local_unknown">Unavailable</string>
+    <string name="settings_library_cloud">In your Telegram cloud</string>
+    <string name="settings_library_cloud_summary">%1$d items</string>
+    <string name="settings_library_cloud_unknown">Not available</string>
+
+    <!-- Settings — media behaviour. Hiding a kind filters the library queries only; it never
+         changes what gets backed up. -->
+    <string name="settings_section_media">Media</string>
+    <string name="settings_media_show_videos">Show videos</string>
+    <string name="settings_media_show_videos_summary">Include videos in the timeline and albums. Backups are unaffected.</string>
+    <string name="settings_media_show_gifs">Show GIFs</string>
+    <string name="settings_media_show_gifs_summary">Include animated GIFs in the timeline and albums. Backups are unaffected.</string>
+    <string name="settings_media_start_muted">Start videos muted</string>
+    <string name="settings_media_start_muted_summary">Play videos without sound until you turn it on. Off means playback takes over your audio.</string>
+
+    <!-- Settings — security -->
+    <string name="settings_section_security">Security</string>
+    <string name="settings_security_app_lock">App lock</string>
+    <string name="settings_security_app_lock_summary">Require your device PIN, pattern or password to open Telepic.</string>
+    <string name="settings_security_app_lock_unavailable">Set a device PIN, pattern or password to use app lock.</string>
+
+    <!-- Settings — storage, image cache -->
+    <string name="settings_storage_image_cache">Clear image cache</string>
+    <string name="settings_storage_image_cache_summary">Frees cached thumbnails and decoded images. They reload as you browse.</string>
+
+    <!-- Settings — about, open-source licenses -->
+    <string name="settings_about_licenses">Open source licenses</string>
+    <string name="settings_about_licenses_summary">The libraries Telepic is built on.</string>
+    <string name="settings_licenses_intro">Telepic is built with these open-source components:</string>
+    <string name="settings_licenses_map_data">Map tiles and data © OpenStreetMap contributors, available under the Open Database License (ODbL).</string>
+
+    <!-- App lock -->
+    <string name="app_lock_title">Telepic is locked</string>
+    <string name="app_lock_body">Unlock with your device PIN, pattern or password to continue.</string>
+    <string name="app_lock_unlock">Unlock</string>
+    <string name="app_lock_prompt_title">Unlock Telepic</string>
+    <string name="app_lock_prompt_body">Confirm your device credential to open Telepic.</string>
+
     <!-- Theme options -->
     <string name="theme_system">System default</string>
     <string name="theme_light">Light</string>
@@ -403,6 +460,34 @@
     <string name="details_location">Location</string>
     <string name="details_show_on_map">Show on map</string>
     <string name="details_unknown">Unknown</string>
+
+    <!-- Media Details — kind, duration and where the file lives. Every row is omitted when its value
+         cannot be obtained, so nothing here is ever guessed. -->
+    <string name="details_type">Type</string>
+    <string name="details_duration">Duration</string>
+    <string name="details_folder">Folder</string>
+    <string name="details_path">Path</string>
+
+    <!-- Media Details — EXIF exposure data, shown only when the file actually carries it. -->
+    <string name="details_iso">ISO</string>
+    <string name="details_aperture">Aperture</string>
+    <string name="details_aperture_value">f/%1$s</string>
+    <string name="details_exposure">Exposure time</string>
+    <string name="details_exposure_value">%1$s s</string>
+    <string name="details_focal_length">Focal length</string>
+    <string name="details_focal_length_value">%1$s mm</string>
+
+    <!-- Media Details — backup status. Reuses the same wording as the grid badges so the sheet and
+         the tile can never describe the same item differently. -->
+    <string name="details_backup">Backup</string>
+
+    <!-- Media Details — cloud items. A cloud item has no local file to read, so its sheet reports the
+         remote identity and the original\'s availability instead. -->
+    <string name="details_source">Source</string>
+    <string name="details_telegram_message">Telegram message</string>
+    <string name="details_cloud_original">Original</string>
+    <string name="details_cloud_original_downloaded">Downloaded</string>
+    <string name="details_cloud_original_remote">On Telegram</string>
 
     <!-- ============================ Navigation fallback ============================ -->
     <string name="nav_invalid_title">This screen couldn\'t be opened.</string>

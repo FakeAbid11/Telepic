@@ -205,6 +205,7 @@ fun TelepicNavHost(
                         SettingsViewModel(
                             telegramAuthController = container.telegramAuthController,
                             onboardingRepository = container.onboardingRepository,
+                            settingsRepository = container.settingsRepository,
                             albumRepository = container.albumRepository,
                             backupCoordinator = container.backupCoordinator,
                             cloudRepository = container.cloudRepository,
@@ -260,6 +261,8 @@ fun TelepicNavHost(
                             organizationRepository = container.mediaOrganizationRepository,
                             scope = ViewerRoute.scopeOf(bucketId, orgKind),
                             metadataReader = container.mediaMetadataReader,
+                            backupStatusRepository = container.backupStatusRepository,
+                            settingsRepository = container.settingsRepository,
                         )
                     }
                 }
@@ -295,6 +298,7 @@ fun TelepicNavHost(
                             localLookup = container.localMediaLookup,
                             cloudRepository = container.cloudRepository,
                             restoreRepository = container.restoreRepository,
+                            settingsRepository = container.settingsRepository,
                         )
                     }
                 }

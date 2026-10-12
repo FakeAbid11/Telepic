@@ -110,6 +110,7 @@ fun ViewerScreen(
     val flags by viewModel.flags.collectAsStateWithLifecycle()
     val restore by viewModel.restore.collectAsStateWithLifecycle()
     val details by viewModel.details.collectAsStateWithLifecycle()
+    val startVideosMuted by viewModel.startVideosMuted.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     // Rotation-surviving chrome state: controls, sheets and the pending confirm dialog should not
     // reset just because the Activity was recreated.
@@ -118,7 +119,6 @@ fun ViewerScreen(
     var showTrashConfirm by rememberSaveable { mutableStateOf(false) }
     val backDesc = stringResource(R.string.viewer_back)
     val isCloudReady = state.source is MediaSource.Cloud && state.status == ViewerStatus.READY
-    val isLocalReady = state.source is MediaSource.Local && state.status == ViewerStatus.READY
 
     // Warm Coil's cache for the swipe targets so a committed drag lands on a ready image.
     val context = LocalContext.current
@@ -134,9 +134,10 @@ fun ViewerScreen(
 
     // The Details sheet survives process death via rememberSaveable; if it re-opens with no
     // details loaded (restored instance, or a swipe to a new item while the sheet was open),
-    // load them instead of spinning forever.
+    // load them instead of spinning forever. Applies to cloud items too — their details come from
+    // the manifest entry, so the sheet is no longer a dead end there.
     LaunchedEffect(showDetails, state.source) {
-        if (showDetails && isLocalReady && details == null) {
+        if (showDetails && state.status == ViewerStatus.READY && details == null) {
             viewModel.loadDetails()
         }
     }
@@ -159,6 +160,9 @@ fun ViewerScreen(
                     onNext = viewModel::showNext,
                     onRestore = if (isCloudReady) viewModel::restoreToLocal else null,
                     restore = restore,
+                    // "Start videos muted" is the *initial* state for each clip, not a lock: the
+                    // user's own unmute for the video they are watching is never overridden.
+                    startMuted = startVideosMuted,
                 )
             }
 
@@ -174,7 +178,9 @@ fun ViewerScreen(
                     // Viewer. Grids behind react on their own when the Room flag flow re-emits.
                     onToggleArchive = viewModel::toggleArchive,
                     onMoveToTrash = { showTrashConfirm = true },
-                    onShowDetails = if (isLocalReady) {
+                    // Offered for cloud items as well as local ones: a cloud item's details come from
+                    // its manifest entry, so there is real information to show rather than a spinner.
+                    onShowDetails = if (state.status == ViewerStatus.READY) {
                         { viewModel.loadDetails(); showDetails = true }
                     } else null,
                 )
@@ -281,6 +287,7 @@ private fun ViewerContent(
     onNext: () -> Unit = {},
     onRestore: (() -> Unit)? = null,
     restore: RestoreState = RestoreState.Idle,
+    startMuted: Boolean = true,
 ) {
     if (state.kind == ViewerKind.VIDEO) {
         // Videos keep button navigation only: the surface consumes touches for its own controls,
@@ -292,6 +299,7 @@ private fun ViewerContent(
             onNext = onNext,
             onRestore = onRestore,
             restore = restore,
+            startMuted = startMuted,
         )
         return
     }

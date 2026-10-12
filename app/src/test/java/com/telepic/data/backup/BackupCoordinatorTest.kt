@@ -44,8 +44,8 @@ class BackupCoordinatorTest {
     private class FakeScheduler : BackupWorkScheduler {
         var scheduled = 0
         var periodicScheduled = 0
-        override fun schedule() { scheduled++ }
-        override fun schedulePeriodic() { periodicScheduled++ }
+        override suspend fun schedule() { scheduled++ }
+        override suspend fun schedulePeriodic() { periodicScheduled++ }
     }
 
     private class FakeOnboarding(
