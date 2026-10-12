@@ -7,6 +7,7 @@ import com.telepic.data.backup.BackupRepository
 import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.backup.BulkBackupSummary
 import com.telepic.data.media.AlbumRepository
+import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.MediaBackupVisualState
@@ -17,6 +18,7 @@ import com.telepic.domain.media.PhotosItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -43,12 +45,35 @@ import org.robolectric.annotation.Config
 class AlbumContentsViewModelTest {
 
     private class FakeAlbumRepository : AlbumRepository {
+        /** Recorded so a test can prove a hidden-state change re-reads the bucket. */
+        var refreshCalls = 0
         override suspend fun albums(): List<Album> = emptyList()
         override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() { refreshCalls++ }
     }
 
     private class EmptyStatusRepository : BackupStatusRepository {
         override val visualStates: Flow<Map<String, MediaBackupVisualState>> = flowOf(emptyMap())
+    }
+
+    /** Only the two hidden-state flows the album watches matter here; the rest are inert. */
+    private class FakeOrg(
+        private val archived: MutableStateFlow<Set<Long>> = MutableStateFlow(emptySet()),
+        private val trashed: MutableStateFlow<Set<Long>> = MutableStateFlow(emptySet()),
+    ) : MediaOrganizationRepository {
+        override val favoriteIds: Flow<Set<Long>> = flowOf(emptySet())
+        override val archivedIds: Flow<Set<Long>> = archived
+        override val trashedIds: Flow<Set<Long>> = trashed
+        override suspend fun hiddenIds(): Set<Long> = archived.value + trashed.value
+        override suspend fun isFavorite(id: Long) = false
+        override suspend fun isArchived(id: Long) = id in archived.value
+        override suspend fun isTrashed(id: Long) = id in trashed.value
+        override suspend fun setFavorite(id: Long, favorite: Boolean) = Unit
+        override suspend fun setArchived(id: Long, archived: Boolean) = Unit
+        override suspend fun moveToTrash(id: Long) = Unit
+        override suspend fun restoreFromTrash(id: Long) = Unit
+        override suspend fun markDeletedFromStore(id: Long) = Unit
+        override suspend fun remove(id: Long) = Unit
     }
 
     private class FakeBackupRepository : BackupRepository {
@@ -96,12 +121,17 @@ class AlbumContentsViewModelTest {
     )
 
     /** The screen builds the VM from the route's (bucketId, title) — no fabricated Album record. */
-    private fun viewModel(backupCoordinator: BackupCoordinator? = null) = AlbumContentsViewModel(
+    private fun viewModel(
+        backupCoordinator: BackupCoordinator? = null,
+        albumRepository: AlbumRepository = FakeAlbumRepository(),
+        organizationRepository: MediaOrganizationRepository? = null,
+    ) = AlbumContentsViewModel(
         bucketId = 3L,
         title = "Camera",
-        albumRepository = FakeAlbumRepository(),
+        albumRepository = albumRepository,
         backupStatusRepository = EmptyStatusRepository(),
         backupCoordinator = backupCoordinator,
+        organizationRepository = organizationRepository,
     )
 
     @Test
@@ -147,5 +177,22 @@ class AlbumContentsViewModelTest {
         runCurrent()
         assertEquals(setOf(1L), vm.selectedItems.value.keys)
         assertEquals(null, vm.selectionReport.value)
+    }
+
+    @Test
+    fun `archiving or trashing re-reads the album instead of leaving it stale`() = runTest {
+        val archived = MutableStateFlow(emptySet<Long>())
+        val albums = FakeAlbumRepository()
+        viewModel(albumRepository = albums, organizationRepository = FakeOrg(archived = archived))
+        runCurrent()
+        val before = albums.refreshCalls
+
+        // Archiving from the Viewer changes what this album should contain, and a `cachedIn` pager
+        // never re-queries on its own — so the item stayed listed with a stale count, and this screen
+        // has no other way to refresh. The Photos timeline updated immediately; the album did not.
+        archived.value = setOf(1L)
+        runCurrent()
+
+        assertTrue("expected the album to be invalidated", albums.refreshCalls > before)
     }
 }

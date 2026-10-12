@@ -1,6 +1,7 @@
 package com.telepic.data.restore
 
 import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
@@ -42,6 +43,27 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
 
     private val resolver: ContentResolver = context.applicationContext.contentResolver
 
+    /**
+     * An already-published copy of the same file, or null.
+     *
+     * Identity is (display name, MIME type, byte size) inside the same collection. Telegram's
+     * re-encoding is deterministic, so restoring the same cloud item twice produces the same name and
+     * the same byte count — which makes this a reliable duplicate signal without a schema change.
+     * `RELATIVE_PATH` is deliberately not part of the match: the provider normalises it with a
+     * trailing slash, so a literal comparison against [relativeDir] would silently never match.
+     */
+    private fun findPublished(collection: Uri, displayName: String, mime: String, size: Long): Uri? =
+        runCatching {
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?" +
+                " AND ${MediaStore.MediaColumns.SIZE} = ?" +
+                " AND ${MediaStore.MediaColumns.MIME_TYPE} = ?"
+            val args = arrayOf(displayName, size.toString(), mime)
+            resolver.query(collection, arrayOf(MediaStore.MediaColumns._ID), selection, args, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) ContentUris.withAppendedId(collection, cursor.getLong(0)) else null
+                }
+        }.getOrNull()
+
     override suspend fun publish(sourcePath: String, mimeType: String?, displayName: String?): PublishResult =
         withContext(Dispatchers.IO) {
             val scope: CoroutineScope = this
@@ -57,8 +79,17 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
             val mime = mimeType?.takeIf { it.isNotBlank() } ?: guessMime(displayName)
                 ?: guessMime(source.name) ?: "application/octet-stream"
             val collection = collectionFor(mime)
+            val name = displayName ?: source.name
+            // Already published: report the existing copy rather than adding a second one. "Save to
+            // device" is offered for any ready cloud item, so a repeat tap published the same bytes
+            // twice. `RestoreResult.Restored.restoredContentHash` was documented as the dedup key for
+            // exactly this and is read by nothing, and recording it would need a new column and a
+            // schema migration — so the check is made against the provider, before the insert.
+            findPublished(collection, name, mime, source.length())?.let {
+                return@withContext PublishResult.Inserted(it.toString())
+            }
             val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName ?: source.name)
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                 put(MediaStore.MediaColumns.MIME_TYPE, mime)
                 put(MediaStore.MediaColumns.SIZE, source.length())
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

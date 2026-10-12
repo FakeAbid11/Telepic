@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -32,14 +33,28 @@ import kotlinx.coroutines.launch
 class AlbumContentsViewModel(
     bucketId: Long,
     val title: String,
-    albumRepository: AlbumRepository,
+    private val albumRepository: AlbumRepository,
     backupStatusRepository: BackupStatusRepository,
     private val backupCoordinator: BackupCoordinator? = null,
-    organizationRepository: MediaOrganizationRepository? = null,
+    private val organizationRepository: MediaOrganizationRepository? = null,
 ) : ViewModel() {
 
     val media: Flow<PagingData<PhotosItem>> =
         albumRepository.mediaInBucket(bucketId).cachedIn(viewModelScope)
+
+    init {
+        // Archiving or trashing from the Viewer changes what this album contains, and a `cachedIn`
+        // pager never re-queries on its own — so returning from the Viewer left the item listed with
+        // a stale count, and this screen has no other way to refresh. The Photos timeline already
+        // re-reads on this same signal (`PhotosViewModel`); the album did not, so the two screens
+        // disagreed about the same photo.
+        organizationRepository?.let { repo ->
+            viewModelScope.launch {
+                combine(repo.archivedIds, repo.trashedIds) { archived, trashed -> archived + trashed }
+                    .collect { albumRepository.refresh() }
+            }
+        }
+    }
 
     val backupStates: StateFlow<Map<Long, MediaBackupVisualState>> =
         backupStatusRepository.visualStates

@@ -41,6 +41,7 @@ class AlbumsUiTest {
     private class FakeAlbums(private val items: List<Album>) : AlbumRepository {
         override suspend fun albums(): List<Album> = items
         override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() = Unit
     }
 
     @Test

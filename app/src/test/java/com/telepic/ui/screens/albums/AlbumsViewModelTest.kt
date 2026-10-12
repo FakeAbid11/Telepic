@@ -33,6 +33,7 @@ class AlbumsViewModelTest {
     private class FakeAlbums(private val result: suspend () -> List<Album>) : AlbumRepository {
         override suspend fun albums(): List<Album> = result()
         override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() = Unit
     }
 
     /** Mirrors the screen: the caller triggers the load, then the looper drains to a terminal state. */

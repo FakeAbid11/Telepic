@@ -80,6 +80,7 @@ class SettingsViewModelTest {
     private class FakeAlbums(private val albums: List<Album>) : AlbumRepository {
         override suspend fun albums() = albums
         override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() = Unit
     }
 
     private class RecordingCoordinator : BackupCoordinator {

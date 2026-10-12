@@ -88,6 +88,12 @@ class MediaStoreAlbumRepository(
         AlbumGrouper.group(rows) { id, mime -> MediaStoreMediaMapper.contentUriFor(id, mime) }
     }
 
+    /**
+     * The most recently created bucket source. One album screen is open at a time, so a single field
+     * is enough — the same design [LocalMediaRepositoryImpl] uses for the timeline.
+     */
+    private var currentSource: MediaPagingSource? = null
+
     override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
@@ -95,8 +101,15 @@ class MediaStoreAlbumRepository(
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false,
         ),
-        pagingSourceFactory = { MediaPagingSource(MediaStoreBucketLoader(appContext, bucketId, hiddenIdsProvider)) },
+        pagingSourceFactory = {
+            MediaPagingSource(MediaStoreBucketLoader(appContext, bucketId, hiddenIdsProvider))
+                .also { currentSource = it }
+        },
     ).flow
+
+    override fun refresh() {
+        currentSource?.invalidate()
+    }
 
     private companion object {
         const val PAGE_SIZE = 60
