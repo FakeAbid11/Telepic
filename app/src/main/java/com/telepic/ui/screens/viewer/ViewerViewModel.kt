@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.cloud.CloudRepository
+import com.telepic.data.media.CustomAlbumRepository
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.MediaMetadata
 import com.telepic.data.media.MediaMetadataReader
@@ -171,6 +172,7 @@ class ViewerViewModel(
     private val metadataReader: MediaMetadataReader? = null,
     private val backupStatusRepository: BackupStatusRepository? = null,
     private val settingsRepository: SettingsRepository? = null,
+    private val customAlbumRepository: CustomAlbumRepository? = null,
 ) : ViewModel() {
 
     /**
@@ -529,28 +531,47 @@ class ViewerViewModel(
 
     /**
      * Resolves the adjacent local ids honoring the originating [scope]: the album's bucket, a curated
-     * collection's own (newest-first) order, or the visible global timeline. Returns (previous, next)
-     * as ids, where previous is the newer item and next the older one.
+     * collection's own (newest-first) order, a user-created album's own set, or the visible global
+     * timeline. Returns (previous, next) as ids, where previous is the newer item and next the older.
      */
     private suspend fun localNeighbors(id: Long): Pair<Long?, Long?> = when (scope) {
-        ViewerScope.Global ->
-            localLookup.neighborId(id, NeighborDirection.NEWER) to localLookup.neighborId(id, NeighborDirection.OLDER)
+        ViewerScope.Global -> globalNeighbors(id)
         is ViewerScope.Bucket ->
             localLookup.neighborId(id, NeighborDirection.NEWER, scope.bucketId) to
                 localLookup.neighborId(id, NeighborDirection.OLDER, scope.bucketId)
         is ViewerScope.Collection -> collectionNeighbors(id, scope.kind)
+        is ViewerScope.Album -> albumNeighbors(id, scope.albumId)
     }
 
-    // The collection's ordered id list is exactly what the originating screen shows (the Room id-set
-    // resolved newest-first through the same bounded lookup), so next/previous stay inside it.
+    private suspend fun globalNeighbors(id: Long): Pair<Long?, Long?> =
+        localLookup.neighborId(id, NeighborDirection.NEWER) to
+            localLookup.neighborId(id, NeighborDirection.OLDER)
+
     private suspend fun collectionNeighbors(id: Long, kind: OrganizationKind): Pair<Long?, Long?> {
-        val repo = organizationRepository
-            ?: return localLookup.neighborId(id, NeighborDirection.NEWER) to localLookup.neighborId(id, NeighborDirection.OLDER)
+        val repo = organizationRepository ?: return globalNeighbors(id)
         val ids = when (kind) {
             OrganizationKind.FAVORITES -> repo.favoriteIds
             OrganizationKind.ARCHIVE -> repo.archivedIds
             OrganizationKind.TRASH -> repo.trashedIds
         }.first()
+        return neighborsWithin(id, ids)
+    }
+
+    private suspend fun albumNeighbors(id: Long, albumId: Long): Pair<Long?, Long?> {
+        val repo = customAlbumRepository ?: return globalNeighbors(id)
+        return neighborsWithin(id, repo.observeMediaIds(albumId).first())
+    }
+
+    /**
+     * The neighbours of [id] within an explicit id-set, in the same newest-first order the originating
+     * screen shows — the Room id-set resolved through the same bounded lookup the grids use, so
+     * next/previous stay inside the collection the user came from.
+     *
+     * Built from the *resolved* list rather than the raw ids, so a member whose file is gone (deleted
+     * outside Telepic) is skipped instead of becoming a neighbour the Viewer would then report as
+     * missing. An id that no longer resolves at all yields (null, null): no neighbour, never a wrong one.
+     */
+    private suspend fun neighborsWithin(id: Long, ids: Collection<Long>): Pair<Long?, Long?> {
         val ordered = localLookup.byIdList(ids).map { it.id } // newest-first, existing items only
         val index = ordered.indexOf(id)
         if (index < 0) return null to null

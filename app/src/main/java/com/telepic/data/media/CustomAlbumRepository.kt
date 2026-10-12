@@ -55,6 +55,14 @@ interface CustomAlbumRepository {
     /** The member ids as a one-shot read, for the paging loader. */
     suspend fun mediaIds(albumId: Long): List<Long>
 
+    /**
+     * The album's member ids that still resolve, ordered newest-first like the timeline.
+     *
+     * This is the Viewer's neighbour source: next/previous inside a custom album must walk the album,
+     * not the timeline, and it must walk it in the same order the grid displays.
+     */
+    suspend fun orderedMediaIds(albumId: Long): List<Long>
+
     /** This album's contents as a paged, day-grouped stream — the same shape as a folder album. */
     fun mediaInAlbum(albumId: Long): Flow<PagingData<PhotosItem>>
 
@@ -146,6 +154,12 @@ class DefaultCustomAlbumRepository(
     override fun observeMediaIds(albumId: Long): Flow<List<Long>> = dao.observeMediaIds(albumId)
 
     override suspend fun mediaIds(albumId: Long): List<Long> = dao.mediaIds(albumId)
+
+    override suspend fun orderedMediaIds(albumId: Long): List<Long> = resolveOrderedMemberIds(
+        memberIds = dao.mediaIds(albumId),
+        lookup = lookup,
+        hiddenIds = hiddenIdsProvider(),
+    )
 
     override fun mediaInAlbum(albumId: Long): Flow<PagingData<PhotosItem>> = Pager(
         config = PagingConfig(

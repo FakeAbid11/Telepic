@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -100,6 +101,10 @@ fun AlbumPickerDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // Bounded so `verticalScroll` has a finite viewport to scroll within. Without it an
+                    // over-tall child in the dialog's text slot has nothing to scroll against, so a
+                    // user with many albums would see a list that simply stops.
+                    .heightIn(max = 400.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(spacing.xs),
             ) {

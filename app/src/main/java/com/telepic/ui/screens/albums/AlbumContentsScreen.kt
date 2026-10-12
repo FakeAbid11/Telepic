@@ -112,30 +112,36 @@ fun AlbumContentsScreen(
                             modifier = Modifier.weight(1f),
                         )
                         if (customAlbumId != null) {
-                            IconButton(onClick = { showActions = true }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.MoreVert,
-                                    contentDescription = stringResource(R.string.album_more_actions),
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showActions,
-                                onDismissRequest = { showActions = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.album_rename)) },
-                                    onClick = {
-                                        showActions = false
-                                        showRename = true
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.album_delete)) },
-                                    onClick = {
-                                        showActions = false
-                                        showDeleteConfirm = true
-                                    },
-                                )
+                            // Boxed so the menu anchors to the *button*. As a direct child of this
+                            // full-width Row it anchored to the Row, so it opened at the far left —
+                            // under the back arrow — while the user's thumb was at the right.
+                            // `ViewerScreen`'s overflow uses the same wrapper for the same reason.
+                            Box {
+                                IconButton(onClick = { showActions = true }) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.MoreVert,
+                                        contentDescription = stringResource(R.string.album_more_actions),
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showActions,
+                                    onDismissRequest = { showActions = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.album_rename)) },
+                                        onClick = {
+                                            showActions = false
+                                            showRename = true
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.album_delete)) },
+                                        onClick = {
+                                            showActions = false
+                                            showDeleteConfirm = true
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -199,7 +205,10 @@ fun AlbumContentsScreen(
                 if (selectionActive) {
                     SelectionActionBar(
                         canBackup = selectedItems.isNotEmpty(),
-                        busy = isBackingUp || isRemoving,
+                        // Each action reports its own progress: a shared flag made Back up spin while a
+                        // removal ran, naming the wrong thing.
+                        backupBusy = isBackingUp,
+                        removeBusy = isRemoving,
                         onBackup = viewModel::backupSelected,
                         onCancel = viewModel::clearSelection,
                         // Only a user-created album has membership the user can change.

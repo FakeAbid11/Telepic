@@ -2,8 +2,10 @@ package com.telepic.ui.screens.viewer
 
 import android.content.Context
 import android.net.Uri
+import androidx.paging.PagingData
 import androidx.test.core.app.ApplicationProvider
 import com.telepic.data.cloud.CloudRepository
+import com.telepic.data.media.CustomAlbumRepository
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.NeighborDirection
 import com.telepic.domain.backup.MediaBackupVisualState
@@ -91,6 +93,24 @@ class ViewerViewModelTest {
         override suspend fun restoreFromTrash(id: Long) { restoreWrites += id }
         override suspend fun markDeletedFromStore(id: Long) = Unit
         override suspend fun remove(id: Long) = Unit
+    }
+
+    /**
+     * A user-created album holding a fixed set of member ids. Only membership matters to the Viewer, so
+     * every write is a no-op — the point is that [observeMediaIds] drives the neighbour order.
+     */
+    private class FakeCustomAlbums(private val memberIds: List<Long>) : CustomAlbumRepository {
+        override val albums: Flow<List<CustomAlbum>> = flowOf(emptyList())
+        override suspend fun create(name: String): Long? = null
+        override suspend fun rename(albumId: Long, name: String) = Unit
+        override suspend fun delete(albumId: Long) = Unit
+        override suspend fun addMedia(albumId: Long, mediaIds: List<Long>): Int = 0
+        override suspend fun removeMedia(albumId: Long, localMediaId: Long) = Unit
+        override fun observeName(albumId: Long): Flow<String?> = flowOf(null)
+        override fun observeMediaIds(albumId: Long): Flow<List<Long>> = flowOf(memberIds)
+        override suspend fun mediaIds(albumId: Long): List<Long> = memberIds
+        override fun mediaInAlbum(albumId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() = Unit
     }
 
     private class FakeCloud(private val manifest: List<CloudMedia>) : CloudRepository {
@@ -245,6 +265,63 @@ class ViewerViewModelTest {
         val state = vm.uiState.first { it.status != ViewerStatus.LOADING }
         assertNull(state.previous) // newest in the collection
         assertEquals(MediaSource.Local(1), state.next)
+    }
+
+    @Test
+    fun `album scope confines next and previous to the user-created album`() = runBlocking {
+        val items = mapOf(1L to local(1), 2L to local(2), 3L to local(3), 9L to local(9))
+        // The album holds 1, 2 and 3 — not 9. Its newest-first order is 3, 1, 2, so opening 1 must
+        // step to 3 and 2 rather than to whatever the global timeline happens to neighbour.
+        val lookup = FakeLookup(items, order = listOf(3L, 1L, 2L))
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(1),
+            localLookup = lookup,
+            cloudRepository = FakeCloud(emptyList()),
+            scope = ViewerScope.Album(albumId = 7L),
+            customAlbumRepository = FakeCustomAlbums(memberIds = listOf(1L, 2L, 3L)),
+        )
+
+        val state = vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        assertEquals(MediaSource.Local(3), state.previous)
+        assertEquals(MediaSource.Local(2), state.next)
+    }
+
+    @Test
+    fun `album scope without a repository falls back to the timeline rather than dead-ending`() = runBlocking {
+        // The album repository is not wired, so there is no membership to walk. Falling back to the
+        // global timeline keeps the Viewer navigable; returning null here would strand the user on one
+        // photo with no way forward.
+        val lookup = FakeLookup(mapOf(5L to local(5)), newer = mapOf(5L to 9L), older = mapOf(5L to 2L))
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = lookup,
+            cloudRepository = FakeCloud(emptyList()),
+            scope = ViewerScope.Album(albumId = 7L),
+        )
+
+        val state = vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        assertEquals(MediaSource.Local(9), state.previous)
+        assertEquals(MediaSource.Local(2), state.next)
+    }
+
+    @Test
+    fun `an id that is no longer in the album has no neighbours`() = runBlocking {
+        // 9 exists in the library but is not a member of this album.
+        val lookup = FakeLookup(mapOf(9L to local(9)), order = listOf(3L, 1L, 2L))
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(9),
+            localLookup = lookup,
+            cloudRepository = FakeCloud(emptyList()),
+            scope = ViewerScope.Album(albumId = 7L),
+            customAlbumRepository = FakeCustomAlbums(memberIds = listOf(1L, 2L, 3L)),
+        )
+
+        val state = vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        assertNull(state.previous)
+        assertNull(state.next)
     }
 
     /** A deterministic metadata reader for the Details flow tests. */

@@ -24,12 +24,21 @@ object AlbumRoute {
 
     const val CUSTOM_BASE = "customalbum"
     const val ARG_ALBUM_ID = "albumId"
-    const val CUSTOM_PATTERN = "$CUSTOM_BASE/{$ARG_ALBUM_ID}"
+    const val ARG_NAME = "name"
+
+    /**
+     * The name travels as an *initial* value only. It is what lets the header render immediately, and
+     * it is not the source of truth: the screen observes the stored name, so a rename — from here or
+     * from the Albums grid — replaces it. Carrying no name at all left the title blank until Room
+     * emitted, which is a visible hole in the header on every open.
+     */
+    const val CUSTOM_PATTERN = "$CUSTOM_BASE/{$ARG_ALBUM_ID}?{$ARG_NAME}"
 
     fun create(bucketId: Long, title: String): String =
         "$BASE/$bucketId/${Uri.encode(title)}"
 
-    fun createCustom(albumId: Long): String = "$CUSTOM_BASE/$albumId"
+    fun createCustom(albumId: Long, name: String): String =
+        "$CUSTOM_BASE/$albumId?$ARG_NAME=${Uri.encode(name)}"
 }
 
 /**

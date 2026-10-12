@@ -9,11 +9,20 @@ sealed interface ViewerScope {
     /** The whole (visible) library in MediaStore chronology — used when opened from Photos/Map. */
     data object Global : ViewerScope
 
-    /** One MediaStore bucket — used when opened from an album's contents. */
+    /** One MediaStore bucket — used when opened from a folder album's contents. */
     data class Bucket(val bucketId: Long) : ViewerScope
 
     /** A curated collection (its own Room id-set, newest-first) — opened from Favorites/Archive/Trash. */
     data class Collection(val kind: OrganizationKind) : ViewerScope
+
+    /**
+     * A user-created album (its own Room id-set) — opened from an album the user made.
+     *
+     * Its own scope rather than reusing [Collection]: the two answer different questions. A collection
+     * asks "what is favourited?", which the organization repository already knows; an album asks "what
+     * is in *this* album?", which is a different table entirely.
+     */
+    data class Album(val albumId: Long) : ViewerScope
 }
 
 /**
@@ -28,10 +37,12 @@ object ViewerRoute {
     const val ARG_MESSAGE_ID = "messageId"
     const val ARG_BUCKET_ID = "bucketId"
     const val ARG_ORG_KIND = "orgKind"
+    const val ARG_ALBUM_ID = "albumId"
 
-    // mediaId is required; bucketId/orgKind are optional query args (defaults registered in the nav
-    // graph) so a plain local route still matches while albums/collections pass their context.
-    const val LOCAL = "viewer/local/{$ARG_MEDIA_ID}?{$ARG_BUCKET_ID}&{$ARG_ORG_KIND}"
+    // mediaId is required; the rest are optional query args (defaults registered in the nav graph) so
+    // a plain local route still matches while albums and collections pass their own context. Exactly
+    // one of them is ever supplied, and [scopeOf] fixes the precedence.
+    const val LOCAL = "viewer/local/{$ARG_MEDIA_ID}?{$ARG_BUCKET_ID}&{$ARG_ORG_KIND}&{$ARG_ALBUM_ID}"
     const val CLOUD = "viewer/cloud/{$ARG_CHAT_ID}/{$ARG_MESSAGE_ID}"
 
     fun local(mediaId: Long): String = "viewer/local/$mediaId"
@@ -44,6 +55,10 @@ object ViewerRoute {
     fun localInCollection(mediaId: Long, kind: OrganizationKind): String =
         "viewer/local/$mediaId?$ARG_ORG_KIND=${kind.name.lowercase()}"
 
+    /** Opens the Viewer scoped to a user-created album so next/previous stay inside that album. */
+    fun localInCustomAlbum(mediaId: Long, albumId: Long): String =
+        "viewer/local/$mediaId?$ARG_ALBUM_ID=$albumId"
+
     fun cloud(chatId: Long, messageId: Long): String = "viewer/cloud/$chatId/$messageId"
 
     /** Reconstructs the typed [MediaSource] from a local-route back stack entry. */
@@ -52,8 +67,19 @@ object ViewerRoute {
     /** Reconstructs the typed [MediaSource] from a cloud-route back stack entry. */
     fun cloudSourceOf(chatId: Long, messageId: Long): MediaSource = MediaSource.Cloud(chatId, messageId)
 
-    /** Rebuilds the originating [ViewerScope] from the back stack args, defaulting to the global timeline. */
-    fun scopeOf(bucketId: Long?, orgKind: OrganizationKind?): ViewerScope = when {
+    /**
+     * Rebuilds the originating [ViewerScope] from the back stack args, defaulting to the global
+     * timeline.
+     *
+     * The order is a precedence, not a fallback chain: a route carries at most one of the three, and
+     * naming the winner makes the behaviour explicit instead of dependent on which check came first.
+     */
+    fun scopeOf(
+        bucketId: Long?,
+        orgKind: OrganizationKind?,
+        albumId: Long? = null,
+    ): ViewerScope = when {
+        albumId != null && albumId >= 0L -> ViewerScope.Album(albumId)
         orgKind != null -> ViewerScope.Collection(orgKind)
         bucketId != null && bucketId >= 0L -> ViewerScope.Bucket(bucketId)
         else -> ViewerScope.Global

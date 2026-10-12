@@ -86,6 +86,7 @@ fun PhotosScreen(
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
     val customAlbums by viewModel.customAlbums.collectAsStateWithLifecycle()
     val isAddingToAlbum by viewModel.isAddingToAlbum.collectAsStateWithLifecycle()
+    val albumReport by viewModel.albumReport.collectAsStateWithLifecycle()
     // Dialog visibility survives rotation, like every other dialog in the app.
     var showAlbumPicker by rememberSaveable { mutableStateOf(false) }
     var showNewAlbumForSelection by rememberSaveable { mutableStateOf(false) }
@@ -194,10 +195,30 @@ fun PhotosScreen(
                         messageId = report.id,
                     )
                 }
+                // Adding to an album leaves no other trace on screen — the sheet closes and the photos
+                // look unchanged — so this bar is the only thing that tells the user it worked. It says
+                // "already in" when nothing was new, rather than claiming an addition that did not happen.
+                albumReport?.let { report ->
+                    TransientMessageBar(
+                        message = stringResource(
+                            if (report.added > 0) {
+                                R.string.album_added_message
+                            } else {
+                                R.string.album_already_message
+                            },
+                            report.albumName,
+                        ),
+                        onDismiss = viewModel::consumeAlbumMessage,
+                        messageId = report.id,
+                    )
+                }
                 if (selectionActive) {
                     SelectionActionBar(
                         canBackup = selectedItems.isNotEmpty(),
-                        busy = isBackingUp || isAddingToAlbum,
+                        // Each action reports its own progress: a shared flag made Back up spin while
+                        // an add-to-album ran, naming the wrong thing.
+                        backupBusy = isBackingUp,
+                        addToAlbumBusy = isAddingToAlbum,
                         onBackup = viewModel::backupSelected,
                         onCancel = viewModel::clearSelection,
                         onAddToAlbum = { showAlbumPicker = true },

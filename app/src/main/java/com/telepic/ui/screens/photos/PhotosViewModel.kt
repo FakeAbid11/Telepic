@@ -160,11 +160,32 @@ class PhotosViewModel(
     val isAddingToAlbum: StateFlow<Boolean> = _isAddingToAlbum.asStateFlow()
 
     /**
+     * A transient confirmation for an album write. [added] is the number of photos that were genuinely
+     * new to the album — zero is a real outcome ("they were already in there") and must not be reported
+     * as an addition. [id] is the event's identity, so two identical outcomes still re-announce.
+     */
+    data class AlbumActionReport(val albumName: String, val added: Int, val id: Long)
+
+    /**
+     * The last album write to report, or null.
+     *
+     * Adding to an album leaves no other trace on screen: the sheet closes, the selection clears, and
+     * the photos look exactly as they did. Without this the user cannot tell a successful add from a
+     * tap that did nothing — the same gap `TransientMessageBar` was built to close for trashing.
+     */
+    private val _albumReport = MutableStateFlow<AlbumActionReport?>(null)
+    val albumReport: StateFlow<AlbumActionReport?> = _albumReport.asStateFlow()
+
+    fun consumeAlbumMessage() {
+        _albumReport.value = null
+    }
+
+    /**
      * Adds the current selection to [albumId].
      *
-     * The selection is only cleared once the write has returned, and the grid is never told the photos
-     * are "in the album" — the album screen reads membership from Room, so a write that did not land
-     * simply produces an album that does not contain them.
+     * The selection is only cleared once the write has returned, and the confirmation is posted only
+     * with a name the repository actually holds — an album deleted mid-flight has nothing truthful to
+     * report, so the add is silent rather than wrong.
      */
     fun addSelectionToAlbum(albumId: Long) {
         val repository = customAlbumRepository ?: return
@@ -174,7 +195,10 @@ class PhotosViewModel(
         _isAddingToAlbum.value = true
         viewModelScope.launch {
             try {
-                repository.addMedia(albumId, ids)
+                val added = repository.addMedia(albumId, ids)
+                repository.observeName(albumId).first()?.let { name ->
+                    _albumReport.value = AlbumActionReport(name, added, System.nanoTime())
+                }
                 clearSelection()
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -189,9 +213,9 @@ class PhotosViewModel(
     /**
      * Creates an album and puts the current selection in it, in that order.
      *
-     * Used by the picker's "New album" entry. If the album is created but the add fails, the album
-     * still exists and is simply empty — which is the honest outcome, and better than rolling the
-     * album back and losing the name the user just typed.
+     * Used by the picker's "New album" entry. If the album is created but the add fails, the album still
+     * exists and is simply empty — which is the honest outcome, and better than rolling the album back
+     * and losing the name the user just typed.
      */
     fun createAlbumAndAddSelection(name: String) {
         val repository = customAlbumRepository ?: return
@@ -201,7 +225,13 @@ class PhotosViewModel(
         viewModelScope.launch {
             try {
                 val albumId = repository.create(name)
-                if (albumId != null && ids.isNotEmpty()) repository.addMedia(albumId, ids)
+                var added = 0
+                if (albumId != null && ids.isNotEmpty()) added = repository.addMedia(albumId, ids)
+                // The name comes from the request, not a re-read: the album was created in this call, so
+                // its stored name is exactly the trimmed one the repository accepted.
+                if (albumId != null) {
+                    _albumReport.value = AlbumActionReport(name.trim(), added, System.nanoTime())
+                }
                 clearSelection()
             } catch (cancellation: CancellationException) {
                 throw cancellation

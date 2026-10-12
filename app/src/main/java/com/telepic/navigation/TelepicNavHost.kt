@@ -119,7 +119,9 @@ fun TelepicNavHost(
                 onOpenAlbum = { album -> navController.navigate(AlbumRoute.create(album.bucketId, album.title)) },
                 onOpenOrganization = { kind -> navController.navigate(OrganizationRoute.create(kind)) },
                 onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
-                onOpenCustomAlbum = { album -> navController.navigate(AlbumRoute.createCustom(album.id)) },
+                onOpenCustomAlbum = { album ->
+                    navController.navigate(AlbumRoute.createCustom(album.id, album.name))
+                },
             )
         }
         composable(
@@ -187,21 +189,25 @@ fun TelepicNavHost(
         }
         composable(
             route = AlbumRoute.CUSTOM_PATTERN,
-            arguments = listOf(navArgument(AlbumRoute.ARG_ALBUM_ID) { type = NavType.LongType }),
+            arguments = listOf(
+                navArgument(AlbumRoute.ARG_ALBUM_ID) { type = NavType.LongType },
+                navArgument(AlbumRoute.ARG_NAME) { type = NavType.StringType; defaultValue = "" },
+            ),
         ) { backStackEntry ->
             val albumId = backStackEntry.arguments?.getLong(AlbumRoute.ARG_ALBUM_ID)
             if (albumId == null) {
                 InvalidRouteFallback(onBack = { navController.popBackStack() })
                 return@composable
             }
-            // The title starts empty and is filled from the database, because a user-created album's
-            // name is editable and must not be frozen into the route. A blank header for one frame is
-            // better than a header that keeps showing a name the album no longer has.
-            val contentsFactory = remember(container, albumId) {
+            // The name is the route's *initial* value, so the header is filled on the first frame; the
+            // ViewModel then observes the stored name and replaces it, so a rename cannot leave this
+            // header stale.
+            val albumName = backStackEntry.arguments?.getString(AlbumRoute.ARG_NAME).orEmpty()
+            val contentsFactory = remember(container, albumId, albumName) {
                 viewModelFactory {
                     initializer {
                         AlbumContentsViewModel(
-                            source = AlbumSource.Custom(albumId, title = ""),
+                            source = AlbumSource.Custom(albumId, title = albumName),
                             albumRepository = container.albumRepository,
                             customAlbumRepository = container.customAlbumRepository,
                             backupStatusRepository = container.backupStatusRepository,
@@ -215,7 +221,11 @@ fun TelepicNavHost(
             AlbumContentsScreen(
                 viewModel = contentsViewModel,
                 onBack = { navController.popBackStack() },
-                onMediaSelected = { media -> navController.navigate(ViewerRoute.local(media.id)) },
+                // Scoped to this album, so swiping stays inside it — the same guarantee a folder album
+                // and the curated collections already had.
+                onMediaSelected = { media ->
+                    navController.navigate(ViewerRoute.localInCustomAlbum(media.id, albumId))
+                },
             )
         }
         composable(TelepicDestination.Map.route) {
@@ -290,13 +300,16 @@ fun TelepicNavHost(
                 navArgument(ViewerRoute.ARG_MEDIA_ID) { type = NavType.LongType },
                 navArgument(ViewerRoute.ARG_BUCKET_ID) { type = NavType.LongType; defaultValue = -1L },
                 navArgument(ViewerRoute.ARG_ORG_KIND) { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument(ViewerRoute.ARG_ALBUM_ID) { type = NavType.LongType; defaultValue = -1L },
             ),
         ) { backStackEntry ->
             val mediaId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_MEDIA_ID) ?: 0L
             val bucketId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_BUCKET_ID)
                 ?.takeIf { it >= 0L }
             val orgKind = OrganizationRoute.kindOf(backStackEntry.arguments?.getString(ViewerRoute.ARG_ORG_KIND))
-            val viewerFactory = remember(container, mediaId, bucketId, orgKind) {
+            val albumId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_ALBUM_ID)
+                ?.takeIf { it >= 0L }
+            val viewerFactory = remember(container, mediaId, bucketId, orgKind, albumId) {
                 viewModelFactory {
                     initializer {
                         ViewerViewModel(
@@ -304,10 +317,11 @@ fun TelepicNavHost(
                             localLookup = container.localMediaLookup,
                             cloudRepository = container.cloudRepository,
                             organizationRepository = container.mediaOrganizationRepository,
-                            scope = ViewerRoute.scopeOf(bucketId, orgKind),
+                            scope = ViewerRoute.scopeOf(bucketId, orgKind, albumId),
                             metadataReader = container.mediaMetadataReader,
                             backupStatusRepository = container.backupStatusRepository,
                             settingsRepository = container.settingsRepository,
+                            customAlbumRepository = container.customAlbumRepository,
                         )
                     }
                 }

@@ -357,6 +357,11 @@
     <string name="photos_selection_add_to_album">Add to album</string>
     <string name="photos_selection_remove_from_album">Remove</string>
 
+    <!-- Confirmation for an album write. Adding leaves no other trace on screen, so the bar is the
+         only signal; "already in" is a real outcome and is not reported as an addition. -->
+    <string name="album_added_message">Added to %1$s</string>
+    <string name="album_already_message">Already in %1$s</string>
+
     <!-- Managing a user-created album -->
     <string name="album_more_actions">More actions</string>
     <string name="album_rename">Rename album</string>

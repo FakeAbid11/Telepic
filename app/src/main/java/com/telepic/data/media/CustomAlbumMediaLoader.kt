@@ -2,24 +2,47 @@ package com.telepic.data.media
 
 import com.telepic.domain.media.LocalMedia
 
+/** Comfortably under SQLite's classic 999-variable ceiling, and at the lookup's own cap. */
+const val MAX_IDS_PER_QUERY = 500
+
+/**
+ * Resolves a set of user-album member ids to the ones that still exist, ordered exactly like the
+ * timeline.
+ *
+ * Album membership lives in Room, but the rows to display come from MediaStore — and the two cannot be
+ * joined. So the member ids are resolved in chunks (SQLite bounds how many `?` placeholders a single
+ * `IN (...)` may carry) and merged into one newest-first sequence with
+ * [MediaSortOrder.TIMELINE_DESC_COMPARATOR], the Kotlin mirror of the SQL ordering.
+ *
+ * [hiddenIds] (archived + trashed) is dropped *before* the lookup: a filed-away photo must not occupy a
+ * slot in an album any more than it does in the timeline, and filtering up front is what keeps the
+ * paging offsets consistent rather than letting a page return short.
+ *
+ * Shared by the contents pager and the Viewer's neighbour walk, so an album's grid, its swiping and its
+ * day headers can never disagree about what it contains or in what order.
+ */
+suspend fun resolveOrderedMemberIds(
+    memberIds: List<Long>,
+    lookup: LocalMediaLookup,
+    hiddenIds: Set<Long> = emptySet(),
+    queryChunkSize: Int = MAX_IDS_PER_QUERY,
+): List<Long> {
+    if (memberIds.isEmpty()) return emptyList()
+    val visible = if (hiddenIds.isEmpty()) memberIds else memberIds.filterNot { it in hiddenIds }
+    if (visible.isEmpty()) return emptyList()
+    // Each chunk comes back already ordered by the provider; the merge is what restores the order
+    // *between* chunks, which is the part a per-chunk sort cannot do on its own.
+    val resolved = visible.chunked(queryChunkSize).flatMap { chunk -> lookup.byIdList(chunk) }
+    return resolved
+        .sortedWith(MediaSortOrder.TIMELINE_DESC_COMPARATOR)
+        .map { it.id }
+}
+
 /**
  * Pages a **user-created** album's members.
  *
- * Two things make this different from [MediaStoreMediaLoader]. The member set lives in Room rather than
- * in MediaStore, so it has to be read and then resolved; and SQLite bounds how many `?` placeholders a
- * single `IN (...)` may carry (999 on the older devices Telepic supports), so a large album cannot be
- * fetched in one query.
- *
- * So the members are resolved once per paging generation, in chunks, and merged into a single
- * newest-first sequence with [MediaSortOrder.TIMELINE_DESC_COMPARATOR] — the same ordering the timeline
- * and the folder grids use, so an album is never in a different order from the library it was drawn
- * from. Each page then fetches only its own slice, which keeps the per-page cost bounded by the page
- * size instead of by the album size.
- *
- * [hiddenIdsProvider] is applied here for the same reason the other loaders apply it: archiving or
- * trashing a photo has to take it out of *every* grid, and an album is not an exception. Because the
- * whole ordered id list is materialised first, the exclusion is exact and the paging offsets stay
- * correct — no truncated `NOT IN (...)` and no page that returns short.
+ * The member set is resolved once per paging generation and then sliced, so each page's cost is bounded
+ * by the page size rather than by the album size.
  *
  * [orderedIds] is deliberately never invalidated: a fresh loader is built for each paging generation
  * (`MediaPagingSource` is recreated on invalidation), so the cache lives exactly as long as the
@@ -35,32 +58,15 @@ class CustomAlbumMediaLoader(
     private var orderedIds: List<Long>? = null
 
     override suspend fun load(offset: Int, limit: Int): List<LocalMedia> {
-        val ids = orderedIds ?: loadOrderedIds().also { orderedIds = it }
+        val ids = orderedIds ?: resolveOrderedMemberIds(
+            memberIds = memberIdsProvider(),
+            lookup = lookup,
+            hiddenIds = hiddenIdsProvider(),
+            queryChunkSize = queryChunkSize,
+        ).also { orderedIds = it }
         if (offset >= ids.size) return emptyList()
         // The slice is at most `limit` ids, so this second query is always far inside the bound.
         val page = ids.subList(offset, minOf(offset + limit, ids.size))
         return lookup.byIdList(page)
-    }
-
-    private suspend fun loadOrderedIds(): List<Long> {
-        val memberIds = memberIdsProvider()
-        if (memberIds.isEmpty()) return emptyList()
-        // Archived and trashed media is dropped *before* the lookup, so a filed-away photo does not
-        // occupy a page slot in an album any more than it does in the timeline or a folder album.
-        // Filtering here rather than after the query is also what keeps the offsets consistent.
-        val hidden = hiddenIdsProvider()
-        val visible = if (hidden.isEmpty()) memberIds else memberIds.filterNot { it in hidden }
-        if (visible.isEmpty()) return emptyList()
-        // Each chunk comes back already ordered by the provider; the merge is what restores the order
-        // *between* chunks, which is the part a per-chunk sort cannot do on its own.
-        val resolved = visible.chunked(queryChunkSize).flatMap { chunk -> lookup.byIdList(chunk) }
-        return resolved
-            .sortedWith(MediaSortOrder.TIMELINE_DESC_COMPARATOR)
-            .map { it.id }
-    }
-
-    private companion object {
-        /** Comfortably under SQLite's classic 999-variable ceiling, and at the lookup's own cap. */
-        const val MAX_IDS_PER_QUERY = 500
     }
 }
