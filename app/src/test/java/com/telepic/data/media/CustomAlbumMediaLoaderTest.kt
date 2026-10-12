@@ -7,6 +7,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The custom-album loader's job is the part SQLite cannot do for it: a user-created album's members
@@ -16,7 +19,12 @@ import org.junit.Test
  * The merge is the piece worth testing, because it is the only part that fails silently: every chunk
  * looks correctly ordered on its own while the album as a whole is shuffled, and nothing else in the
  * app would notice.
+ *
+ * Robolectric rather than a plain JVM test, because building a [LocalMedia] needs `Uri.parse` — the
+ * loader itself is framework-free, but its inputs are not.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class CustomAlbumMediaLoaderTest {
 
     private fun media(id: Long, dateMillis: Long) = LocalMedia(

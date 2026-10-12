@@ -71,9 +71,12 @@ class OrganizationMigration3To4Test {
 
         val db = Room.databaseBuilder(context, TelepicDatabase::class.java, dbFile)
             .addMigrations(
+                // Chained to the current version: TelepicDatabase is always the latest, so opening a v3
+                // file has to walk every remaining step. MIGRATION_3_4 is the one under test.
                 TelepicDatabase.MIGRATION_3_4,
                 TelepicDatabase.MIGRATION_4_5,
                 TelepicDatabase.MIGRATION_5_6,
+                TelepicDatabase.MIGRATION_6_7,
             )
             .allowMainThreadQueries()
             .build()

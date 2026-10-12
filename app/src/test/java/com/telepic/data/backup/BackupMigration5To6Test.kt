@@ -88,7 +88,12 @@ class BackupMigration5To6Test {
 
         // Act: reopen the same file at version 6 through the real migration.
         val db = Room.databaseBuilder(context, TelepicDatabase::class.java, dbFile)
-            .addMigrations(TelepicDatabase.MIGRATION_5_6)
+            .addMigrations(
+                // Chained to the current version: TelepicDatabase is always the latest, so opening a v5
+                // file has to walk every remaining step. MIGRATION_5_6 is the one under test.
+                TelepicDatabase.MIGRATION_5_6,
+                TelepicDatabase.MIGRATION_6_7,
+            )
             .allowMainThreadQueries()
             .build()
 
