@@ -365,6 +365,13 @@ internal class VideoPlaybackState {
 internal const val TAG_VIDEO_TRANSPORT = "video_transport"
 
 /**
+ * Stands in for the duration until the player reports one. Deliberately not `0:00` — an unknown
+ * duration is not a zero-length video, and `formatPlaybackTime(0)` would claim exactly that, which
+ * is the same lie the seek bar refuses to tell. `DurationLabel` makes the same call for badges.
+ */
+private const val UNKNOWN_DURATION_LABEL = "--:--"
+
+/**
  * The video's only bottom bar. Sized to `TelepicSpacing.chromeBarHeight` — the same band the video
  * surface reserves for it and the same height the Viewer's photo chrome uses — and placed in the last
  * `chromeBarHeight` of the inset-adjusted surface, so it *is* the bar instead of a second one stacked
@@ -462,7 +469,9 @@ internal fun VideoTransport(
                 .semantics { contentDescription = seekDescription },
         )
         Text(
-            text = formatPlaybackTime(state.durationMs),
+            // Tied to `isSeekable`, not to a second `> 0` test: an unknown duration disables the
+            // bar *and* must not be printed as a length.
+            text = if (state.isSeekable) formatPlaybackTime(state.durationMs) else UNKNOWN_DURATION_LABEL,
             style = MaterialTheme.typography.labelMedium,
             color = Color.White,
             maxLines = 1,

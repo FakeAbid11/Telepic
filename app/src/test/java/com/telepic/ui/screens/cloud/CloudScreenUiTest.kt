@@ -176,11 +176,14 @@ class CloudScreenUiTest {
         // Never silently creating a second channel is the whole point: the offer names the risk.
         composeRule.onNodeWithText("does not own it", substring = true).assertIsDisplayed()
 
-        composeRule.onNodeWithText("Use this channel").performClick()
+        // Unmerged: `EmptyState` merges its whole body into one semantics node, so in the merged
+        // tree both labels resolve to the container and `performClick` lands wherever its centre
+        // happens to be — the second click would re-hit the first button.
+        composeRule.onNodeWithText("Use this channel", useUnmergedTree = true).performClick()
         composeRule.waitForIdle()
         org.junit.Assert.assertEquals(1, repo.confirmCalls)
 
-        composeRule.onNodeWithText("Create a new one").performClick()
+        composeRule.onNodeWithText("Create a new one", useUnmergedTree = true).performClick()
         composeRule.waitForIdle()
         org.junit.Assert.assertEquals(1, repo.createNewCalls)
     }

@@ -232,7 +232,13 @@ class TelegramCloudRepositoryTest {
 
     @Test
     fun `confirming with no offer outstanding persists nothing`() = runBlocking {
-        val source = FakeDataSource(candidates = listOf(candidate()))
+        // Media, so the resolved destination is genuinely `Ready` and the assertion below says
+        // something: a stray confirm must not disturb a working destination. Without it the
+        // repository honestly reports `Empty` (an empty manifest), and the check would be vacuous.
+        val source = FakeDataSource(
+            candidates = listOf(candidate()),
+            media = listOf(mediaItem(1)),
+        )
         val r = repo(source)
         r.prepare()
         // A stray confirm (a stale tap after the offer was resolved) must not re-point anything.
