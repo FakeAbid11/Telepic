@@ -10,8 +10,12 @@ import org.junit.Test
  *
  * Asserting on the rendered string rather than on the data class's fields is deliberate: the failure
  * this guards against is not "the wrong boolean was stored" but "the query stopped excluding the right
- * thing", and only the SQL shows that. The literals `media_type` / `mime_type` / `2` are MediaStore's
- * own compile-time constants, so they are readable here without a device.
+ * thing", and only the SQL shows that. The literals `media_type` / `mime_type` and the media-type
+ * number are MediaStore's own compile-time constants, so they are readable here without a device.
+ *
+ * `MEDIA_TYPE_VIDEO` is **3**, not 2 — the `Files.FileColumns` numbering is IMAGE 1, AUDIO 2,
+ * VIDEO 3. Getting that wrong in the expectation is how this test first failed; the implementation
+ * was right because it uses the constant, and the literal is here to catch the constant changing.
  */
 class TimelineMediaFilterTest {
 
@@ -25,7 +29,7 @@ class TimelineMediaFilterTest {
     @Test
     fun `hiding videos excludes only the video media type`() {
         assertEquals(
-            " AND media_type != 2",
+            " AND media_type != 3",
             TimelineMediaFilter(showVideos = false).selectionSuffix(),
         )
     }
@@ -42,7 +46,7 @@ class TimelineMediaFilterTest {
     @Test
     fun `hiding both joins the clauses into one AND chain`() {
         assertEquals(
-            " AND media_type != 2 AND mime_type != 'image/gif'",
+            " AND media_type != 3 AND mime_type != 'image/gif'",
             TimelineMediaFilter(showVideos = false, showGifs = false).selectionSuffix(),
         )
     }

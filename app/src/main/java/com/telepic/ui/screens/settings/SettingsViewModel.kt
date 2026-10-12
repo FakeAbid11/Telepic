@@ -82,37 +82,44 @@ class SettingsViewModel(
 
     // --- Transport preferences (enforced by WorkManager constraints) ---------------------------
 
+    // Every preference flow below is `Eagerly`, matching [backupPreference] and [backupBucketIds]
+    // above. These are cheap DataStore reads that the screen needs the moment it composes, and
+    // `WhileSubscribed` would leave `StateFlow.value` stale until something collected it — so any
+    // reader of `.value` (a row summary, or a test) would see the previous preference. The VM lives
+    // only as long as the Settings destination is on the back stack, so there is nothing to save by
+    // deferring the subscription.
+
     val backupNetworkPreference: StateFlow<BackupNetworkPreference> =
         settingsRepository.backupNetworkPreference
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BackupNetworkPreference.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, BackupNetworkPreference.Default)
 
     val backupRequiresCharging: StateFlow<Boolean> =
         settingsRepository.backupRequiresCharging
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val backupRequiresBatteryNotLow: StateFlow<Boolean> =
         settingsRepository.backupRequiresBatteryNotLow
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // --- Media preferences (enforced by the MediaStore query and the video player) --------------
 
     val showVideosInTimeline: StateFlow<Boolean> =
         settingsRepository.showVideosInTimeline
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     val showGifsInTimeline: StateFlow<Boolean> =
         settingsRepository.showGifsInTimeline
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     val startVideosMuted: StateFlow<Boolean> =
         settingsRepository.startVideosMuted
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     // --- App lock -------------------------------------------------------------------------------
 
     val appLockEnabled: StateFlow<Boolean> =
         settingsRepository.appLockEnabled
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
      * Whether the device has a PIN, pattern or password configured.
@@ -157,13 +164,8 @@ class SettingsViewModel(
         } else {
             cloudRepository.media
                 .map { media: List<CloudMedia> -> media.size }
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+                .stateIn(viewModelScope, SharingStarted.Eagerly, null)
         }
-
-    init {
-        refreshStorage()
-        loadLocalLibraryCount()
-    }
 
     fun loadFolders() {
         _foldersLoaded.value = false
@@ -245,6 +247,15 @@ class SettingsViewModel(
 
     private val _storageSummary = MutableStateFlow(StorageSummary())
     val storageSummary: StateFlow<StorageSummary> = _storageSummary.asStateFlow()
+
+    // Deliberately declared *after* [tdlibDir], [stagingDir] and [_storageSummary]: an `init` block
+    // runs in declaration order, so calling refreshStorage() from above them read uninitialized
+    // properties. The resulting NPE was then swallowed by [persist], leaving the storage rows stuck at
+    // zero with nothing to show for it — a silent wrong answer rather than a visible failure.
+    init {
+        refreshStorage()
+        loadLocalLibraryCount()
+    }
 
     fun refreshStorage() {
         persist {

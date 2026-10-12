@@ -161,10 +161,12 @@ internal fun MediaDetails.displayRows(context: Context): List<DetailRow> {
         rows += DetailRow(R.string.details_camera, value)
     }
     iso?.let { rows += DetailRow(R.string.details_iso, it.toString()) }
+    // The `f/` is part of the notation [formatAperture] produces, so the row takes its output as-is.
+    // Wrapping it in a "f/%1$s" format string is what rendered "f/f/2.8" — the prefix belongs to the
+    // value, not to the label. The exposure and focal-length rows below are the opposite case: their
+    // unit is a suffix the label owns, so those do go through a format string.
     fNumber?.let { aperture ->
-        formatAperture(aperture)?.let {
-            rows += DetailRow(R.string.details_aperture, context.getString(R.string.details_aperture_value, it))
-        }
+        formatAperture(aperture)?.let { rows += DetailRow(R.string.details_aperture, it) }
     }
     exposureTimeSeconds?.let { exposure ->
         formatExposureTime(exposure)?.let {

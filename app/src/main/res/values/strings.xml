@@ -468,10 +468,11 @@
     <string name="details_folder">Folder</string>
     <string name="details_path">Path</string>
 
-    <!-- Media Details — EXIF exposure data, shown only when the file actually carries it. -->
+    <!-- Media Details — EXIF exposure data, shown only when the file actually carries it. Aperture
+         has no entry here because its notation ("f/2.8") is produced whole by formatAperture; the
+         other two take a unit suffix the label owns. -->
     <string name="details_iso">ISO</string>
     <string name="details_aperture">Aperture</string>
-    <string name="details_aperture_value">f/%1$s</string>
     <string name="details_exposure">Exposure time</string>
     <string name="details_exposure_value">%1$s s</string>
     <string name="details_focal_length">Focal length</string>
