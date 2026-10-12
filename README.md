@@ -43,7 +43,8 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - Honest "no longer available" state — a missing item is never silently replaced by another.
 
 **Albums & organization**
-- Albums built from real MediaStore buckets (newest item as cover, real counts, provider bucket names).
+- **Your own albums**, created from the Albums tab and filled from the Photos timeline: name them, add photos, rename or delete them. The album is a list of the media you chose, so it survives a folder being renamed and is never affected by the filesystem.
+- Folder albums built from real MediaStore buckets (newest item as cover, real counts, provider bucket names), shown in the same grid under **Device folders**.
 - Album contents reuse the exact Photos pipeline, so an album behaves identically to the timeline.
 - Favorites, Archive, and Trash per item — independent of backup state, with undo.
 - Permanent delete goes through the Android-sanctioned system consent dialog (`MediaStore.createDeleteRequest`, API 30+).
@@ -287,7 +288,7 @@ app/src/main/java/com/telepic/
 
 ### Database
 
-Room is at **version 6**, with explicit migrations and **no destructive fallback**:
+Room is at **version 7**, with explicit migrations and **no destructive fallback**:
 
 | Table | Purpose | Introduced |
 |---|---|---|
@@ -296,8 +297,10 @@ Room is at **version 6**, with explicit migrations and **no destructive fallback
 | `backup_queue` | Source of truth for backup state | 1 → 2 |
 | `media_organization` | Favorites / Archive / Trash state | 3 → 4 |
 | `media_location` | EXIF-GPS location cache | 4 → 5 |
+| `custom_album` | User-created albums: name + cover hint | 6 → 7 |
+| `custom_album_media` | Album membership, keyed `(albumId, localMediaId)`, cascading on delete | 6 → 7 |
 
-Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, and `5 → 6`. Each has a migration test that builds the previous version and proves existing rows survive.
+Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, `5 → 6`, and `6 → 7`. Each has a migration test that builds the previous version and proves existing rows survive. Note that `TelepicDatabase` is always the latest version, so each of those tests chains *every* migration from its starting version — a version bump therefore touches all of them.
 
 ---
 
@@ -314,6 +317,7 @@ device yet.
 | Photos timeline (adaptive grid, day headers, date rail, paging) | Complete |
 | Backup status indicators | Complete *(real-upload path device-gated)* |
 | Albums + album contents | Complete |
+| User-created albums (create / add / rename / delete) | Complete |
 | Full-screen viewer (photo / GIF / video) | Complete *(playback device-validated only)* |
 | Map (EXIF GPS, marker clustering) | Complete *(rendering device-validated only)* |
 | Favorites / Archive / Trash | Complete *(system delete consent device-validated only)* |
