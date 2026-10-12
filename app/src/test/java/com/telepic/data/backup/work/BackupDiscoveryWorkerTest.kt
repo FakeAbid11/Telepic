@@ -13,7 +13,6 @@ import com.telepic.domain.media.LocalMedia
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,15 +52,10 @@ class BackupDiscoveryWorkerTest {
         override suspend fun startPendingBackup() = Unit
     }
 
-    @After
-    fun tearDown() {
-        BackupWorkerDependencies.coordinator = null
-    }
-
     /**
-     * Deterministic construction via the production [TelepicWorkerFactory] seam — the process-global
-     * BackupWorkerDependencies static is overwritten by the Robolectric-created TelepicApplication's
-     * lazy container init, which races the per-test fake (see BackupWorkerTest for the full note).
+     * Deterministic construction via the production [TelepicWorkerFactory] seam — the route the app
+     * actually uses. The reflective constructor fails loudly instead of reading a process-global, so
+     * no global has to be reset between tests.
      */
     private fun worker(coordinator: BackupCoordinator): BackupDiscoveryWorker {
         val factory = TelepicWorkerFactory(backupRepository = { error("unused") }, backupCoordinator = { coordinator })

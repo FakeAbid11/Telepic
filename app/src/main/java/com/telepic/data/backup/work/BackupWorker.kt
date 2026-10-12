@@ -10,21 +10,8 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.telepic.R
-import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupRepository
 import kotlinx.coroutines.flow.first
-
-/**
- * Process-wide handle the container installs so the WorkManager-created workers can reach their
- * dependencies without a DI framework. Set once in [com.telepic.di.AppContainer].
- */
-object BackupWorkerDependencies {
-    @Volatile
-    var repository: BackupRepository? = null
-
-    @Volatile
-    var coordinator: BackupCoordinator? = null
-}
 
 /**
  * The single backup [CoroutineWorker]. It never depends on an Activity, Composable, or screen being
@@ -42,13 +29,18 @@ class BackupWorker(
     private val repository: BackupRepository,
 ) : CoroutineWorker(appContext, params) {
 
-    /** Reflective constructor WorkManager uses when no factory provides the repository. */
+    /**
+     * Reflective constructor. WorkManager only reaches it if no factory is configured, which cannot
+     * happen here: the manifest removes WorkManager's default initializer and
+     * [com.telepic.TelepicApplication] supplies [TelepicWorkerFactory], so the factory always passes
+     * the repository. It used to read a process-global the container installed as a side effect of
+     * lazy initialisation, which made construction depend on initialisation order — and forced the
+     * tests to null that global to avoid the resulting race.
+     */
     constructor(appContext: Context, params: WorkerParameters) : this(
         appContext,
         params,
-        requireNotNull(BackupWorkerDependencies.repository) {
-            "BackupWorkerDependencies.repository must be set before scheduling backup work"
-        },
+        error("BackupWorker must be created by TelepicWorkerFactory"),
     )
 
     override suspend fun doWork(): Result {
@@ -84,8 +76,22 @@ class BackupWorker(
         }
 
         // Retryable (waiting) work asks WorkManager to run again after backoff; a drained or purely
-        // permanently-failed queue is a normal success. A cancellation is honored via isStopped.
-        return if (summary.hasRetryableWork) Result.retry() else Result.success()
+        // permanently-failed queue is a normal success. (A stop request cancels this coroutine and
+        // WorkManager discards whatever result it would have returned — there is no `isStopped`
+        // check to make here.)
+        //
+        // The second condition is what makes a library longer than one batch actually finish. A
+        // batch that filled up leaves rows still QUEUED, and **nothing else re-schedules them**: the
+        // 12h discovery tick only calls `schedule()` when it enqueues *new* media
+        // (BackupCoordinator.syncFromPreference), and re-scanning an already-queued library enqueues
+        // nothing — every item resolves to Pending, not queued. Reporting success here therefore
+        // ended a first backup after one batch and left the rest waiting for the user to open the
+        // Backup Center. Asking for another run instead keeps the queue draining unattended.
+        val stillActive = runCatching { repo.observeStats().first() }
+            .getOrNull()
+            ?.activeCount
+            ?: 0
+        return if (summary.hasRetryableWork || stillActive > 0) Result.retry() else Result.success()
     }
 
     private fun buildNotification(uploaded: Int, processed: Int): Notification {
@@ -123,6 +129,14 @@ class BackupWorker(
     private companion object {
         const val NOTIFICATION_ID = 4201
         const val CHANNEL_ID = "telepic_backup"
-        const val MAX_ITEMS_PER_RUN = 25
+
+        /**
+         * Upload attempts per run. Deliberately generous: `processPendingWork` already attempts each
+         * actionable item **at most once** per call (its own `attempted` set), so a larger batch
+         * cannot burn a transiently-failing item's retry budget — the reason the batch is bounded at
+         * all is run length, not retry safety. At 25, a library of a few hundred items needed dozens
+         * of runs and the retry backoff grew past the point of usefulness between them.
+         */
+        const val MAX_ITEMS_PER_RUN = 100
     }
 }

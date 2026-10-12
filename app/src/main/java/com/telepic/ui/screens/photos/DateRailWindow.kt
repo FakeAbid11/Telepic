@@ -18,11 +18,4 @@ object DateRailWindow {
         val end = minOf(start + size, anchorCount)
         return start until end
     }
-
-    /** Whether the active day is within the shown window (defensive guard for empty anchors). */
-    fun includesActive(anchorCount: Int, activeIndex: Int, windowSize: Int): Boolean {
-        if (anchorCount == 0) return false
-        val range = window(anchorCount, activeIndex, windowSize)
-        return activeIndex.coerceIn(0, anchorCount - 1) in range
-    }
 }

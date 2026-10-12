@@ -15,7 +15,6 @@ object TelepicBrand {
     /** Core Telepic blue. */
     val Blue = Color(0xFF2F6BF0)
     val BlueLight = Color(0xFF7FA9FF)
-    val BlueDark = Color(0xFF163B8C)
     val BlueContainerDark = Color(0xFF132A55)
 
     /** Neutral dark surfaces (deep black, not pure #000 to avoid harsh contrast). */

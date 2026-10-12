@@ -19,7 +19,6 @@ import com.telepic.data.backup.DefaultBackupStatusRepository
 import com.telepic.data.backup.hash.AndroidContentHasher
 import com.telepic.data.backup.hash.ContentHasher
 import com.telepic.data.backup.work.BackupWorkScheduler
-import com.telepic.data.backup.work.BackupWorkerDependencies
 import com.telepic.data.backup.work.WorkManagerBackupScheduler
 import com.telepic.data.cloud.CloudDataSource
 import com.telepic.data.cloud.CloudRepository
@@ -240,13 +239,11 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val backupWorkScheduler: BackupWorkScheduler by lazy {
-        // The worker is created by WorkManager, not here, so hand it the repository up front.
-        BackupWorkerDependencies.repository = backupRepository
         WorkManagerBackupScheduler(appContext)
     }
 
     override val backupCoordinator: BackupCoordinator by lazy {
-        val coordinator = DefaultBackupCoordinator(
+        DefaultBackupCoordinator(
             repository = backupRepository,
             recognition = backupRecognitionRepository,
             scheduler = backupWorkScheduler,
@@ -261,9 +258,5 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                 }
             },
         )
-        // The periodic discovery worker is created by WorkManager, not here; install the seam
-        // after construction (touching backupWorkScheduler first would re-enter this lazy block).
-        BackupWorkerDependencies.coordinator = coordinator
-        coordinator
     }
 }

@@ -183,10 +183,3 @@ internal suspend fun walkToVisibleNeighbor(
  * — and the fallback is "no neighbour", never a hidden item.
  */
 internal const val MAX_NEIGHBOR_SKIPS = 64
-
-/** A no-op lookup used when the caller cannot supply a real MediaStore source (keeps Viewer safe). */
-object EmptyLocalMediaLookup : LocalMediaLookup {
-    override suspend fun byId(id: Long): LocalMedia? = null
-    override suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long?): Long? = null
-    override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = emptyList()
-}

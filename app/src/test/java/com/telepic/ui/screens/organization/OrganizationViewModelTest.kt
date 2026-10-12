@@ -155,13 +155,12 @@ class OrganizationViewModelTest {
     }
 
     @Test
-    fun `a direct delete outcome forgets the item and records store deletion`() = runTest {
+    fun `a direct delete outcome forgets the item`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val repo = FakeRepo()
         val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FakeLookup(), FakeDeleter(DeleteRequest.Deleted))
         vm.onDeleteConfirmed(9L)
         runCurrent()
-        assertTrue(repo.deletedFromStore.contains(9L))
         assertTrue(repo.removed.contains(9L))
     }
 
@@ -189,7 +188,6 @@ class OrganizationViewModelTest {
         val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FakeLookup(), deleter)
         vm.requestDeleteForever(media(8L)) { org.junit.Assert.fail("Deleted outcome needs no consent") }
         runCurrent()
-        assertTrue(repo.deletedFromStore.contains(8L))
         assertTrue(repo.removed.contains(8L))
         assertNull(vm.deletingId.value)
     }

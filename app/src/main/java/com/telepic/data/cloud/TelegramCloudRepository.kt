@@ -95,7 +95,10 @@ class TelegramCloudRepository(
         _status.value = CloudStatus.Connecting
         val destination = ensureDestination() ?: return@withContext
         _destinationTitle.value = destination.title
-        refreshLocked()
+        // Under the mutex, like every other refreshLocked() call site. The `Locked` suffix is a
+        // contract, and calling it bare here let a concurrent refresh() run a second
+        // load-and-merge pass over the same manifest rows at the same time.
+        mutex.withLock { refreshLocked() }
     }
 
     override suspend fun refresh() = withContext(dispatcher) {
@@ -117,7 +120,10 @@ class TelegramCloudRepository(
         try {
             val items = dataSource.loadNewestMedia(destination.chatId, PAGE_SIZE)
             val now = clock()
-            items.forEach { upsertPreservingTrusted(it.toEntity(now)) }
+            // Merge the whole page in memory, then write it in one statement. The previous
+            // one-upsert-per-row shape cost a separate transaction per item — 50 for a full page.
+            val merged = items.map { mergePreservingTrusted(it.toEntity(now)) }
+            if (merged.isNotEmpty()) manifestDao.upsertAll(merged)
             _status.value = if (manifestDao.count() == 0) CloudStatus.Empty else CloudStatus.Ready
         } catch (network: CloudNetworkException) {
             _status.value = CloudStatus.Offline
@@ -275,7 +281,7 @@ class TelegramCloudRepository(
             val result = dataSource.upload(destination.chatId, request, onProgress, onSent)
             // Remote confirmation arrived: record it under its stable identity, preserving any
             // existing trusted hash (upload rows carry a real hash; discovery rows carry none).
-            upsertPreservingTrusted(fromUpload(request, result).toEntity(clock()))
+            manifestDao.upsertAll(listOf(mergePreservingTrusted(fromUpload(request, result).toEntity(clock()))))
             result
         }
     }
@@ -324,9 +330,20 @@ class TelegramCloudRepository(
      * is (chatId, messageId), so a preserved hash always belongs to the same Telegram message, and
      * repeated refreshes are idempotent.
      */
-    private suspend fun upsertPreservingTrusted(entity: com.telepic.data.cloud.db.CloudMediaManifestEntity) {
+    /**
+     * The row to write for [entity]: the remote row wins, except for the fields only this device
+     * knows — a trusted content hash, a completed download, resolved file ids, and the original
+     * `createdAt`.
+     *
+     * Returns the merged entity rather than writing it, so a page of N rows costs one upsert instead
+     * of N transactions. The read-then-write is not atomic on its own, so every caller holds the
+     * repository mutex.
+     */
+    private suspend fun mergePreservingTrusted(
+        entity: com.telepic.data.cloud.db.CloudMediaManifestEntity,
+    ): com.telepic.data.cloud.db.CloudMediaManifestEntity {
         val existing = manifestDao.get(entity.chatId, entity.messageId)
-        val merged = if (existing == null) {
+        return if (existing == null) {
             entity
         } else {
             entity.copy(
@@ -337,7 +354,6 @@ class TelegramCloudRepository(
                 createdAt = existing.createdAt,
             )
         }
-        manifestDao.upsertAll(listOf(merged))
     }
 
     private fun fromUpload(request: CloudUploadRequest, result: CloudUploadResult): CloudMedia = CloudMedia(

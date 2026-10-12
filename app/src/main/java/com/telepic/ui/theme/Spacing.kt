@@ -21,7 +21,6 @@ data class TelepicSpacing(
     val lg: Dp = 16.dp,
     val xl: Dp = 24.dp,
     val xxl: Dp = 32.dp,
-    val xxxl: Dp = 48.dp,
     /** Standard horizontal screen margin. */
     val screenMargin: Dp = 16.dp,
     /** Comfortable minimum touch target. */

@@ -26,6 +26,7 @@ object AuthorizationStateMapper {
             TelegramAuthState.WaitingForOtherDeviceConfirmation(state.link)
         is TdApi.AuthorizationStateReady ->
             authorizedUser?.let { TelegramAuthState.Authorized(it) } ?: TelegramAuthState.Initializing
+        is TdApi.AuthorizationStateLoggingOut -> TelegramAuthState.LoggingOut
         is TdApi.AuthorizationStateClosing -> TelegramAuthState.Closing
         is TdApi.AuthorizationStateClosed -> TelegramAuthState.Closed
         else -> TelegramAuthState.Initializing

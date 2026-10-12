@@ -57,7 +57,13 @@ class AuthorizationStateMapperTest {
     }
 
     @Test
-    fun `closing and closed map`() {
+    fun `logging out, closing and closed map`() {
+        // LoggingOut used to fall through to `else -> Initializing`, which made
+        // TelegramAuthState.LoggingOut unreachable and showed "Initializing" during a sign-out.
+        assertEquals(
+            TelegramAuthState.LoggingOut,
+            AuthorizationStateMapper.map(TdApi.AuthorizationStateLoggingOut()),
+        )
         assertEquals(
             TelegramAuthState.Closing,
             AuthorizationStateMapper.map(TdApi.AuthorizationStateClosing()),

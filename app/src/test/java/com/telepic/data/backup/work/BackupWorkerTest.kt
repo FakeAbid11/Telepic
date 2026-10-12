@@ -11,7 +11,6 @@ import com.telepic.domain.media.LocalMedia
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,11 +23,15 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class BackupWorkerTest {
 
-    private class FakeRepo(private val summaries: MutableList<BackupProcessSummary>) : BackupRepository {
+    private class FakeRepo(
+        private val summaries: MutableList<BackupProcessSummary>,
+        /** What the queue looks like after the batch — the worker re-reads it to decide. */
+        private val stats: BackupQueueStats = BackupQueueStats(),
+    ) : BackupRepository {
         var recovered = false
         var calls = 0
         override fun observeQueue(): Flow<List<BackupItem>> = flowOf(emptyList())
-        override fun observeStats(): Flow<BackupQueueStats> = flowOf(BackupQueueStats())
+        override fun observeStats(): Flow<BackupQueueStats> = flowOf(stats)
         override suspend fun enqueue(media: LocalMedia) = true
         override suspend fun enqueueAll(media: List<LocalMedia>) = 0
         override suspend fun retry(itemId: Long) = Unit
@@ -40,16 +43,10 @@ class BackupWorkerTest {
         }
     }
 
-    @After
-    fun tearDown() {
-        BackupWorkerDependencies.repository = null
-    }
-
     /**
-     * Build through the production [TelepicWorkerFactory] seam instead of the process-global
-     * [BackupWorkerDependencies]: Robolectric creates a TelepicApplication per test whose startup
-     * sync touches the container lazily, racing (and overwriting) the global static. The factory
-     * path is what actually ships, so this tests the real construction route deterministically.
+     * Built through the production [TelepicWorkerFactory] seam — the same route the app uses, since
+     * the manifest removes WorkManager's default initializer and the reflective constructor now fails
+     * loudly rather than reading a process-global. There is no global left to reset between tests.
      */
     private fun worker(repo: BackupRepository): BackupWorker {
         val factory = TelepicWorkerFactory(backupRepository = { repo }, backupCoordinator = { error("unused") })
@@ -86,6 +83,26 @@ class BackupWorkerTest {
     @Test
     fun `worker succeeds when the queue has no actionable work`() = runBlocking {
         val repo = FakeRepo(mutableListOf())
+        assertEquals(ListenableWorker.Result.success(), worker(repo).doWork())
+    }
+
+    @Test
+    fun `a full batch with a longer queue asks for another run instead of reporting success`() = runBlocking {
+        val repo = FakeRepo(
+            mutableListOf(BackupProcessSummary(uploaded = 100, processed = 100)),
+            stats = BackupQueueStats(queued = 40),
+        )
+        // The regression this guards: a first backup longer than one batch used to report success
+        // here and stop for good, because nothing else re-schedules a still-queued library.
+        assertEquals(ListenableWorker.Result.retry(), worker(repo).doWork())
+    }
+
+    @Test
+    fun `a full batch that drained the queue still reports success`() = runBlocking {
+        val repo = FakeRepo(
+            mutableListOf(BackupProcessSummary(uploaded = 100, processed = 100)),
+            stats = BackupQueueStats(completed = 100),
+        )
         assertEquals(ListenableWorker.Result.success(), worker(repo).doWork())
     }
 }

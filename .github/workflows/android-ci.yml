@@ -55,9 +55,9 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      # No release job on purpose right now: only debug APKs ship. The release hardening still
-      # lives in app/build.gradle.kts (R8 rules, credential gate, optional signing) and activates
-      # automatically whenever a `bundleRelease`/`assembleRelease` task is ever requested.
+      # Still no *shipping* release job: only debug APKs are published. The release configuration is
+      # compiled by the `release-smoke` job below purely so R8 cannot rot unnoticed; its artifact is
+      # never uploaded as a deliverable.
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -74,4 +74,48 @@ jobs:
           path: |
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+
+  # R8 (minify + resource shrinking) only ever runs on a release build, and nothing used to build one
+  # — so `isMinifyEnabled`/`isShrinkResources` and every rule in proguard-rules.pro were unverified,
+  # including a dependency (osmdroid) that ships no consumer rules at all. This job exists purely to
+  # compile that configuration. It runs in parallel with the job above so it costs no extra wall-clock.
+  release-smoke:
+    name: Release build (R8 & resource shrinking)
+    runs-on: ubuntu-latest
+    env:
+      # Real credentials when the secrets exist; a non-zero placeholder otherwise, because the
+      # credential gate in app/build.gradle.kts deliberately fails any release task without them.
+      # Nothing here is published — the point is that R8 runs, not that the artifact is usable.
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID || '1' }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH || 'ci-placeholder' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Assemble release (R8 + resource shrinking)
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Upload R8 mapping & release report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telepic-release-mapping
+          path: |
+            app/build/outputs/mapping/release/
+            app/build/reports/lint-results-release.html
           if-no-files-found: ignore

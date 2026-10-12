@@ -99,7 +99,10 @@ class OrganizationViewModel(
 
     /** Called only after a consented delete reports success: forget the item entirely. */
     fun onDeleteConfirmed(id: Long) = viewModelScope.launch {
-        organizationRepository.markDeletedFromStore(id)
+        // Deliberately does NOT call markDeletedFromStore first: `remove` deletes the whole
+        // organization row, so the flag would be written and destroyed in the same coroutine and
+        // could never be read. Forgetting the item is what this path means; the `deletedFromStore`
+        // column is left over from when the row survived, and is unused.
         organizationRepository.remove(id)
     }
 

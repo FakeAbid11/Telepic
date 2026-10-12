@@ -1,7 +1,6 @@
 package com.telepic.ui.screens.photos
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -57,11 +56,5 @@ class DateRailWindowTest {
     fun `out-of-range active index is coerced into the newest window`() {
         val window = DateRailWindow.window(anchorCount = 20, activeIndex = 999, windowSize = size)
         assertEquals(20 - size, window.first)
-        assertTrue(DateRailWindow.includesActive(20, 999, size))
-    }
-
-    @Test
-    fun `includesActive is false for an empty list`() {
-        assertFalse(DateRailWindow.includesActive(anchorCount = 0, activeIndex = 0, windowSize = size))
     }
 }

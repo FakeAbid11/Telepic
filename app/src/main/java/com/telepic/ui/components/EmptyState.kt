@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +51,13 @@ fun EmptyState(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // A long body must never put the actions out of reach. The Cloud consent card
+                // carries the app's longest empty-state copy (the ChatValidator reason) and clears a
+                // 360x640dp phone by only ~10dp, so on a smaller screen or at a larger font scale
+                // its second choice was laid out below the window and could not be tapped at all.
+                // When the content fits, `verticalScroll` measures to the content and the Box still
+                // centres it, so short empty states render exactly as before.
+                .verticalScroll(rememberScrollState())
                 .semantics(mergeDescendants = true) {},
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(spacing.sm, Alignment.CenterVertically),

@@ -20,15 +20,14 @@ class BackupDiscoveryWorker(
 ) : CoroutineWorker(appContext, params) {
 
     /**
-     * Reflective constructor mirroring [BackupWorker]'s dependency seam; the factory path is
-     * preferred, this only fires if WorkManager builds the worker before the container installs it.
+     * Reflective constructor mirroring [BackupWorker]'s seam. WorkManager only reaches it when no
+     * factory is configured, which cannot happen here (see [BackupWorker]); it fails loudly rather
+     * than reading a process-global installed by the container.
      */
     constructor(appContext: Context, params: WorkerParameters) : this(
         appContext,
         params,
-        requireNotNull(BackupWorkerDependencies.coordinator) {
-            "BackupCoordinator not installed; TelepicWorkerFactory must create BackupDiscoveryWorker"
-        },
+        error("BackupDiscoveryWorker must be created by TelepicWorkerFactory"),
     )
 
     override suspend fun doWork(): Result =

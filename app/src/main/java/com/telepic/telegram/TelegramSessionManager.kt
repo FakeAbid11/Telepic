@@ -78,6 +78,12 @@ class TelegramSessionManager(
                     )
                     return@launch
                 }
+                // Silence TDLib's own logger *before* the first request that carries a credential.
+                // TDLib logs at a default verbosity, and SetTdlibParameters is handed the api_hash
+                // (sendParameters, below); the app itself logs nothing, so this is the one place a
+                // credential could reach a log. Level 0 = fatal errors only. Best-effort: a rejected
+                // log request must not fail the login.
+                safeRequest(TdApi.SetLogVerbosityLevel(0))
                 // First start: opening makes TDLib emit the initial authorization state, which the
                 // collector handles. No need (and no race) from also querying it here.
             } else if (isRetry) {

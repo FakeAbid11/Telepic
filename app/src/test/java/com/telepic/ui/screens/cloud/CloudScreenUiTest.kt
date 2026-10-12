@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
@@ -28,13 +29,14 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * Cloud screen states, driven by a fake repository (no Telegram/device).
  *
- * The viewport is pinned to a real phone size because Robolectric's default (320x470dp) is smaller
- * than any device Telepic targets, and the consent card — the longest copy any `EmptyState` carries
- * — overflows it: its second action is laid out below the window, where a tap can never reach it.
+ * The viewport is deliberately left at Robolectric's default (320x470dp) — smaller than any device
+ * Telepic targets, which is exactly what makes it useful: the consent card carries the longest copy
+ * any `EmptyState` does, and at this size it overflows. `EmptyState` now scrolls so both choices stay
+ * reachable, and `performScrollTo` below is what proves that rather than assuming it.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [33], qualifiers = "w411dp-h891dp")
+@Config(sdk = [33])
 class CloudScreenUiTest {
 
     @get:Rule
@@ -184,14 +186,21 @@ class CloudScreenUiTest {
 
         // Unmerged: `EmptyState` merges its whole body into one semantics node, so in the merged
         // tree both labels resolve to the container and `performClick` lands wherever its centre
-        // happens to be — the second click would re-hit the first button.
-        composeRule.onNodeWithText("Use this channel", useUnmergedTree = true).assertIsDisplayed().performClick()
+        // happens to be — the second click would re-hit the first button. Scrolled first, because at
+        // this viewport the card is taller than the window and only the top of it is on screen.
+        composeRule.onNodeWithText("Use this channel", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
         composeRule.waitForIdle()
         org.junit.Assert.assertEquals(1, repo.confirmCalls)
 
-        // Asserted displayed, not merely present: "offered with both choices" is only true if the
-        // second one is actually on screen and tappable.
-        composeRule.onNodeWithText("Create a new one", useUnmergedTree = true).assertIsDisplayed().performClick()
+        // Asserted displayed *after* scrolling: "offered with both choices" is only true if the
+        // second one is genuinely on screen and tappable, not merely present in the tree.
+        composeRule.onNodeWithText("Create a new one", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
         composeRule.waitForIdle()
         org.junit.Assert.assertEquals(1, repo.createNewCalls)
     }
