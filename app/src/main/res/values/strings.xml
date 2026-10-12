@@ -111,7 +111,10 @@
     <string name="onboarding_how_cloud_body">Backed-up media is stored in your private Telegram channel, so you can browse it later without re-downloading originals.</string>
 
     <!-- Screen 3 — Permissions -->
-    <string name="onboarding_permissions_title">Media permissions</string>
+    <!-- Screen 3 — Permissions. The title is no longer "Media permissions": this screen now asks
+         for notification access too, and a heading that named only one of the two would misdescribe
+         the screen. The media section is still the one the body text describes. -->
+    <string name="onboarding_permissions_title">Permissions</string>
     <string name="onboarding_permissions_body">Telepic needs access to your photos and videos to show your local library and back up the media you choose.</string>
     <string name="onboarding_permissions_grant">Allow photo &amp; video access</string>
     <string name="onboarding_permissions_try_again">Try again</string>
@@ -124,6 +127,17 @@
     <string name="onboarding_permissions_state_denied_body">Without access, Telepic can\'t show your library. You can still continue and grant access later.</string>
     <string name="onboarding_permissions_state_blocked">Access blocked</string>
     <string name="onboarding_permissions_state_blocked_body">Android is blocking the request. Enable photo access in app settings, then continue.</string>
+
+    <!-- Notification access, asked on the same screen. Optional, and deliberately its own card so
+         it is never confused with the media access the app actually needs. Hidden below API 33,
+         where notifications need no runtime permission at all. -->
+    <string name="onboarding_notifications_title">Notifications</string>
+    <string name="onboarding_notifications_body">Telepic posts one notification — backup progress while an upload runs. No marketing, no reminders.</string>
+    <string name="onboarding_notifications_allow">Allow notifications</string>
+    <string name="onboarding_notifications_granted">Notifications on</string>
+    <string name="onboarding_notifications_granted_body">You\'ll see backup progress while it uploads.</string>
+    <string name="onboarding_notifications_denied">Notifications off</string>
+    <string name="onboarding_notifications_denied_body">Backups still run — you just won\'t see progress in the notification shade.</string>
 
     <!-- Screen 4 — Telegram Login -->
     <string name="onboarding_telegram_title">Connect Telegram</string>

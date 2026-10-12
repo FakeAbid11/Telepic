@@ -168,7 +168,11 @@ fun OnboardingScreen(
                 when (current) {
                     0 -> WelcomeStep()
                     1 -> HowItWorksStep()
-                    2 -> PermissionsStep(permission.state)
+                    2 -> PermissionsStep(
+                        permissionState = permission.state,
+                        notificationState = notifications.state,
+                        onRequestNotifications = notifications.request,
+                    )
                     3 -> TelegramStep(
                         controller = telegramController,
                         state = telegramState,
@@ -179,19 +183,13 @@ fun OnboardingScreen(
                         selectedBucketIds = backupBucketIds,
                         folders = folders,
                         foldersLoaded = foldersLoaded,
-                        // Choosing a backup scope is the moment upload progress becomes useful, so
-                        // ask here — the request no-ops below API 33 or once notifications are on.
-                        onSelect = { pref ->
-                            onBackupPreferenceChange(pref)
-                            if (pref != BackupPreference.NOT_NOW) notifications.request()
-                        },
+                        // Notification access is asked for on the Permissions step, one screen
+                        // earlier. It is deliberately NOT re-asked here: prompting again inside the
+                        // same flow is the double-prompt anti-pattern, and a second denial in a row
+                        // is what makes Android stop showing the dialog at all.
+                        onSelect = onBackupPreferenceChange,
                         onNeedFolders = onNeedFolders,
-                        onPickFolders = { ids ->
-                            onPickFolders(ids)
-                            // The picker confirm is the real enable edge for SELECT_FOLDER; an empty
-                            // choice persists nothing, so it must not trigger a prompt.
-                            if (ids.isNotEmpty()) notifications.request()
-                        },
+                        onPickFolders = onPickFolders,
                     )
                     5 -> ReadyStep(permission.state, telegramState, backupPreference)
                 }

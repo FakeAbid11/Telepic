@@ -176,7 +176,13 @@ class OnboardingUiTest {
         composeRule.onNodeWithText("How Telepic works").assertIsDisplayed()
 
         composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick()
-        composeRule.onNodeWithText("Media permissions").assertIsDisplayed()
+        composeRule.onNodeWithText("Permissions").assertIsDisplayed()
+        // Both asks live on this screen: media (the scaffold's primary CTA) and notifications (its
+        // own card). The section title is state-independent, so this holds whether the host reports
+        // notifications as granted or denied. Asserted as existence, not visibility: the step scrolls
+        // and at this class's default viewport the notification card sits below the fold.
+        // PermissionsStepTest covers the card being reachable and clickable.
+        composeRule.onNodeWithText("Notifications").assertExists()
 
         composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick()
         composeRule.onNodeWithText("Not connected").assertIsDisplayed()
@@ -205,7 +211,7 @@ class OnboardingUiTest {
         composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick() // -> How it works
         composeRule.onNodeWithText("How Telepic works").assert(isHeading)
         composeRule.onNodeWithTag(TAG_ONBOARDING_PRIMARY).performClick() // -> Permissions
-        composeRule.onNodeWithText("Media permissions").assert(isHeading)
+        composeRule.onNodeWithText("Permissions").assert(isHeading)
         composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Telegram (skip)
         composeRule.onNodeWithText("Connect Telegram").assert(isHeading)
         composeRule.onNodeWithTag(TAG_ONBOARDING_SECONDARY).performClick() // -> Backup
