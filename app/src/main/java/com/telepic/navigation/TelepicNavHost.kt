@@ -82,6 +82,7 @@ fun TelepicNavHost(
                             backupStatusRepository = container.backupStatusRepository,
                             organizationRepository = container.mediaOrganizationRepository,
                             backupCoordinator = container.backupCoordinator,
+                            customAlbumRepository = container.customAlbumRepository,
                         )
                     }
                 }
@@ -106,7 +107,11 @@ fun TelepicNavHost(
         }
         composable(TelepicDestination.Albums.route) {
             val albumsFactory = remember(container) {
-                viewModelFactory { initializer { AlbumsViewModel(container.albumRepository) } }
+                viewModelFactory {
+                    initializer {
+                        AlbumsViewModel(container.albumRepository, container.customAlbumRepository)
+                    }
+                }
             }
             val albumsViewModel: AlbumsViewModel = viewModel(factory = albumsFactory)
             AlbumsScreen(
@@ -114,6 +119,7 @@ fun TelepicNavHost(
                 onOpenAlbum = { album -> navController.navigate(AlbumRoute.create(album.bucketId, album.title)) },
                 onOpenOrganization = { kind -> navController.navigate(OrganizationRoute.create(kind)) },
                 onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
+                onOpenCustomAlbum = { album -> navController.navigate(AlbumRoute.createCustom(album.id)) },
             )
         }
         composable(
@@ -162,9 +168,9 @@ fun TelepicNavHost(
                 viewModelFactory {
                     initializer {
                         AlbumContentsViewModel(
-                            bucketId = bucketId,
-                            title = title,
+                            source = AlbumSource.Bucket(bucketId, title),
                             albumRepository = container.albumRepository,
+                            customAlbumRepository = container.customAlbumRepository,
                             backupStatusRepository = container.backupStatusRepository,
                             backupCoordinator = container.backupCoordinator,
                             organizationRepository = container.mediaOrganizationRepository,
@@ -177,6 +183,39 @@ fun TelepicNavHost(
                 viewModel = contentsViewModel,
                 onBack = { navController.popBackStack() },
                 onMediaSelected = { media -> navController.navigate(ViewerRoute.localInBucket(media.id, bucketId)) },
+            )
+        }
+        composable(
+            route = AlbumRoute.CUSTOM_PATTERN,
+            arguments = listOf(navArgument(AlbumRoute.ARG_ALBUM_ID) { type = NavType.LongType }),
+        ) { backStackEntry ->
+            val albumId = backStackEntry.arguments?.getLong(AlbumRoute.ARG_ALBUM_ID)
+            if (albumId == null) {
+                InvalidRouteFallback(onBack = { navController.popBackStack() })
+                return@composable
+            }
+            // The title starts empty and is filled from the database, because a user-created album's
+            // name is editable and must not be frozen into the route. A blank header for one frame is
+            // better than a header that keeps showing a name the album no longer has.
+            val contentsFactory = remember(container, albumId) {
+                viewModelFactory {
+                    initializer {
+                        AlbumContentsViewModel(
+                            source = AlbumSource.Custom(albumId, title = ""),
+                            albumRepository = container.albumRepository,
+                            customAlbumRepository = container.customAlbumRepository,
+                            backupStatusRepository = container.backupStatusRepository,
+                            backupCoordinator = container.backupCoordinator,
+                            organizationRepository = container.mediaOrganizationRepository,
+                        )
+                    }
+                }
+            }
+            val contentsViewModel: AlbumContentsViewModel = viewModel(factory = contentsFactory)
+            AlbumContentsScreen(
+                viewModel = contentsViewModel,
+                onBack = { navController.popBackStack() },
+                onMediaSelected = { media -> navController.navigate(ViewerRoute.local(media.id)) },
             )
         }
         composable(TelepicDestination.Map.route) {

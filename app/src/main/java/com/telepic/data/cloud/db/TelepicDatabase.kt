@@ -6,6 +6,9 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.telepic.data.backup.db.BackupQueueDao
 import com.telepic.data.backup.db.BackupQueueEntity
+import com.telepic.data.media.db.CustomAlbumDao
+import com.telepic.data.media.db.CustomAlbumEntity
+import com.telepic.data.media.db.CustomAlbumMediaEntity
 import com.telepic.data.media.db.MediaLocationDao
 import com.telepic.data.media.db.MediaLocationEntity
 import com.telepic.data.organization.db.MediaOrganizationDao
@@ -13,9 +16,10 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
 
 /**
  * Telepic application database (Phase 5 cloud metadata; Phase 6 backup queue; Phase 7 content-hash
- * recognition; Phase 10 favorites/archive/trash organization + geotagged-location cache).
+ * recognition; Phase 10 favorites/archive/trash organization + geotagged-location cache; user-created
+ * albums).
  *
- * Version 6 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
+ * Version 7 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
  * Phase 5 destination/manifest rows, Phase 6 queue rows and Phase 7 hashes always survive:
  * - `1 → 2` ([MIGRATION_1_2]): introduces `backup_queue`.
  * - `2 → 3` ([MIGRATION_2_3]): adds `contentSizeBytes` + `hashedAt` and the `contentHash` indexes
@@ -24,6 +28,7 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  * - `4 → 5` ([MIGRATION_4_5]): introduces `media_location` (the geotagged-location cache).
  * - `5 → 6` ([MIGRATION_5_6]): adds the `pendingTelegram*` columns to `backup_queue` (early remote
  *   identity persistence, so a timed-out send is confirmed rather than duplicated).
+ * - `6 → 7` ([MIGRATION_6_7]): introduces `custom_album` + `custom_album_media` (user-created albums).
  */
 @Database(
     entities = [
@@ -32,8 +37,10 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         BackupQueueEntity::class,
         MediaOrganizationEntity::class,
         MediaLocationEntity::class,
+        CustomAlbumEntity::class,
+        CustomAlbumMediaEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class TelepicDatabase : RoomDatabase() {
@@ -42,6 +49,7 @@ abstract class TelepicDatabase : RoomDatabase() {
     abstract fun backupQueueDao(): BackupQueueDao
     abstract fun mediaOrganizationDao(): MediaOrganizationDao
     abstract fun mediaLocationDao(): MediaLocationDao
+    abstract fun customAlbumDao(): CustomAlbumDao
 
     companion object {
         const val NAME = "telepic.db"
@@ -145,6 +153,45 @@ abstract class TelepicDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `backup_queue` ADD COLUMN `pendingTelegramChatId` INTEGER")
                 db.execSQL("ALTER TABLE `backup_queue` ADD COLUMN `pendingTelegramMessageId` INTEGER")
+            }
+        }
+
+        /**
+         * User-created albums: two brand-new tables, `custom_album` (name + cover hint) and
+         * `custom_album_media` (membership, keyed `(albumId, localMediaId)`).
+         *
+         * Purely additive — no existing table or row is touched, so the destination, manifest, queue
+         * (with hashes), organization flags and location cache all survive verbatim. The membership
+         * table declares `ON DELETE CASCADE` on `albumId`, which is why deleting an album needs no
+         * second statement to stay consistent.
+         */
+        val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `custom_album` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`coverMediaId` INTEGER, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `custom_album_media` (" +
+                        "`albumId` INTEGER NOT NULL, " +
+                        "`localMediaId` INTEGER NOT NULL, " +
+                        "`addedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`albumId`, `localMediaId`), " +
+                        "FOREIGN KEY(`albumId`) REFERENCES `custom_album`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_custom_album_media_albumId` " +
+                        "ON `custom_album_media` (`albumId`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_custom_album_media_localMediaId` " +
+                        "ON `custom_album_media` (`localMediaId`)",
+                )
             }
         }
     }

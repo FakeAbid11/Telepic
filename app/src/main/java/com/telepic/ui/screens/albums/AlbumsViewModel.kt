@@ -3,11 +3,16 @@ package com.telepic.ui.screens.albums
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.media.AlbumRepository
+import com.telepic.data.media.CustomAlbumRepository
 import com.telepic.domain.media.Album
+import com.telepic.domain.media.CustomAlbum
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 sealed interface AlbumsStatus {
@@ -18,17 +23,26 @@ sealed interface AlbumsStatus {
 }
 
 /**
- * Loads local albums (MediaStore buckets) for the Albums screen. Permission gating is handled by
- * the caller (the same model as Photos): the screen only triggers [refresh] once access is
- * available — no doomed query flashing an error at denied users, no double load after grant.
- * Distinct loading / empty / error states keep a failure from ever showing as "no albums".
+ * Backs the Albums screen: the device's folder albums plus the user's own.
+ *
+ * The two are loaded differently on purpose. Folder albums come from a MediaStore scan, so they are a
+ * one-shot [refresh] with explicit Loading/Empty/Error states. User-created albums come from Room, so
+ * they are a *flow* that stays current on its own — creating, renaming or deleting one needs no refresh
+ * call, and the grid updates because the database said so rather than because the screen remembered to
+ * ask. [status] therefore describes only the folder scan; the screen combines the two.
  */
 class AlbumsViewModel(
     private val repository: AlbumRepository,
+    private val customAlbumRepository: CustomAlbumRepository? = null,
 ) : ViewModel() {
 
     private val _status = MutableStateFlow<AlbumsStatus>(AlbumsStatus.Loading)
     val status: StateFlow<AlbumsStatus> = _status.asStateFlow()
+
+    /** The user's own albums, most recently touched first. Empty when the feature is not wired. */
+    val customAlbums: StateFlow<List<CustomAlbum>> =
+        (customAlbumRepository?.albums ?: flowOf(emptyList()))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun refresh() {
         _status.value = AlbumsStatus.Loading
@@ -43,6 +57,49 @@ class AlbumsViewModel(
             } catch (_: Exception) {
                 // A genuine query/permission failure is distinct from an empty library.
                 AlbumsStatus.Error
+            }
+        }
+    }
+
+    /**
+     * Creates a user-created album.
+     *
+     * Nothing is reported back: [customAlbums] is observed, so an album that was created appears and one
+     * that was not does not. A blank name is refused by the repository rather than by a check here, so
+     * the rule has exactly one home.
+     */
+    fun createAlbum(name: String) {
+        val repo = customAlbumRepository ?: return
+        persist { repo.create(name) }
+    }
+
+    /** Renames a user-created album. */
+    fun renameAlbum(albumId: Long, name: String) {
+        val repo = customAlbumRepository ?: return
+        persist { repo.rename(albumId, name) }
+    }
+
+    /** Deletes a user-created album. The media itself is untouched; only the album goes. */
+    fun deleteAlbum(albumId: Long) {
+        val repo = customAlbumRepository ?: return
+        persist { repo.delete(albumId) }
+    }
+
+    /**
+     * The one exception boundary for this screen's writes.
+     *
+     * Anything that escapes `viewModelScope` is an uncaught exception on the main thread and the app
+     * closes itself with no message. Nothing is claimed when a write fails: the album flow is the honest
+     * report, so a create that did not land simply produces no new album.
+     */
+    private fun persist(action: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                action()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Deliberately silent: the observed album list is the report.
             }
         }
     }

@@ -47,7 +47,7 @@
     <!-- Albums -->
     <string name="albums_title">Albums</string>
     <string name="albums_empty_title">No albums yet</string>
-    <string name="albums_empty_description">Albums are grouped from the folders that hold your photos and videos. New albums appear as your library gains media.</string>
+    <string name="albums_empty_description">Albums are grouped from the folders that hold your photos and videos, and you can create your own with the button below. New folder albums appear as your library gains media.</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
@@ -341,9 +341,36 @@
     <string name="albums_open_album">Open album %1$s</string>
     <string name="albums_back">Back to albums</string>
 
+    <!-- ============================ User-created albums ============================ -->
+    <string name="albums_create">New album</string>
+    <string name="albums_create_title">New album</string>
+    <string name="albums_create_confirm">Create</string>
+    <string name="albums_section_mine">My albums</string>
+    <string name="albums_section_folders">Device folders</string>
+    <string name="album_name_label">Album name</string>
+
+    <!-- Add-to-album picker. "New album" is offered inside the picker so a user with no albums yet is
+         never sent to a dead end. -->
+    <string name="album_picker_title">Add to album</string>
+    <string name="album_picker_empty">You don\'t have any albums yet.</string>
+    <string name="album_picker_new">New album…</string>
+    <string name="photos_selection_add_to_album">Add to album</string>
+    <string name="photos_selection_remove_from_album">Remove</string>
+
+    <!-- Managing a user-created album -->
+    <string name="album_more_actions">More actions</string>
+    <string name="album_rename">Rename album</string>
+    <string name="album_rename_title">Rename album</string>
+    <string name="album_rename_confirm">Rename</string>
+    <string name="album_delete">Delete album</string>
+    <string name="album_delete_title">Delete this album?</string>
+    <string name="album_delete_body">The album is removed and its photos are taken out of it. Nothing is deleted from your device — they stay in your library and in your Telegram backup.</string>
+    <string name="album_delete_confirm">Delete album</string>
+
     <!-- Album contents (one album\'s media grid) -->
     <string name="album_contents_empty_title">Nothing to show in this album</string>
     <string name="album_contents_empty_description">This album has no visible photos or videos. Archived and trashed items are hidden here too.</string>
+    <string name="album_contents_empty_custom_description">This album is empty. Select photos in your timeline, then use Add to album to put them here.</string>
     <string name="album_contents_error_title">Couldn\'t load this album</string>
     <string name="album_contents_error_description">Something went wrong while reading the album. Please try again.</string>
 

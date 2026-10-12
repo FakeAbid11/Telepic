@@ -25,6 +25,9 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +50,8 @@ import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.components.TransientMessageBar
+import com.telepic.ui.screens.albums.AlbumNameDialog
+import com.telepic.ui.screens.albums.AlbumPickerDialog
 import com.telepic.ui.theme.TelepicTokens
 
 /**
@@ -79,6 +84,11 @@ fun PhotosScreen(
     val selectionActive = selectedItems.isNotEmpty()
     val selectionReport by viewModel.selectionReport.collectAsStateWithLifecycle()
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
+    val customAlbums by viewModel.customAlbums.collectAsStateWithLifecycle()
+    val isAddingToAlbum by viewModel.isAddingToAlbum.collectAsStateWithLifecycle()
+    // Dialog visibility survives rotation, like every other dialog in the app.
+    var showAlbumPicker by rememberSaveable { mutableStateOf(false) }
+    var showNewAlbumForSelection by rememberSaveable { mutableStateOf(false) }
 
     // The permission controller above is the single source of truth for permission state; the VM
     // deliberately does not mirror it.
@@ -187,13 +197,41 @@ fun PhotosScreen(
                 if (selectionActive) {
                     SelectionActionBar(
                         canBackup = selectedItems.isNotEmpty(),
-                        busy = isBackingUp,
+                        busy = isBackingUp || isAddingToAlbum,
                         onBackup = viewModel::backupSelected,
                         onCancel = viewModel::clearSelection,
+                        onAddToAlbum = { showAlbumPicker = true },
                     )
                 }
             }
         }
+    }
+
+    if (showAlbumPicker) {
+        AlbumPickerDialog(
+            albums = customAlbums,
+            onPick = { album ->
+                showAlbumPicker = false
+                viewModel.addSelectionToAlbum(album.id)
+            },
+            onCreateNew = {
+                showAlbumPicker = false
+                showNewAlbumForSelection = true
+            },
+            onDismiss = { showAlbumPicker = false },
+        )
+    }
+
+    if (showNewAlbumForSelection) {
+        AlbumNameDialog(
+            title = stringResource(R.string.albums_create_title),
+            confirmLabel = stringResource(R.string.albums_create_confirm),
+            onConfirm = { name ->
+                showNewAlbumForSelection = false
+                viewModel.createAlbumAndAddSelection(name)
+            },
+            onDismiss = { showNewAlbumForSelection = false },
+        )
     }
 }
 

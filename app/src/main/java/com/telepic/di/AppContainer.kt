@@ -30,6 +30,8 @@ import com.telepic.data.cloud.db.TelepicDatabase
 import com.telepic.data.media.AndroidMediaChangeWatcher
 import com.telepic.data.media.AndroidLocationExtractor
 import com.telepic.data.media.AlbumRepository
+import com.telepic.data.media.CustomAlbumRepository
+import com.telepic.data.media.DefaultCustomAlbumRepository
 import com.telepic.data.media.DefaultMapLocationRepository
 import com.telepic.data.media.MapLocationRepository
 import com.telepic.data.media.MediaMetadataReader
@@ -85,6 +87,7 @@ interface AppContainer {
     val localMediaRepository: LocalMediaRepository
     val localMediaLookup: LocalMediaLookup
     val albumRepository: AlbumRepository
+    val customAlbumRepository: CustomAlbumRepository
     val mediaOrganizationRepository: MediaOrganizationRepository
     val mediaDeleter: LocalMediaDeleter
     val mapLocationRepository: MapLocationRepository
@@ -134,6 +137,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                 TelepicDatabase.MIGRATION_3_4,
                 TelepicDatabase.MIGRATION_4_5,
                 TelepicDatabase.MIGRATION_5_6,
+                TelepicDatabase.MIGRATION_6_7,
             )
             .build()
     }
@@ -142,6 +146,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     private val cloudManifestDao: CloudMediaManifestDao by lazy { database.cloudMediaManifestDao() }
     private val backupQueueDao: com.telepic.data.backup.db.BackupQueueDao by lazy { database.backupQueueDao() }
     private val mediaOrganizationDao: com.telepic.data.organization.db.MediaOrganizationDao by lazy { database.mediaOrganizationDao() }
+    private val customAlbumDao: com.telepic.data.media.db.CustomAlbumDao by lazy { database.customAlbumDao() }
 
     // One shared TDLib client for both authentication and cloud.
     private val tdLibClientGateway: TdLibClientGateway by lazy { TdLibClientGatewayImpl() }
@@ -249,6 +254,14 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             context = appContext,
             hiddenIdsProvider = { mediaOrganizationRepository.hiddenIds() },
             typeFilterProvider = timelineFilterProvider,
+        )
+    }
+
+    override val customAlbumRepository: CustomAlbumRepository by lazy {
+        DefaultCustomAlbumRepository(
+            dao = customAlbumDao,
+            lookup = localMediaLookup,
+            hiddenIdsProvider = { mediaOrganizationRepository.hiddenIds() },
         )
     }
 

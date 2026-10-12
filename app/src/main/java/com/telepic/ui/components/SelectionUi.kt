@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -65,7 +66,12 @@ fun SelectionTopBar(count: Int, onCancel: () -> Unit) {
 
 /** The bottom bulk-action bar shown while selecting: a Back up button and Cancel. The selected count
  * lives only in the top bar to avoid a duplicated number. [busy] disables the backup action and
- * shows a spinner while a bulk enqueue is in flight, so the screen never looks frozen. */
+ * shows a spinner while a bulk enqueue is in flight, so the screen never looks frozen.
+ *
+ * [onAddToAlbum] and [onRemoveFromAlbum] are optional because they only apply where membership is the
+ * user's to change: adding from the timeline, removing from a user-created album. A folder album passes
+ * neither — its contents are the filesystem's, so there is nothing to add to or remove from. Callers
+ * pass at most one, which is what keeps the bar inside a phone's width. */
 @Composable
 fun SelectionActionBar(
     canBackup: Boolean,
@@ -73,6 +79,8 @@ fun SelectionActionBar(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
     busy: Boolean = false,
+    onAddToAlbum: (() -> Unit)? = null,
+    onRemoveFromAlbum: (() -> Unit)? = null,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -86,6 +94,22 @@ fun SelectionActionBar(
         ) {
             TextButton(onClick = onCancel) {
                 Text(stringResource(R.string.photos_selection_cancel))
+            }
+            onAddToAlbum?.let { add ->
+                TextButton(onClick = add, enabled = !busy) {
+                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(
+                        text = stringResource(R.string.photos_selection_add_to_album),
+                        modifier = Modifier.padding(start = TelepicTokens.spacing.xs),
+                    )
+                }
+            }
+            onRemoveFromAlbum?.let { remove ->
+                // No icon: the label is the whole message, and a trash can here would suggest the photo
+                // is being deleted rather than just taken out of this album.
+                TextButton(onClick = remove, enabled = !busy) {
+                    Text(stringResource(R.string.photos_selection_remove_from_album))
+                }
             }
             TextButton(onClick = onBackup, enabled = canBackup && !busy) {
                 // The label stays put while busy. Swapping it for a bare spinner made the button's

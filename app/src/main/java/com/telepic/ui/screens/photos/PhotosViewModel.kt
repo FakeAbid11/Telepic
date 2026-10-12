@@ -6,10 +6,12 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupStatusRepository
+import com.telepic.data.media.CustomAlbumRepository
 import com.telepic.data.media.LocalMediaRepository
 import com.telepic.data.media.MediaChangeWatcher
 import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.backup.MediaBackupVisualState
+import com.telepic.domain.media.CustomAlbum
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
 import com.telepic.ui.components.BulkBackupReport
@@ -45,6 +47,7 @@ class PhotosViewModel(
     backupStatusRepository: BackupStatusRepository? = null,
     organizationRepository: MediaOrganizationRepository? = null,
     private val backupCoordinator: BackupCoordinator? = null,
+    private val customAlbumRepository: CustomAlbumRepository? = null,
 ) : ViewModel() {
 
     /** Paged day-headers + media cells. Cached so rotation/recomposition don't re-query. */
@@ -138,6 +141,76 @@ class PhotosViewModel(
 
     fun consumeSelectionMessage() {
         _selectionReport.value = null
+    }
+
+    // --- Adding the selection to a user-created album --------------------------------------------
+
+    /** The user's own albums, for the "Add to album" picker. Empty when the feature is not wired. */
+    val customAlbums: StateFlow<List<CustomAlbum>> =
+        (customAlbumRepository?.albums ?: flowOf(emptyList()))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * True while an add-to-album write is in flight, so the picker cannot start a second one.
+     *
+     * Distinct from [isBackingUp]: the two actions are independent, and sharing one flag would disable
+     * "Back up" while an album write ran and vice versa for no reason the user could see.
+     */
+    private val _isAddingToAlbum = MutableStateFlow(false)
+    val isAddingToAlbum: StateFlow<Boolean> = _isAddingToAlbum.asStateFlow()
+
+    /**
+     * Adds the current selection to [albumId].
+     *
+     * The selection is only cleared once the write has returned, and the grid is never told the photos
+     * are "in the album" — the album screen reads membership from Room, so a write that did not land
+     * simply produces an album that does not contain them.
+     */
+    fun addSelectionToAlbum(albumId: Long) {
+        val repository = customAlbumRepository ?: return
+        val ids = _selected.value.keys.toList()
+        if (ids.isEmpty()) return
+        if (_isAddingToAlbum.value) return
+        _isAddingToAlbum.value = true
+        viewModelScope.launch {
+            try {
+                repository.addMedia(albumId, ids)
+                clearSelection()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // The selection survives so the user can retry; nothing is claimed about the album.
+            } finally {
+                _isAddingToAlbum.value = false
+            }
+        }
+    }
+
+    /**
+     * Creates an album and puts the current selection in it, in that order.
+     *
+     * Used by the picker's "New album" entry. If the album is created but the add fails, the album
+     * still exists and is simply empty — which is the honest outcome, and better than rolling the
+     * album back and losing the name the user just typed.
+     */
+    fun createAlbumAndAddSelection(name: String) {
+        val repository = customAlbumRepository ?: return
+        val ids = _selected.value.keys.toList()
+        if (_isAddingToAlbum.value) return
+        _isAddingToAlbum.value = true
+        viewModelScope.launch {
+            try {
+                val albumId = repository.create(name)
+                if (albumId != null && ids.isNotEmpty()) repository.addMedia(albumId, ids)
+                clearSelection()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // See addSelectionToAlbum: the album list is the report.
+            } finally {
+                _isAddingToAlbum.value = false
+            }
+        }
     }
 
     init {

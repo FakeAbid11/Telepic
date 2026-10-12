@@ -7,10 +7,12 @@ import androidx.paging.cachedIn
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.media.AlbumRepository
+import com.telepic.data.media.CustomAlbumRepository
 import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
+import com.telepic.navigation.AlbumSource
 import com.telepic.ui.components.BulkBackupReport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -27,32 +29,69 @@ import kotlinx.coroutines.launch
 
 /**
  * One album's contents: the same paged, day-grouped [PhotosItem] stream and backup-status snapshot as
- * the main Photos timeline, scoped to a single MediaStore bucket. Reuses [AlbumRepository] so album
- * media behaves identically to the timeline (and never re-implements the grid). Selection + bulk
- * backup mirror the Photos timeline exactly — same engine, same stable-id semantics.
+ * the main Photos timeline, scoped to a single album. Reuses the album repositories so album media
+ * behaves identically to the timeline (and never re-implements the grid). Selection + bulk backup
+ * mirror the Photos timeline exactly — same engine, same stable-id semantics.
+ *
+ * Works for both kinds of album through [AlbumSource]. The only behavioural difference is membership: a
+ * folder album's contents are whatever the filesystem holds, so they can be browsed and backed up but
+ * not edited; a user-created album's contents are the user's own list, so they can also be removed from
+ * it. [customAlbumId] is what the screen uses to decide whether to offer that.
  */
 class AlbumContentsViewModel(
-    bucketId: Long,
-    val title: String,
+    private val source: AlbumSource,
     private val albumRepository: AlbumRepository,
+    private val customAlbumRepository: CustomAlbumRepository? = null,
     backupStatusRepository: BackupStatusRepository,
     private val backupCoordinator: BackupCoordinator? = null,
     private val organizationRepository: MediaOrganizationRepository? = null,
 ) : ViewModel() {
 
-    val media: Flow<PagingData<PhotosItem>> =
-        albumRepository.mediaInBucket(bucketId).cachedIn(viewModelScope)
+    /** The user-created album's id, or null for a folder album. Drives the rename/delete affordances. */
+    val customAlbumId: Long? = (source as? AlbumSource.Custom)?.albumId
+
+    private val _title = MutableStateFlow(source.title)
+
+    /**
+     * The album's title.
+     *
+     * A flow rather than a value because a user-created album can be renamed — from this screen's own
+     * overflow — and the stored name is observed rather than frozen into the navigation route.
+     */
+    val title: StateFlow<String> = _title.asStateFlow()
+
+    val media: Flow<PagingData<PhotosItem>> = when (source) {
+        is AlbumSource.Bucket -> albumRepository.mediaInBucket(source.bucketId)
+        is AlbumSource.Custom ->
+            customAlbumRepository?.mediaInAlbum(source.albumId) ?: flowOf(PagingData.empty())
+    }.cachedIn(viewModelScope)
 
     init {
         // Archiving or trashing from the Viewer changes what this album contains, and a `cachedIn`
-        // pager never re-queries on its own — so returning from the Viewer left the item listed with
-        // a stale count, and this screen has no other way to refresh. The Photos timeline already
-        // re-reads on this same signal (`PhotosViewModel`); the album did not, so the two screens
-        // disagreed about the same photo.
-        organizationRepository?.let { repo ->
+        // pager never re-queries on its own — so returning from the Viewer left the item listed with a
+        // stale count, and this screen has no other way to refresh. The Photos timeline already re-reads
+        // on this same signal (`PhotosViewModel`); the album did not, so the two screens disagreed about
+        // the same photo. Both repositories are invalidated, because which one owns this album's pager
+        // depends on which kind of album it is.
+        if (organizationRepository != null) {
             viewModelScope.launch {
-                combine(repo.archivedIds, repo.trashedIds) { archived, trashed -> archived + trashed }
-                    .collect { albumRepository.refresh() }
+                combine(
+                    organizationRepository.archivedIds,
+                    organizationRepository.trashedIds,
+                ) { archived, trashed -> archived + trashed }
+                    .collect {
+                        albumRepository.refresh()
+                        customAlbumRepository?.refresh()
+                    }
+            }
+        }
+        // Keep the header in step with the stored name, including a rename made from the Albums grid.
+        val albumId = customAlbumId
+        if (albumId != null && customAlbumRepository != null) {
+            viewModelScope.launch {
+                customAlbumRepository.observeName(albumId).collect { name ->
+                    if (name != null) _title.value = name
+                }
             }
         }
     }
@@ -81,6 +120,10 @@ class AlbumContentsViewModel(
     /** True while [backupSelected] is hashing/enqueueing — the action bar shows a spinner. */
     private val _isBackingUp = MutableStateFlow(false)
     val isBackingUp: StateFlow<Boolean> = _isBackingUp.asStateFlow()
+
+    /** True while a removal is in flight, so the action bar cannot start a second one. */
+    private val _isRemoving = MutableStateFlow(false)
+    val isRemoving: StateFlow<Boolean> = _isRemoving.asStateFlow()
 
     /** Long-press entry: begin a selection containing this item (idempotent if already selecting). */
     fun beginSelection(media: LocalMedia) {
@@ -123,6 +166,66 @@ class AlbumContentsViewModel(
                 // and the selection survives so the user can simply tap again.
             } finally {
                 _isBackingUp.value = false
+            }
+        }
+    }
+
+    /**
+     * Removes the selection from this user-created album.
+     *
+     * A no-op for a folder album, where there is nothing to remove from: membership *is* the filesystem.
+     * The media itself is never touched — this drops only the album's claim on it, which is the one thing
+     * the user asked to undo.
+     */
+    fun removeSelectedFromAlbum() {
+        val repository = customAlbumRepository ?: return
+        val albumId = customAlbumId ?: return
+        val ids = _selected.value.keys.toList()
+        if (ids.isEmpty()) return
+        if (_isRemoving.value) return
+        _isRemoving.value = true
+        viewModelScope.launch {
+            try {
+                ids.forEach { repository.removeMedia(albumId, it) }
+                clearSelection()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // The selection survives and the grid re-reads from Room, so a partial removal shows as
+                // exactly what it was rather than as a success.
+            } finally {
+                _isRemoving.value = false
+            }
+        }
+    }
+
+    /** Renames this user-created album. A no-op for a folder album, whose name comes from the device. */
+    fun rename(name: String) {
+        val repository = customAlbumRepository ?: return
+        val albumId = customAlbumId ?: return
+        viewModelScope.launch {
+            try {
+                repository.rename(albumId, name)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // The observed name is the report: a rename that did not land leaves the old title.
+            }
+        }
+    }
+
+    /** Deletes this user-created album. [onDeleted] runs only once the write has landed. */
+    fun delete(onDeleted: () -> Unit) {
+        val repository = customAlbumRepository ?: return
+        val albumId = customAlbumId ?: return
+        viewModelScope.launch {
+            try {
+                repository.delete(albumId)
+                onDeleted()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Stay on the album: the delete did not happen, so navigating away would be a lie.
             }
         }
     }

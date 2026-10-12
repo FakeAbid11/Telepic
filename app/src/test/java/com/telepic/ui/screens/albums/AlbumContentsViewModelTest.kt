@@ -15,6 +15,7 @@ import com.telepic.domain.media.Album
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import com.telepic.domain.media.PhotosItem
+import com.telepic.navigation.AlbumSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -126,8 +127,7 @@ class AlbumContentsViewModelTest {
         albumRepository: AlbumRepository = FakeAlbumRepository(),
         organizationRepository: MediaOrganizationRepository? = null,
     ) = AlbumContentsViewModel(
-        bucketId = 3L,
-        title = "Camera",
+        source = AlbumSource.Bucket(3L, "Camera"),
         albumRepository = albumRepository,
         backupStatusRepository = EmptyStatusRepository(),
         backupCoordinator = backupCoordinator,
