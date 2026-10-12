@@ -15,10 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,6 +44,7 @@ import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
+import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.theme.TelepicTokens
@@ -89,7 +88,6 @@ fun PhotosScreen(
     // Back exits selection first, before leaving the Photos screen.
     BackHandler(enabled = selectionActive) { viewModel.clearSelection() }
 
-    val settingsDescription = stringResource(R.string.photos_settings)
     Surface(
         modifier = modifier.fillMaxSize(),
         color = TelepicTokens.colors.mediaBackdrop,
@@ -122,12 +120,9 @@ fun PhotosScreen(
                             style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
-                        // The description lives on the Icon only: setting it on the IconButton too
-                        // made TalkBack read "Settings, Settings", because the merge policy for
-                        // ContentDescription is Concat.
-                        IconButton(onClick = onOpenSettings) {
-                            Icon(Icons.Outlined.Settings, contentDescription = settingsDescription)
-                        }
+                        // The same gear every other top-level screen carries (see SettingsAction);
+                        // it is the only way into Settings, which is no longer a bottom-bar tab.
+                        SettingsAction(onClick = onOpenSettings)
                     }
                 }
 

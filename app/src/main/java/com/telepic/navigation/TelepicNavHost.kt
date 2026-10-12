@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.combine
 
 /**
  * Hosts the five primary destinations plus the contextual Viewer, Album contents and Backup Center.
+ * Four of them are bottom-bar tabs; Settings is a destination reached from the top-right gear.
  *
  * Media identity is carried through navigation as a typed [MediaSource]: Photos and Album contents
  * open local items by MediaStore id, Cloud opens remote items by (chatId, messageId), and the two
@@ -100,6 +101,7 @@ fun TelepicNavHost(
             CloudScreen(
                 viewModel = cloudViewModel,
                 onOpenMedia = { media -> navController.navigate(ViewerRoute.cloud(media.chatId, media.messageId)) },
+                onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
             )
         }
         composable(TelepicDestination.Albums.route) {
@@ -111,6 +113,7 @@ fun TelepicNavHost(
                 viewModel = albumsViewModel,
                 onOpenAlbum = { album -> navController.navigate(AlbumRoute.create(album.bucketId, album.title)) },
                 onOpenOrganization = { kind -> navController.navigate(OrganizationRoute.create(kind)) },
+                onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
             )
         }
         composable(
@@ -196,6 +199,7 @@ fun TelepicNavHost(
                 viewModel = mapViewModel,
                 onOpenMedia = { mediaId -> navController.navigate(ViewerRoute.local(mediaId)) },
                 focusRequest = mapFocusRequest,
+                onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
             )
         }
         composable(TelepicDestination.Settings.route) {
@@ -223,6 +227,8 @@ fun TelepicNavHost(
                 onThemeModeChange = onThemeModeChange,
                 onOpenBackupCenter = { navController.navigate(BackupCenterRoute.ROUTE) },
                 onOpenTrash = { navController.navigate(OrganizationRoute.create(OrganizationKind.TRASH)) },
+                // Settings is not a tab, so it needs its own way out; system Back still works too.
+                onBack = { navController.popBackStack() },
             )
         }
         composable(BackupCenterRoute.ROUTE) {

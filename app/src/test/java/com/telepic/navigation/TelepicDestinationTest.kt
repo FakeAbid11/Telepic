@@ -1,13 +1,22 @@
 package com.telepic.navigation
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Verifies the primary navigation set is represented correctly: exactly the five PRD
- * destinations, each with a unique, non-blank route, and a stable start destination.
+ * Verifies the primary navigation set is represented correctly: exactly the five PRD destinations,
+ * each with a unique, non-blank route and a label, and a stable start destination — plus the
+ * destination/tab split.
+ *
+ * Both halves of that split matter. Settings must stay in [TelepicDestination.entries], because its
+ * route is still a real destination the nav graph declares and `navigateToTopLevel` navigates to; and
+ * it must stay out of [TelepicDestination.tabs], because the bottom bar is for the places you browse
+ * and stay in. Dropping it from the enum would break the route; leaving it in `tabs` would put it back
+ * in the bar.
  */
 class TelepicDestinationTest {
 
@@ -44,5 +53,44 @@ class TelepicDestinationTest {
         }
         assertSame(TelepicDestination.Start, TelepicDestination.fromRoute("unknown"))
         assertSame(TelepicDestination.Start, TelepicDestination.fromRoute(null))
+    }
+
+    // --- the destination / tab split -----------------------------------------------------------
+
+    @Test
+    fun `the bottom bar shows every destination except Settings, in declaration order`() {
+        assertEquals(
+            listOf(
+                TelepicDestination.Photos,
+                TelepicDestination.Cloud,
+                TelepicDestination.Albums,
+                TelepicDestination.Map,
+            ),
+            TelepicDestination.tabs,
+        )
+    }
+
+    @Test
+    fun `Settings is navigable by route but is not a tab`() {
+        val settings = TelepicDestination.Settings
+        // Still a real destination: the nav graph declares its route and the gear navigates to it.
+        assertSame(settings, TelepicDestination.fromRoute(settings.route))
+        assertFalse(TelepicDestination.tabs.contains(settings))
+    }
+
+    @Test
+    fun `every tab reports itself as a tab, and Settings reports none`() {
+        TelepicDestination.tabs.forEach { tab ->
+            assertSame(tab, TelepicDestination.topLevelOf(tab.route))
+        }
+        // Null is what hides the bottom bar. Settings must not sit there with no tab highlighted.
+        assertNull(TelepicDestination.topLevelOf(TelepicDestination.Settings.route))
+    }
+
+    @Test
+    fun `a non-tab route belongs to no tab`() {
+        assertNull(TelepicDestination.topLevelOf("viewer/local/1"))
+        assertNull(TelepicDestination.topLevelOf("albums/contents"))
+        assertNull(TelepicDestination.topLevelOf(null))
     }
 }

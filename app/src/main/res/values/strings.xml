@@ -313,7 +313,7 @@
     <string name="backup_settings_entry_summary">View the backup queue, progress and failures</string>
 
     <!-- ============================ Photos UI (Phase 8) ============================ -->
-    <string name="photos_settings">Settings</string>
+    <string name="settings_action">Settings</string>
     <string name="photos_partial_access_banner">Showing only the photos and videos you selected. You can grant full access in Settings.</string>
     <string name="photos_open_backup_center">Backup</string>
     <string name="photos_loading_more">Loading more photos…</string>

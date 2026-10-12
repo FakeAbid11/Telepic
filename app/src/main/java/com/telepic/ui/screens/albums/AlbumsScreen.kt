@@ -48,6 +48,7 @@ import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.LoadingState
 import com.telepic.ui.components.ScreenHeader
+import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.theme.TelepicTokens
 
@@ -63,6 +64,7 @@ fun AlbumsScreen(
     onOpenOrganization: (OrganizationKind) -> Unit,
     modifier: Modifier = Modifier,
     permissionStateOverride: MediaPermissionState? = null,
+    onOpenSettings: () -> Unit = {},
 ) {
     // One controller per composition: the real (launcher-owning) one unless the caller forces a state.
     val controller = if (permissionStateOverride != null) {
@@ -78,7 +80,10 @@ fun AlbumsScreen(
 
     Surface(modifier = modifier.fillMaxSize(), color = TelepicTokens.colors.mediaBackdrop) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ScreenHeader(title = stringResource(R.string.albums_title))
+            ScreenHeader(
+                title = stringResource(R.string.albums_title),
+                trailing = { SettingsAction(onClick = onOpenSettings) },
+            )
             if (permissionState.hasAccess) {
                 LibraryShortcuts(onOpenOrganization)
             }

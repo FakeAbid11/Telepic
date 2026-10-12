@@ -159,7 +159,7 @@ In the viewer, mark items as **favorite**, **archive**, or move them to **trash*
 Open **Map** to see photos that carry EXIF GPS coordinates. Media without location data simply never gets a pin — nothing is guessed.
 
 **8. Settings**
-Open **Settings** for account and connection state, backup preferences, theme, storage usage, and sign-out.
+Tap the **gear in the top-right corner** — available on every tab — for account and connection state, backup preferences, transport and media options, the app lock, theme, storage usage, and sign-out.
 
 ---
 
@@ -362,7 +362,7 @@ A chronological log of what each phase built. Two status labels are used:
 - Telepic branding (app name, blue/black/white identity, adaptive launcher icon)
 - Centralized **Telepic design system**: color, typography, shape, and spacing tokens
 - **Dark (default)**, **Light**, and **System default** themes with a persisted preference
-- Five primary navigation destinations in a Material 3 bottom bar: **Photos · Cloud · Albums · Map · Settings**
+- Four navigation tabs in a Material 3 bottom bar — **Photos · Cloud · Albums · Map** — with **Settings** in the top-right corner of every tab (it is a destination you visit, not one you stay in, so it does not take a quarter of the bar)
 - Reusable UI components: `EmptyState`, `LoadingState`, `ErrorState`, `ScreenHeader`
 - Foundation settings screen (Account, Backup, Appearance, Storage, About)
 - Layered architecture foundation with a lightweight manual DI container

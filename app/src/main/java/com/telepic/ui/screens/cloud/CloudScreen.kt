@@ -57,6 +57,7 @@ import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.LoadingState
 import com.telepic.ui.components.ScreenHeader
+import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.theme.TelepicTokens
 import java.io.File
@@ -68,6 +69,7 @@ fun CloudScreen(
     viewModel: CloudViewModel,
     onOpenMedia: (CloudMedia) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenSettings: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val previews by viewModel.previews.collectAsStateWithLifecycle()
@@ -75,23 +77,28 @@ fun CloudScreen(
 
     Surface(modifier = modifier.fillMaxSize(), color = TelepicTokens.colors.mediaBackdrop) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ScreenHeader(
-                    title = stringResource(R.string.cloud_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = viewModel::refresh) {
-                    Icon(
-                        imageVector = Icons.Outlined.Refresh,
-                        contentDescription = stringResource(R.string.cloud_refresh),
-                        tint = MaterialTheme.colorScheme.primary,
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ScreenHeader(
+                        title = stringResource(R.string.cloud_title),
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.weight(1f),
                     )
+                    IconButton(onClick = viewModel::refresh) {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = stringResource(R.string.cloud_refresh),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    // The gear is the right-most control on every top-level screen, so Settings is
+                    // always in the same place. Refresh sits to its left as a screen-specific action.
+                    SettingsAction(onClick = onOpenSettings)
                 }
-            }
 
             DestinationStatusBar(uiState)
 

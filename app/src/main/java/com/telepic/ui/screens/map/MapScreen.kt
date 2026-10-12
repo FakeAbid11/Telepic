@@ -3,6 +3,7 @@ package com.telepic.ui.screens.map
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -58,6 +59,7 @@ import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.LoadingState
 import com.telepic.ui.components.ScreenHeader
+import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.screens.viewer.formatCoordinate
 import com.telepic.ui.theme.TelepicTokens
@@ -89,6 +91,7 @@ fun MapScreen(
     focusRequest: MapFocusRequest,
     modifier: Modifier = Modifier,
     permissionStateOverride: MediaPermissionState? = null,
+    onOpenSettings: () -> Unit = {},
 ) {
     // One controller per composition: the real (launcher-owning) one unless the caller forces a state.
     val controller = if (permissionStateOverride != null) {
@@ -111,18 +114,21 @@ fun MapScreen(
     Surface(modifier = modifier.fillMaxSize(), color = TelepicTokens.colors.mediaBackdrop) {
         Column(modifier = Modifier.fillMaxSize()) {
             // The honest "N locations" affordance the ViewModel has always exposed — now consumed.
+            // The gear follows it so Settings is the right-most control here too, matching every
+            // other top-level screen.
             ScreenHeader(
                 title = stringResource(R.string.map_title),
-                trailing = if (locationCount > 0) {
-                    {
-                        Text(
-                            text = stringResource(R.string.map_locations_count, locationCount),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                trailing = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (locationCount > 0) {
+                            Text(
+                                text = stringResource(R.string.map_locations_count, locationCount),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        SettingsAction(onClick = onOpenSettings)
                     }
-                } else {
-                    null
                 },
             )
             when {

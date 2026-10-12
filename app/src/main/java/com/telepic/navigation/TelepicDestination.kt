@@ -16,7 +16,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.telepic.R
 
 /**
- * The five primary Telepic destinations shown in bottom navigation.
+ * Every Telepic destination. [tabs] is the subset shown in the bottom navigation bar.
+ *
+ * Settings is a destination but deliberately **not** a tab. The bar is for the places you browse and
+ * stay in; Settings is somewhere you go, change something, and leave — and a permanent quarter of the
+ * bar with a highlighted state that meant "you are in Settings" rather than "you are looking at your
+ * library" misrepresented that. It is reached instead from the gear in the top-right corner of every
+ * tab (see `SettingsAction`), which also makes it available from Cloud, Albums and Map rather than
+ * only from Photos.
  *
  * Kept as a pure enum (no Compose types in the constructor) so it is trivially testable
  * on the JVM and so later phases can add contextual screens without touching this core set.
@@ -36,20 +43,39 @@ enum class TelepicDestination(
         /** Destination shown on first launch. */
         val Start = Photos
 
+        /**
+         * The destinations rendered in the bottom navigation bar, in declaration order.
+         *
+         * `lazy` rather than a plain initializer: the delegate is created with the companion object,
+         * but the lambda only runs on first access — by which point the enum's own static
+         * initialisation (and therefore `entries`) has definitely finished.
+         */
+        val tabs: List<TelepicDestination> by lazy { entries.filter { it != Settings } }
+
         fun fromRoute(route: String?): TelepicDestination =
             entries.firstOrNull { it.route == route } ?: Start
 
         /**
-         * The top-level tab a route belongs to, or null when the route is a pushed/detail screen
-         * (viewer, album contents, organization, backup). Used to highlight the correct tab and hide
-         * the bottom bar on detail screens instead of defaulting every route to [Start].
+         * The bottom-bar tab a route belongs to, or null when the route is not a tab at all — either
+         * a pushed/detail screen (viewer, album contents, organization, backup) or [Settings], which
+         * is a full-screen destination reached from the gear.
+         *
+         * A null result is what hides the bottom bar. That is the intended outcome for [Settings]:
+         * keeping the bar there would show it with no tab highlighted, which reads as a bug rather
+         * than as "you have left the tabs".
          */
         fun topLevelOf(route: String?): TelepicDestination? =
-            entries.firstOrNull { it.route == route }
+            tabs.firstOrNull { it.route == route }
     }
 }
 
-/** Unselected (outlined) icon for a destination. */
+/**
+ * Unselected (outlined) icon for a destination.
+ *
+ * Total over [TelepicDestination.entries] because a `when` expression must be — only
+ * [TelepicDestination.tabs] are ever rendered, so the [TelepicDestination.Settings] branch is not
+ * reached. It stays so the compiler keeps this exhaustive if a destination is added.
+ */
 val TelepicDestination.icon: ImageVector
     get() = when (this) {
         TelepicDestination.Photos -> Icons.Outlined.PhotoLibrary
@@ -59,7 +85,7 @@ val TelepicDestination.icon: ImageVector
         TelepicDestination.Settings -> Icons.Outlined.Settings
     }
 
-/** Selected (filled) icon for a destination. */
+/** Selected (filled) icon for a destination. See [icon] for why the [TelepicDestination.Settings] branch is unreachable. */
 val TelepicDestination.selectedIcon: ImageVector
     get() = when (this) {
         TelepicDestination.Photos -> Icons.Filled.PhotoLibrary

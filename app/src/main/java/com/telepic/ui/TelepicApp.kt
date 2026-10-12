@@ -39,7 +39,10 @@ private const val NAV_PILL_ELEVATION_DP = 10
 
 /**
  * The Telepic application shell: a Material 3 [Scaffold] with a bottom navigation bar for
- * the five primary destinations and the navigation host filling the remaining space.
+ * [TelepicDestination.tabs] and the navigation host filling the remaining space.
+ *
+ * Settings is not one of those tabs — it is reached from the gear in the top-right corner of every
+ * tab — so the bar is hidden on it rather than shown with no tab selected.
  */
 @Composable
 fun TelepicApp(
@@ -52,8 +55,9 @@ fun TelepicApp(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route
     val spacing = TelepicTokens.spacing
-    // Only a top-level tab route selects a tab; detail/immersive screens (viewer, album contents,
-    // organization, backup) resolve to null so the bar neither mis-highlights Photos nor overlays them.
+    // Only a bottom-bar tab route selects a tab; detail/immersive screens (viewer, album contents,
+    // organization, backup) and Settings resolve to null so the bar neither mis-highlights Photos nor
+    // overlays them.
     val currentTab = TelepicDestination.topLevelOf(route)
 
     Scaffold(
@@ -77,7 +81,7 @@ fun TelepicApp(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         windowInsets = WindowInsets(0, 0, 0, 0),
                     ) {
-                        TelepicDestination.entries.forEach { destination ->
+                        TelepicDestination.tabs.forEach { destination ->
                             val selected = destination == currentTab
                             NavigationBarItem(
                                 selected = selected,

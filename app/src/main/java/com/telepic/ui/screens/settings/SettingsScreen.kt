@@ -82,6 +82,9 @@ private val CloudStatus.connectionSummaryRes: Int
  * media preferences, the app lock, measured cache sizes and library counts, the theme picker and
  * version/licence information. Rows reflect behavior that exists — nothing here reports a state the
  * app cannot honor, which is why the app-lock switch is disabled on a device with no credential.
+ *
+ * Settings is not a bottom-bar tab, so it carries a leading back affordance like every other non-tab
+ * screen (album contents, organization, Backup Center) rather than relying on system Back alone.
  */
 @Composable
 fun SettingsScreen(
@@ -91,6 +94,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     onOpenBackupCenter: () -> Unit = {},
     onOpenTrash: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
 ) {
     val spacing = TelepicTokens.spacing
     val context = LocalContext.current
@@ -161,7 +165,10 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
-            ScreenHeader(title = stringResource(R.string.settings_title))
+            ScreenHeader(
+                title = stringResource(R.string.settings_title),
+                onBack = onBack,
+            )
 
             SettingsSection(title = stringResource(R.string.settings_section_account)) {
                 // Info row: enabled (not dimmed) with no onClick — a real state read, not a stub.
