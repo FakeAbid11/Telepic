@@ -59,9 +59,19 @@ interface BackupCoordinator {
 
 /**
  * Default [BackupCoordinator]. Automatic discovery is bounded and incremental (paged reads, never a
- * whole-library scan into memory). Recognition runs **before** enqueueing, so a repeated scan or a
- * reinstall (new MediaStore id, same bytes → same hash) recognizes existing content instead of
- * uploading a second copy.
+ * whole-library scan into memory). Recognition runs **before** enqueueing, so a repeated scan
+ * recognizes existing content instead of uploading a second copy.
+ *
+ * What that dedup can and cannot do: the manifest's `contentHash` is written only by the upload path
+ * (`TelegramCloudRepository`), and the manifest lives in Room — so after a reinstall, or on a second
+ * device, it is rebuilt from the channel's history with **no hashes**, `findByContentHashAndSize`
+ * matches nothing, and everything re-uploads. (This comment used to claim the opposite: "a reinstall
+ * (new MediaStore id, same bytes → same hash) recognizes existing content". Making that true needs the
+ * hash carried remotely, which Telegram has no metadata slot for.) Within one install, dedup is by
+ * content hash, and identical bytes reached through a different local id are caught by
+ * `BackupQueueDao.findActiveByContentHash`.
+ *
+ * Discovery excludes **trashed** media only, never archived: see `AppContainer.backupDiscoveryLoader`.
  *
  * SELECT_FOLDER scans exactly the buckets the user chose (per-bucket [MediaPageLoader]s); an empty
  * folder selection backs up nothing automatically — the honest equivalent of NOT_NOW, never a

@@ -111,7 +111,13 @@ class DefaultBackupRecognitionRepository(
 
     private fun BackupQueueEntity.contentHashMatches(media: LocalMedia): Boolean {
         val hash = contentHash ?: return false
-        // Cache key is NOT uri/id alone (§18): require the same size AND modified timestamp.
+        // Cache key is NOT uri/id alone (§18): require the same size AND the same date. Note what the
+        // second half really is: `modifiedTimeSeconds` is written from `LocalMedia.dateMillis`, which
+        // `MediaDateResolver` resolves DATE_TAKEN-first — so this is the *display* date, not the file's
+        // modification time, despite the field's name. A same-size edit that preserves DATE_TAKEN (a
+        // metadata-only rewrite) therefore reuses a stale hash. Keying on the real modified time needs
+        // its own column and a migration; until then this is a known, narrow limitation rather than a
+        // guarantee the code should claim.
         return contentSizeBytes == media.sizeBytes && modifiedTimeSeconds == media.dateMillis / 1000L && hash.isNotEmpty()
     }
 

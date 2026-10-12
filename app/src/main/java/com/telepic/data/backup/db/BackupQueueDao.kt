@@ -55,9 +55,15 @@ interface BackupQueueDao {
     /**
      * An active row already carrying the same content hash — used to avoid queueing a second upload
      * of identical bytes reached through a *different* local identity (§46 duplicate prevention).
+     *
+     * Matches [contentSizeBytes], the byte count the hash was computed over, rather than the
+     * provider-reported `sizeBytes`: the caller passes the *hashed* size, and the two disagree
+     * whenever a provider reports SIZE as 0 or stale — which silently missed the dedup and queued
+     * the same bytes twice. `COALESCE` keeps rows hashed before that column existed working.
      */
     @Query(
-        "SELECT * FROM backup_queue WHERE contentHash = :contentHash AND sizeBytes = :sizeBytes " +
+        "SELECT * FROM backup_queue WHERE contentHash = :contentHash " +
+            "AND COALESCE(contentSizeBytes, sizeBytes) = :sizeBytes " +
             "AND state IN ('QUEUED', 'PREPARING', 'UPLOADING', 'WAITING_FOR_NETWORK', 'WAITING_FOR_AUTH') LIMIT 1",
     )
     suspend fun findActiveByContentHash(contentHash: String, sizeBytes: Long): BackupQueueEntity?

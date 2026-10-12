@@ -62,6 +62,7 @@ import com.telepic.telegram.TdLibClientGateway
 import com.telepic.telegram.TdLibClientGatewayImpl
 import com.telepic.telegram.TdLibTelegramAuthController
 import java.io.File
+import kotlinx.coroutines.flow.first
 
 /** Single DataStore instance for the whole process, shared by all preference repositories. */
 private val Context.telepicDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -163,6 +164,19 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         MediaStoreMediaLoader(appContext) { mediaOrganizationRepository.hiddenIds() }
     }
 
+    /**
+     * Discovery for the backup engine — trashed media excluded, archived media **included**.
+     *
+     * Deliberately not [mediaLoader]: the timeline hides archived *and* trashed media, but archiving
+     * is a timeline-organising decision rather than "do not keep this", so reusing that filter
+     * silently dropped archived photos out of the user's backup set with nothing said. Trashed media
+     * is still excluded — it is on its way out. (An item already queued uploads either way, because
+     * the worker reads the queue rather than MediaStore, so the two paths no longer disagree.)
+     */
+    private val backupDiscoveryLoader: MediaStoreMediaLoader by lazy {
+        MediaStoreMediaLoader(appContext) { mediaOrganizationRepository.trashedIds.first() }
+    }
+
     override val localMediaRepository: LocalMediaRepository by lazy {
         LocalMediaRepositoryImpl(mediaLoader)
     }
@@ -249,12 +263,13 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             scheduler = backupWorkScheduler,
             onboardingRepository = onboardingRepository,
             // null bucket = whole library; a bucket id = the same projection scoped to that folder,
-            // so SELECT_FOLDER discovery reads exactly what the user chose.
+            // so SELECT_FOLDER discovery reads exactly what the user chose. Both use the backup
+            // discovery filter (trashed only), not the timeline's (archived + trashed).
             pageLoaderFactory = { bucketId ->
                 if (bucketId == null) {
-                    mediaLoader
+                    backupDiscoveryLoader
                 } else {
-                    MediaStoreBucketLoader(appContext, bucketId) { mediaOrganizationRepository.hiddenIds() }
+                    MediaStoreBucketLoader(appContext, bucketId) { mediaOrganizationRepository.trashedIds.first() }
                 }
             },
         )
