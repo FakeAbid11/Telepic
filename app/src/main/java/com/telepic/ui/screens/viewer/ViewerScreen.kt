@@ -153,6 +153,12 @@ fun ViewerScreen(
                     onNavigate = viewModel::open,
                     onDownload = viewModel::downloadOriginal,
                     onRequestToggle = { controlsVisible = !controlsVisible },
+                    // Handed down for the video transport, which *is* the bottom bar for a playable
+                    // video (see ViewerUiState.isPlayableVideo).
+                    onPrevious = viewModel::showPrevious,
+                    onNext = viewModel::showNext,
+                    onRestore = if (isCloudReady) viewModel::restoreToLocal else null,
+                    restore = restore,
                 )
             }
 
@@ -174,7 +180,13 @@ fun ViewerScreen(
                 )
             }
 
-            if (state.status == ViewerStatus.READY && (state.previous != null || state.next != null)) {
+            // A playable video draws its own transport bar (play/pause, seek, prev/next and the cloud
+            // save action) in the band the surface reserves, so the generic bar is skipped: rendering
+            // both is precisely the two-stacked-bars defect the transport replaced.
+            if (state.status == ViewerStatus.READY &&
+                !state.isPlayableVideo &&
+                (state.previous != null || state.next != null)
+            ) {
                 AnimatedVisibility(visible = controlsVisible, modifier = Modifier.align(Alignment.BottomCenter)) {
                     ViewerBottomBar(
                         state = state,
@@ -185,7 +197,7 @@ fun ViewerScreen(
                         restore = restore,
                     )
                 }
-            } else if (isCloudReady) {
+            } else if (isCloudReady && !state.isPlayableVideo) {
                 // A lone cloud item has no nav bar; offer Save-to-device on its own.
                 AnimatedVisibility(
                     visible = controlsVisible,
@@ -265,11 +277,22 @@ private fun ViewerContent(
     onNavigate: (MediaSource) -> Unit,
     onDownload: () -> Unit,
     onRequestToggle: () -> Unit,
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {},
+    onRestore: (() -> Unit)? = null,
+    restore: RestoreState = RestoreState.Idle,
 ) {
     if (state.kind == ViewerKind.VIDEO) {
-        // Videos keep button navigation only: PlayerView consumes touches for its own controls,
+        // Videos keep button navigation only: the surface consumes touches for its own controls,
         // and a swipe detector here would fight them.
-        VideoViewer(state = state, onDownload = onDownload)
+        VideoViewer(
+            state = state,
+            onDownload = onDownload,
+            onPrevious = onPrevious,
+            onNext = onNext,
+            onRestore = onRestore,
+            restore = restore,
+        )
         return
     }
 
@@ -693,9 +716,10 @@ private fun ViewerBottomBar(
 
 /**
  * Human-readable message for a restore failure. Every reason the repository can report has its own
- * wording, so the user learns *why* a save failed instead of a single generic message.
+ * wording, so the user learns *why* a save failed instead of a single generic message. Internal,
+ * because the video transport renders the same reasons beside its save action.
  */
-private val RestoreFailure.messageRes: Int
+internal val RestoreFailure.messageRes: Int
     get() = when (this) {
         RestoreFailure.DOWNLOAD_UNAVAILABLE -> R.string.viewer_save_failed_download
         RestoreFailure.MISSING_REMOTE -> R.string.viewer_save_failed_missing

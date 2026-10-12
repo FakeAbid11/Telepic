@@ -300,6 +300,9 @@
     <string name="viewer_content_description">Media viewer image</string>
     <string name="viewer_image_error">This image couldn\'t be loaded</string>
     <string name="viewer_playback_error">Playback error</string>
+    <string name="viewer_video_play">Play</string>
+    <string name="viewer_video_pause">Pause</string>
+    <string name="viewer_video_seek">Video position</string>
     <string name="viewer_mute">Mute</string>
     <string name="viewer_unmute">Unmute</string>
     <string name="viewer_source_local">On this device</string>

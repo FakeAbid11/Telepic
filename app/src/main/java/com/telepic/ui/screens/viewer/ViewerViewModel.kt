@@ -78,7 +78,23 @@ data class ViewerUiState(
     val next: MediaSource? = null,
     val download: CloudDownload = CloudDownload.Idle,
     val dateMillis: Long? = null,
-)
+) {
+    /**
+     * True when this item is a video with a file that can actually be played right now. The state in
+     * which [VideoViewer] owns the bottom bar: its Compose transport carries prev/next plus the cloud
+     * save action, so the generic [ViewerBottomBar] must *not* render as well — that stacking is the
+     * double-bar defect the transport replaced.
+     *
+     * A cloud video whose original has not been downloaded is not playable (it shows the honest
+     * download step instead), so the generic chrome keeps owning navigation there.
+     */
+    val isPlayableVideo: Boolean
+        get() = kind == ViewerKind.VIDEO && when (item) {
+            is ViewerItem.Local -> true
+            is ViewerItem.Cloud -> item.originalPath != null
+            null -> false
+        }
+}
 
 /**
  * Presentation metadata for the Viewer's Details sheet. Every field is null when it cannot be

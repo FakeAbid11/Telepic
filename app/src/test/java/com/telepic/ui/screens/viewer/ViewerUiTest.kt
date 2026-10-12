@@ -149,14 +149,14 @@ class ViewerUiTest {
     }
 
     /**
-     * `VideoViewer` insets the video surface by exactly `TelepicSpacing.chromeBarHeight` at each
-     * end, so media3's own controller — whose bottom bar, progress line and whole-surface dim are all
-     * laid out against `PlayerView`'s edges — cannot slide back underneath the chrome. The two sides
-     * are coupled by that single value, so this pins the coupling: the bars build their height from
-     * `sm` + `touchTarget` + `sm`, and the reservation is the same sum.
+     * `VideoViewer` insets the video surface by exactly `TelepicSpacing.chromeBarHeight` at each end,
+     * and the Compose transport that replaced media3's stock controller is that tall too
+     * (`VideoTransportUiTest` pins that side). The three are coupled by one value, so this pins the
+     * photo chrome against it: the bars build their height from `sm` + `touchTarget` + `sm`, and the
+     * reservation is the same sum.
      *
      * Equality rather than a minimum, because the failure mode runs the *other* way — a bar that
-     * grows taller than the reservation is what puts media3's controls back under the chrome.
+     * grows taller than the reservation is what would push controls back under the chrome.
      */
     @Test
     fun `the chrome bars are exactly as tall as the band the video surface reserves`() {
