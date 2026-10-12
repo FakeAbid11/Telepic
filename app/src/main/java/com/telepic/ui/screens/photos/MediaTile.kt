@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,7 +72,12 @@ fun MediaTile(
 ) {
     val spacing = TelepicTokens.spacing
     val context = LocalContext.current
-    val label = mediaAccessibilityLabel(context, media, backupState, isFavorite)
+    // Remembered, not recomputed: building this label resolves several localized strings and formats
+    // a full date, and it used to run on every recomposition of every visible cell. Keyed on the
+    // context too, because the strings follow the locale/configuration.
+    val label = remember(context, media, backupState, isFavorite) {
+        mediaAccessibilityLabel(context, media, backupState, isFavorite)
+    }
     // Named distinctly from the `selected` parameter: inside `semantics { }` the receiver also
     // exposes a `selected` property, and shadowing between the two reads as a bug.
     val tileSelected = selectionActive && selected

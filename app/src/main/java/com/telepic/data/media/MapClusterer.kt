@@ -1,5 +1,6 @@
 package com.telepic.data.media
 
+import androidx.compose.runtime.Immutable
 import com.telepic.domain.media.GeotaggedMedia
 import kotlin.math.roundToLong
 
@@ -12,17 +13,20 @@ import kotlin.math.roundToLong
  */
 object MapClusterer {
 
+    @Immutable
     sealed interface MapPin {
         val latitude: Double
         val longitude: Double
         val size: Int
         val ids: List<Long>
 
+        @Immutable
         data class Single(override val latitude: Double, override val longitude: Double, val mediaId: Long) : MapPin {
             override val size: Int = 1
             override val ids: List<Long> = listOf(mediaId)
         }
 
+        @Immutable
         data class Cluster(
             override val latitude: Double,
             override val longitude: Double,

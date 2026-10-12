@@ -66,7 +66,7 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
-      - name: Upload reports (tests & lint)
+      - name: Upload reports (tests, lint & Compose stability)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -74,6 +74,8 @@ jobs:
           path: |
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
+            app/build/compose-reports/
+            app/build/compose-metrics/
           if-no-files-found: ignore
 
   # R8 (minify + resource shrinking) only ever runs on a release build, and nothing used to build one

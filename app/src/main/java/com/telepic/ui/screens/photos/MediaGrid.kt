@@ -19,7 +19,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -120,6 +122,14 @@ fun MediaGrid(
     onLongSelect: (LocalMedia) -> Unit = {},
 ) {
     val spacing = TelepicTokens.spacing
+    // Read through `rememberUpdatedState` so the per-cell lambdas below can be `remember`ed without
+    // the callbacks among their keys. A bound method reference (`viewModel::toggleSelection`) is a
+    // *new instance* on every recomposition of the caller, so keying on it would recreate the lambda
+    // every time and defeat the whole point of hoisting it. These wrappers keep a stable instance
+    // that still reads the latest callback when it is invoked.
+    val currentOnSelected by rememberUpdatedState(onMediaSelected)
+    val currentOnToggle by rememberUpdatedState(onToggleSelect)
+    val currentOnLongSelect by rememberUpdatedState(onLongSelect)
     // Read fresh on every (re)composition: a process-lifetime remember kept labelling "Today"
     // for a session that crossed midnight. LocalDate.now() is cheap (no I/O), so staleness
     // only lasts until the next recomposition instead of forever.
@@ -157,17 +167,27 @@ fun MediaGrid(
             ) { index ->
                 when (val item = media[index]) {
                     is PhotosItem.Day -> DayHeader(epochDay = item.epochDay, absoluteLabel = item.label, today = today)
-                    is PhotosItem.Media -> MediaTile(
-                        media = item.media,
-                        backupState = backupStates[item.media.id] ?: MediaBackupVisualState.NONE,
-                        onClick = {
-                            if (selectionActive) onToggleSelect(item.media) else onMediaSelected(item.media)
-                        },
-                        onLongClick = { onLongSelect(item.media) },
-                        selected = item.media.id in selectedIds,
-                        selectionActive = selectionActive,
-                        isFavorite = item.media.id in favoriteIds,
-                    )
+                    is PhotosItem.Media -> {
+                        val cell = item.media
+                        // Hoisted into `remember` so each cell gets a *stable* lambda instance. Written
+                        // inline these capture the item, and a lambda that captures an unstable value
+                        // cannot be memoised — so `MediaTile` saw a new `onClick` on every parent
+                        // recomposition and could never skip, which is how a single backup-progress tick
+                        // ended up recomposing every visible tile.
+                        val onClick = remember(cell, selectionActive) {
+                            { if (selectionActive) currentOnToggle(cell) else currentOnSelected(cell) }
+                        }
+                        val onLongClick = remember(cell) { { currentOnLongSelect(cell) } }
+                        MediaTile(
+                            media = cell,
+                            backupState = backupStates[cell.id] ?: MediaBackupVisualState.NONE,
+                            onClick = onClick,
+                            onLongClick = onLongClick,
+                            selected = cell.id in selectedIds,
+                            selectionActive = selectionActive,
+                            isFavorite = cell.id in favoriteIds,
+                        )
+                    }
                     null -> Box(modifier = Modifier.aspectRatio(1f))
                 }
             }

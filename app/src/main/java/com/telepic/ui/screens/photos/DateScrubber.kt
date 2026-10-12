@@ -241,7 +241,12 @@ internal fun DateScrubber(
     val glidedFraction by animateFloatAsState(targetValue = rawFraction, label = "scrubGlide")
     val fraction = if (dragging) rawFraction else glidedFraction
 
-    val itemCount = gridState.layoutInfo.totalItemsCount
+    // Derived rather than read directly: `layoutInfo` is snapshot state that is replaced on every
+    // remeasure, i.e. on every frame of a scroll. Reading it in the composable body subscribed this
+    // whole rail to that, so the sections, ticks, bubble and thumb were recomposed per frame. The two
+    // derivedStateOf blocks around this line already did it correctly; this read was defeating them.
+    // The derived value only invalidates its readers when the *count* actually changes.
+    val itemCount by remember { derivedStateOf { gridState.layoutInfo.totalItemsCount } }
     val activeIndex = activeSectionFor(sections, fraction, itemCount)
     val window by remember(sections) {
         derivedStateOf {

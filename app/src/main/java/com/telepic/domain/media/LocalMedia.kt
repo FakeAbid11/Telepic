@@ -1,6 +1,7 @@
 package com.telepic.domain.media
 
 import android.net.Uri
+import androidx.compose.runtime.Immutable
 
 /**
  * Domain model for a single local media item, normalized from MediaStore.
@@ -8,7 +9,14 @@ import android.net.Uri
  * Deliberately free of Cursor / MediaStore column details and filesystem paths: identity is the
  * content URI + MediaStore id. A future content hash (recognition/dedup phase) can be associated
  * by id, but this phase intentionally stores none.
+ *
+ * [Immutable] is a data contract, not a UI hint, and it is load-bearing: without it the compiler
+ * infers this class as *unstable*, because [contentUri] is an `android.net.Uri` it cannot prove
+ * immutable. An unstable type passed to a composable is compared by identity, so a rebuilt instance
+ * invalidates the receiver — which is how one backup-progress tick used to recompose every visible
+ * grid tile. Every property is a `val` of an immutable type, so the annotation is truthful.
  */
+@Immutable
 data class LocalMedia(
     val id: Long,
     val contentUri: Uri,

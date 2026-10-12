@@ -6,6 +6,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Pure calendar-day helpers used for chronological grouping and human-friendly headers.
@@ -17,6 +18,38 @@ import java.util.Locale
  */
 object MediaDay {
     private val zone: ZoneId get() = ZoneId.systemDefault()
+
+    /**
+     * Formatters cached per locale.
+     *
+     * Building one is not free: `ofLocalizedDate` re-resolves the localized pattern and constructs a
+     * new formatter, and `ofPattern` compiles the pattern. These used to be built on *every* call —
+     * once per grid tile through the accessibility label, and once per day header inside the paging
+     * load, so paging a multi-year library rebuilt the same few formatters hundreds of times.
+     * [DateTimeFormatter] is immutable and thread-safe, so one per locale is enough. Keying by locale
+     * (rather than caching a single instance) keeps a runtime locale change correct.
+     */
+    private val absoluteDates = ConcurrentHashMap<Locale, DateTimeFormatter>()
+    private val monthDays = ConcurrentHashMap<Locale, DateTimeFormatter>()
+    private val weekdays = ConcurrentHashMap<Locale, DateTimeFormatter>()
+    private val years = ConcurrentHashMap<Locale, DateTimeFormatter>()
+
+    /** The FORMAT-category locale, which is the one `ofLocalizedDate` binds to. */
+    private fun formatLocale(): Locale = Locale.getDefault(Locale.Category.FORMAT)
+
+    private fun absoluteDate(locale: Locale): DateTimeFormatter =
+        absoluteDates.getOrPut(locale) {
+            DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale)
+        }
+
+    private fun monthDayFormatter(locale: Locale): DateTimeFormatter =
+        monthDays.getOrPut(locale) { DateTimeFormatter.ofPattern("MMMM d", locale) }
+
+    private fun weekdayFormatter(locale: Locale): DateTimeFormatter =
+        weekdays.getOrPut(locale) { DateTimeFormatter.ofPattern("EEEE", locale) }
+
+    private fun yearFormatter(locale: Locale): DateTimeFormatter =
+        years.getOrPut(locale) { DateTimeFormatter.ofPattern("yyyy", locale) }
 
     /** Stable, locale-independent day identity (ISO `yyyy-MM-dd`). Not for display. */
     fun dayKey(millis: Long): String = toLocalDate(millis).toString()
@@ -32,11 +65,11 @@ object MediaDay {
      * access to localized string resources.
      */
     fun label(millis: Long): String =
-        toLocalDate(millis).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG))
+        toLocalDate(millis).format(absoluteDate(formatLocale()))
 
     /** Localized month-and-day for dates within the current year ("October 8"). */
     fun monthDay(millis: Long, locale: Locale = Locale.getDefault()): String =
-        toLocalDate(millis).format(DateTimeFormatter.ofPattern("MMMM d", locale))
+        toLocalDate(millis).format(monthDayFormatter(locale))
 
     /**
      * The label for a *single item* header — the Viewer's top bar — as opposed to [label], which
@@ -50,11 +83,11 @@ object MediaDay {
 
     /** Localized weekday for the recent-week range ("Monday"). */
     fun weekday(millis: Long, locale: Locale = Locale.getDefault()): String =
-        toLocalDate(millis).format(DateTimeFormatter.ofPattern("EEEE", locale))
+        toLocalDate(millis).format(weekdayFormatter(locale))
 
     /** Localized year ("2023") for far-past grouping. */
     fun year(millis: Long, locale: Locale = Locale.getDefault()): String =
-        toLocalDate(millis).format(DateTimeFormatter.ofPattern("yyyy", locale))
+        toLocalDate(millis).format(yearFormatter(locale))
 
     /**
      * Whether [millis] falls on the device's today / yesterday / within the last week, relative to

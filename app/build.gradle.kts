@@ -132,6 +132,16 @@ android {
     }
 }
 
+// Compose compiler reports + metrics. These are the only way to *verify* the performance contract
+// rather than infer it: the class report states each type's inferred stability, and the composables
+// report states whether a function is `skippable`. Without them, "is LocalMedia stable?" and "can
+// MediaTile skip?" are guesses read out of bytecode. CI uploads both as the `telepic-reports`
+// artifact, so a regression that reintroduces an unstable parameter is visible in a diff.
+composeCompiler {
+    metricsDestination = layout.buildDirectory.dir("compose-metrics")
+    reportsDestination = layout.buildDirectory.dir("compose-reports")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
