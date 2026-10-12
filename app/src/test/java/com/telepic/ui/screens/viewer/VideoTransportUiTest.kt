@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.unit.dp
 import com.telepic.data.restore.RestoreFailure
 import com.telepic.ui.theme.TelepicTheme
 import com.telepic.ui.theme.TelepicTokens
@@ -37,6 +38,13 @@ class VideoTransportUiTest {
     @get:Rule
     val composeRule = createComposeRule()
 
+    /**
+     * The band the video surface reserves. Captured during composition because `TelepicTokens` is a
+     * `@ReadOnlyComposable` accessor — the same reason `ViewerUiTest` reads the bar expectation back
+     * inside `setContent` rather than outside it.
+     */
+    private var expectedBarHeight = 0.dp
+
     private fun transport(
         state: VideoTransportState = VideoTransportState(
             isPlaying = false,
@@ -53,6 +61,7 @@ class VideoTransportUiTest {
         onNext: () -> Unit = {},
     ) {
         composeRule.setContent {
+            expectedBarHeight = TelepicTokens.spacing.chromeBarHeight
             TelepicTheme {
                 VideoTransport(
                     state = state,
@@ -76,7 +85,7 @@ class VideoTransportUiTest {
         // A bar taller than the reservation would put its own controls under the bottom chrome; a
         // shorter one would leave a dead strip — the exact defect the stock media3 controller left.
         composeRule.onNodeWithTag(TAG_VIDEO_TRANSPORT)
-            .assertHeightIsEqualTo(TelepicTokens.spacing.chromeBarHeight)
+            .assertHeightIsEqualTo(expectedBarHeight)
     }
 
     @Test
