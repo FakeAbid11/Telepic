@@ -25,10 +25,16 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** Cloud screen states, driven by a fake repository (no Telegram/device). */
+/**
+ * Cloud screen states, driven by a fake repository (no Telegram/device).
+ *
+ * The viewport is pinned to a real phone size because Robolectric's default (320x470dp) is smaller
+ * than any device Telepic targets, and the consent card — the longest copy any `EmptyState` carries
+ * — overflows it: its second action is laid out below the window, where a tap can never reach it.
+ */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [33])
+@Config(sdk = [33], qualifiers = "w411dp-h891dp")
 class CloudScreenUiTest {
 
     @get:Rule
@@ -179,11 +185,13 @@ class CloudScreenUiTest {
         // Unmerged: `EmptyState` merges its whole body into one semantics node, so in the merged
         // tree both labels resolve to the container and `performClick` lands wherever its centre
         // happens to be — the second click would re-hit the first button.
-        composeRule.onNodeWithText("Use this channel", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithText("Use this channel", useUnmergedTree = true).assertIsDisplayed().performClick()
         composeRule.waitForIdle()
         org.junit.Assert.assertEquals(1, repo.confirmCalls)
 
-        composeRule.onNodeWithText("Create a new one", useUnmergedTree = true).performClick()
+        // Asserted displayed, not merely present: "offered with both choices" is only true if the
+        // second one is actually on screen and tappable.
+        composeRule.onNodeWithText("Create a new one", useUnmergedTree = true).assertIsDisplayed().performClick()
         composeRule.waitForIdle()
         org.junit.Assert.assertEquals(1, repo.createNewCalls)
     }

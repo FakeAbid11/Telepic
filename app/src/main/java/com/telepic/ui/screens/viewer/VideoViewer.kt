@@ -319,6 +319,15 @@ internal data class VideoTransportState(
      */
     fun seekTarget(fraction: Float): Long? =
         if (durationMs <= 0L) null else (fraction.coerceIn(0f, 1f) * durationMs).toLong()
+
+    /**
+     * What the position clock shows: the scrub target while a drag is in progress ([dragFraction]
+     * non-null), the last polled playback position otherwise. Hoisted out of the composable so the
+     * rule is pinned by arithmetic — a gesture test cannot hold the drag open long enough to read it,
+     * because the slider's own semantics action finishes the gesture as it reports the target.
+     */
+    fun displayPositionMs(dragFraction: Float?): Long =
+        dragFraction?.let { seekTarget(it) } ?: positionMs
 }
 
 /**
@@ -402,7 +411,7 @@ internal fun VideoTransport(
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     // The clock tracks the scrub, not just the playback: a scrubbing user needs to read the position
     // they are aiming at, not the one they left.
-    val displayPositionMs = dragFraction?.let { state.seekTarget(it) } ?: state.positionMs
+    val displayPositionMs = state.displayPositionMs(dragFraction)
     Row(
         modifier = modifier
             .fillMaxWidth()

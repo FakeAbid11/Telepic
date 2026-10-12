@@ -62,6 +62,25 @@ class VideoTransportTest {
     }
 
     @Test
+    fun `the clock reads the scrub target while dragging and the position otherwise`() {
+        val state = VideoTransportState(positionMs = 30_000, durationMs = 60_000)
+        // Not dragging: the last polled playback position.
+        assertEquals(30_000L, state.displayPositionMs(null))
+        // Dragging: the position the user is aiming at, not the one they left.
+        assertEquals(0L, state.displayPositionMs(0f))
+        assertEquals(15_000L, state.displayPositionMs(0.25f))
+        assertEquals(60_000L, state.displayPositionMs(1f))
+        // Clamped exactly as a seek is, so the clock cannot read past the end.
+        assertEquals(60_000L, state.displayPositionMs(2f))
+    }
+
+    @Test
+    fun `an unknown duration has no scrub target, so the clock keeps the position`() {
+        val state = VideoTransportState(positionMs = 12_000, durationMs = 0)
+        assertEquals(12_000L, state.displayPositionMs(0.5f))
+    }
+
+    @Test
     fun `a position past a freshly resolved duration is clamped, not drawn past the end`() {
         val playback = VideoPlaybackState()
         playback.onPositionChanged(50_000L)
