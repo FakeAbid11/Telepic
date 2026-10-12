@@ -4,6 +4,7 @@ import android.net.Uri
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.NeighborDirection
+import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
 import com.telepic.domain.cloud.CloudPreview
@@ -94,6 +95,27 @@ class ViewerViewModelRaceTest {
         ): com.telepic.domain.cloud.CloudUploadResult = throw NotImplementedError()
     }
 
+    /**
+     * Runs [duringWrite] from *inside* the trash write, which is how the race is made deterministic:
+     * the swipe is guaranteed to happen before the write returns, with no reliance on dispatcher
+     * timing or on when a suspended coroutine happens to resume.
+     */
+    private class SwipingOrg(private val duringWrite: suspend () -> Unit) : MediaOrganizationRepository {
+        override val favoriteIds: Flow<Set<Long>> = flowOf(emptySet())
+        override val archivedIds: Flow<Set<Long>> = flowOf(emptySet())
+        override val trashedIds: Flow<Set<Long>> = flowOf(emptySet())
+        override suspend fun hiddenIds(): Set<Long> = emptySet()
+        override suspend fun isFavorite(id: Long): Boolean = false
+        override suspend fun isArchived(id: Long): Boolean = false
+        override suspend fun isTrashed(id: Long): Boolean = false
+        override suspend fun setFavorite(id: Long, favorite: Boolean) = Unit
+        override suspend fun setArchived(id: Long, archived: Boolean) = Unit
+        override suspend fun moveToTrash(id: Long) { duringWrite() }
+        override suspend fun restoreFromTrash(id: Long) = Unit
+        override suspend fun markDeletedFromStore(id: Long) = Unit
+        override suspend fun remove(id: Long) = Unit
+    }
+
     private fun completedGate(): CompletableDeferred<Unit> = CompletableDeferred<Unit>().apply { complete(Unit) }
 
     @Test
@@ -135,5 +157,29 @@ class ViewerViewModelRaceTest {
         assertEquals(CloudDownload.Idle, state.download)
         val item = state.item as ViewerItem.Cloud
         assertNull(item.originalPath)
+    }
+
+    @Test
+    fun `a trash write that lands after the user swipes does not publish its confirmation`() = runBlocking {
+        lateinit var vm: ViewerViewModel
+        // The repository swipes to item 9 from inside the write for item 5, so the ordering is
+        // fixed rather than dependent on when a suspended coroutine resumes.
+        val org = SwipingOrg { vm.open(MediaSource.Local(9)) }
+        vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = GatedLookup(mapOf(5L to local(5), 9L to local(9))),
+            cloudRepository = GatedCloud(emptyList(), completedGate()),
+            organizationRepository = org,
+        )
+        vm.uiState.first { it.status == ViewerStatus.READY }
+
+        vm.moveToTrash()
+
+        // The swipe really did happen before the guard ran...
+        assertEquals(MediaSource.Local(9), vm.uiState.value.source)
+        // ...so item 5's write was dropped, and "Moved to trash" must not appear over item 9.
+        // Publishing it there reports an outcome for something the user is no longer looking at, and
+        // the Undo it offers would act on item 9 rather than restoring item 5.
+        assertNull(vm.message.value)
     }
 }

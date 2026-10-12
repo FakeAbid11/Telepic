@@ -13,10 +13,10 @@ import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -346,8 +346,12 @@ private fun OsmMap(
                 mapViewRef = null
             },
         )
-        // Reframes all the photos on demand, so a stray pan is never a dead end.
-        SmallFloatingActionButton(
+        // Reframes all the photos on demand, so a stray pan is never a dead end. The regular FAB
+        // (56dp) rather than the small one (40dp): Material3's FAB does not expand its own touch
+        // target — `FloatingActionButtonKt` never applies `minimumInteractiveComponentSize`, and
+        // neither does the clickable `Surface` it delegates to — so the small variant is a 40dp
+        // target, under the 48dp accessibility floor, on this screen's only way out of a stray pan.
+        FloatingActionButton(
             onClick = { pendingCamera = MapCameraResolver.recenter(plan) },
             modifier = Modifier
                 .align(Alignment.BottomEnd)

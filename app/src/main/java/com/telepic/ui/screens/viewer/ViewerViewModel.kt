@@ -236,12 +236,14 @@ class ViewerViewModel(
     }
 
     /** Move the current local item to Trash (app-level; the file is preserved until a delete). */
-    fun moveToTrash() = mutateFlags { repo, id, current ->
+    fun moveToTrash() = mutateFlags(
+        // Posted after the write returns, so the confirmation can never report a write that did not
+        // land, and inside the identity guard, so it can never land on an item the user has swiped
+        // to in the meantime. This is the only feedback the action gets: the Viewer stays on the
+        // item and it keeps rendering unchanged.
+        onWriteLanded = { _message.value = ViewerMessage.MovedToTrash },
+    ) { repo, id, current ->
         repo.moveToTrash(id)
-        // Posted *after* the write returns, so the confirmation can never report a write that did
-        // not land. This is the only feedback the action gets: the Viewer stays on the item and it
-        // keeps rendering unchanged.
-        _message.value = ViewerMessage.MovedToTrash
         current.copy(isTrashed = true)
     }
 
@@ -249,9 +251,10 @@ class ViewerViewModel(
      * Undo of [moveToTrash] — the action the confirmation offers. Restores the item and drops the
      * message, so the bar disappears on the same signal that says the restore landed.
      */
-    fun restoreFromTrash() = mutateFlags { repo, id, current ->
+    fun restoreFromTrash() = mutateFlags(
+        onWriteLanded = { _message.value = null },
+    ) { repo, id, current ->
         repo.restoreFromTrash(id)
-        _message.value = null
         current.copy(isTrashed = false)
     }
 
@@ -260,7 +263,17 @@ class ViewerViewModel(
         _message.value = null
     }
 
-    private fun mutateFlags(action: suspend (MediaOrganizationRepository, Long, ViewerFlags) -> ViewerFlags) {
+    private fun mutateFlags(
+        /**
+         * Runs only after the write has landed **and** the Viewer is still on the source the write
+         * was raised for. The transient message belongs here rather than inside [action]: `action`
+         * runs *before* the identity check below, so a message set there is published even when the
+         * user has already swiped to another item — reporting an outcome for something they are no
+         * longer looking at, and offering an Undo that acts on the new item instead.
+         */
+        onWriteLanded: (() -> Unit)? = null,
+        action: suspend (MediaOrganizationRepository, Long, ViewerFlags) -> ViewerFlags,
+    ) {
         val repo = organizationRepository ?: return
         val id = (_uiState.value.item as? ViewerItem.Local)?.media?.id ?: return
         val requestedSource = _uiState.value.source
@@ -270,6 +283,7 @@ class ViewerViewModel(
             // the UI state must never be overwritten for a source the user has already left.
             if (_uiState.value.source == requestedSource) {
                 _flags.value = updated
+                onWriteLanded?.invoke()
             }
         }
     }
