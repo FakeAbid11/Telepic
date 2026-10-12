@@ -15,6 +15,18 @@ sealed interface CloudStatus {
     data object Offline : CloudStatus
     data object DestinationMissing : CloudStatus
     data class DestinationInvalid(val reason: String) : CloudStatus
+
+    /**
+     * A same-name channel was found that this account can post to but does not own. It *is* usable,
+     * so the repository never invents a replacement and never writes anything: it stops here, and the
+     * screen must ask the user to confirm or decline before a single byte is backed up to a channel
+     * the user does not control.
+     */
+    data class DestinationConfirmation(
+        val chatId: Long,
+        val title: String,
+        val reason: String,
+    ) : CloudStatus
     data class Failed(val message: String) : CloudStatus
 }
 

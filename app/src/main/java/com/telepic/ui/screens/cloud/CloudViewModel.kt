@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudPreviewState
+import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.cloud.CloudUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,6 +49,20 @@ class CloudViewModel(
     fun refresh() {
         _previews.value = emptyMap()
         viewModelScope.launch { repository.refresh() }
+    }
+
+    /**
+     * Confirms the same-name channel the repository is offering ([CloudStatus.DestinationConfirmation]):
+     * the user has seen it and said yes, so it is persisted and browsed. A no-op while no offer is
+     * outstanding.
+     */
+    fun confirmDestination() {
+        viewModelScope.launch { repository.confirmDestination() }
+    }
+
+    /** Declines that offer — Telepic creates a channel this account owns instead. */
+    fun createNewDestination() {
+        viewModelScope.launch { repository.createNewDestination() }
     }
 
     /**

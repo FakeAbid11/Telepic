@@ -37,12 +37,23 @@ class CloudViewModelTest {
         private val previewPaths: Map<Long, String> = emptyMap(),
     ) : CloudRepository {
         var previewCalls = 0
+        var confirmCalls = 0
+        var createNewCalls = 0
         override val status: StateFlow<CloudStatus> = MutableStateFlow(CloudStatus.Ready).asStateFlow()
         override val destinationTitle: StateFlow<String?> = MutableStateFlow("Telepic Backup").asStateFlow()
         override val media: Flow<List<CloudMedia>> = flowOf(emptyList())
         override suspend fun prepare() = Unit
         override suspend fun refresh() = Unit
         override suspend fun ensureDestination(): TelepicCloudDestination? = null
+        override suspend fun confirmDestination(): TelepicCloudDestination? {
+            confirmCalls++
+            return null
+        }
+
+        override suspend fun createNewDestination(): TelepicCloudDestination? {
+            createNewCalls++
+            return null
+        }
         override suspend fun getPreview(media: CloudMedia): CloudPreview? {
             previewCalls++
             val path = previewPaths[media.messageId] ?: return null
@@ -141,5 +152,17 @@ class CloudViewModelTest {
         vm.refresh()
         settle()
         assertTrue(vm.previews.value.isEmpty())
+    }
+
+    @Test
+    fun `the two answers to a destination confirmation both reach the repository`() {
+        // The consent path is the only reason these exist: one call each, no third option.
+        vm.confirmDestination()
+        settle()
+        assertEquals(1, repo.confirmCalls)
+
+        vm.createNewDestination()
+        settle()
+        assertEquals(1, repo.createNewCalls)
     }
 }

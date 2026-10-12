@@ -43,7 +43,9 @@ object ChatValidator {
         candidate.isOwnedByAccount -> DestinationVerdict.Valid
         else -> DestinationVerdict.NeedsConfirmation(
             candidate.chatId,
-            "A matching channel exists but is not owned by this account; explicit confirmation required.",
+            "A channel named \"${TelepicDestinationTitle}\" already exists and this account can post to it, " +
+                "but it does not own it. Telepic will only back up here if you confirm it — or you can have " +
+                "Telepic create a channel this account owns instead.",
         )
     }
 

@@ -99,6 +99,8 @@ class ViewerViewModelTest {
         override suspend fun prepare() = Unit
         override suspend fun refresh() = Unit
         override suspend fun ensureDestination(): TelepicCloudDestination? = null
+        override suspend fun confirmDestination(): TelepicCloudDestination? = null
+        override suspend fun createNewDestination(): TelepicCloudDestination? = null
         override suspend fun getPreview(media: CloudMedia): CloudPreview? = CloudPreview("/tmp/prev_${media.messageId}", null, null)
         override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? = null
         override suspend fun uploadMedia(request: com.telepic.domain.cloud.CloudUploadRequest, onProgress: (com.telepic.domain.cloud.CloudUploadProgress) -> Unit, onSent: suspend (Long, Long) -> Unit) = null

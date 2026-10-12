@@ -77,6 +77,13 @@ class TelegramCloudRepository(
     private val _destinationTitle = MutableStateFlow<String?>(null)
     override val destinationTitle: StateFlow<String?> = _destinationTitle.asStateFlow()
 
+    /**
+     * The same-name channel last offered for confirmation. Mirrors the offer in
+     * [CloudStatus.DestinationConfirmation] but keeps the full [ChatCandidate], so the confirm path
+     * persists exactly what the user saw rather than re-deriving it from a partial status.
+     */
+    private val _pendingConfirmation = MutableStateFlow<ChatCandidate?>(null)
+
     override val media: Flow<List<CloudMedia>> =
         manifestDao.observeAll().map { rows -> rows.map { it.toDomain() } }
 
@@ -101,7 +108,9 @@ class TelegramCloudRepository(
 
     private suspend fun refreshLocked() {
         val destination = currentDestination() ?: run {
-            _status.value = CloudStatus.DestinationMissing
+            // An outstanding confirmation offer is not a missing destination: overwriting the status
+            // here would erase the question the screen is still asking the user.
+            if (_pendingConfirmation.value == null) _status.value = CloudStatus.DestinationMissing
             return
         }
         _status.value = CloudStatus.Refreshing
@@ -135,15 +144,25 @@ class TelegramCloudRepository(
         currentDestination()?.let { return it }
 
         try {
-            val found = dataSource.searchDestinationCandidates()
-                .firstOrNull { it.isValid() }
-                ?: dataSource.createDestination()?.takeIf { it.isValid() }
-
-            if (found == null) {
-                _status.value = CloudStatus.DestinationMissing
+            val candidates = dataSource.searchDestinationCandidates()
+            // An owned, validated channel is used immediately — no consent needed.
+            candidates.firstOrNull { it.isValid() }?.let { return persistDestination(it) }
+            // A postable-but-not-owned same-name channel is *offered*, never auto-selected. Nothing is
+            // persisted here: that is the whole point of [DestinationVerdict.NeedsConfirmation], and
+            // discarding it (as this path used to) demoted a usable channel to DestinationMissing and
+            // silently created a second one on top of it.
+            val ambiguous = candidates.firstOrNull { it.needsConfirmation() }
+            if (ambiguous != null) {
+                val verdict = ChatValidator.validate(ambiguous) as DestinationVerdict.NeedsConfirmation
+                _pendingConfirmation.value = ambiguous
+                _status.value = CloudStatus.DestinationConfirmation(
+                    chatId = verdict.chatId,
+                    title = ambiguous.title,
+                    reason = verdict.reason,
+                )
                 return null
             }
-            return persistDestination(found)
+            return createOwnDestinationLocked()
         } catch (network: CloudNetworkException) {
             _status.value = CloudStatus.Offline
         } catch (cancellation: CancellationException) {
@@ -152,6 +171,61 @@ class TelegramCloudRepository(
             _status.value = CloudStatus.Failed(safeMessage(throwable))
         }
         return null
+    }
+
+    /**
+     * Confirms the offered same-name channel: the user has just been shown it and said yes, so it is
+     * persisted and browsed. Guarded on the offer still being outstanding — a tap that arrives after
+     * a decline (or after the offer was already resolved) persists nothing.
+     */
+    override suspend fun confirmDestination(): TelepicCloudDestination? = withContext(dispatcher) {
+        if (!isAuthorized()) {
+            _status.value = CloudStatus.NotAuthenticated
+            return@withContext null
+        }
+        if (_status.value !is CloudStatus.DestinationConfirmation) return@withContext null
+        val candidate = _pendingConfirmation.value ?: return@withContext null
+        mutex.withLock {
+            val destination = persistDestination(candidate)
+            // Cleared only once it is actually persisted: a failed write leaves the offer standing so
+            // the user can press the same button again.
+            _pendingConfirmation.value = null
+            _destinationTitle.value = destination.title
+            refreshLocked()
+            destination
+        }
+    }
+
+    /**
+     * Declines the offered same-name channel and creates one this account owns instead. The offer is
+     * dropped before anything is created, so a later tap cannot resurrect a channel the user refused.
+     */
+    override suspend fun createNewDestination(): TelepicCloudDestination? = withContext(dispatcher) {
+        if (!isAuthorized()) {
+            _status.value = CloudStatus.NotAuthenticated
+            return@withContext null
+        }
+        if (_status.value !is CloudStatus.DestinationConfirmation) return@withContext null
+        _pendingConfirmation.value = null
+        _status.value = CloudStatus.Connecting
+        mutex.withLock {
+            val destination = createOwnDestinationLocked()
+            if (destination != null) {
+                _destinationTitle.value = destination.title
+                refreshLocked()
+            }
+            destination
+        }
+    }
+
+    /** Creates a fresh Telepic-owned destination, or reports [CloudStatus.DestinationMissing]. */
+    private suspend fun createOwnDestinationLocked(): TelepicCloudDestination? {
+        val created = dataSource.createDestination()?.takeIf { it.isValid() }
+        if (created == null) {
+            _status.value = CloudStatus.DestinationMissing
+            return null
+        }
+        return persistDestination(created)
     }
 
     override suspend fun getPreview(media: CloudMedia): CloudPreview? = withContext(dispatcher) {
@@ -319,6 +393,9 @@ class TelegramCloudRepository(
 
     private fun ChatCandidate.isValid(): Boolean =
         ChatValidator.validate(this) is DestinationVerdict.Valid
+
+    private fun ChatCandidate.needsConfirmation(): Boolean =
+        ChatValidator.validate(this) is DestinationVerdict.NeedsConfirmation
 
     private fun isAuthorized(): Boolean = authState.value is TelegramAuthState.Authorized
 

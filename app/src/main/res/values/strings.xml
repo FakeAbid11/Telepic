@@ -27,6 +27,9 @@
     <string name="cloud_notconnected_body">Sign in to Telegram during setup to browse your Telepic cloud.</string>
     <string name="cloud_settingup_title">Setting up your cloud</string>
     <string name="cloud_settingup_body">Telepic is preparing your Telepic Backup destination. Try again in a moment.</string>
+    <string name="cloud_destination_confirm_title">Use the existing “%1$s” channel?</string>
+    <string name="cloud_destination_confirm_use">Use this channel</string>
+    <string name="cloud_destination_confirm_create">Create a new one</string>
     <string name="cloud_empty_title">Your cloud is empty</string>
     <string name="cloud_empty_body">Backed-up photos and videos will appear here once media is added to Telepic Backup.</string>
     <string name="cloud_error_title">Couldn\'t load your cloud</string>

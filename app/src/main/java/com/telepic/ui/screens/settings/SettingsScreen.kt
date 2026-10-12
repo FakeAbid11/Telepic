@@ -61,7 +61,10 @@ private val CloudStatus.connectionSummaryRes: Int
         CloudStatus.Connecting, CloudStatus.Initializing -> R.string.settings_connection_connecting
         CloudStatus.Offline -> R.string.settings_connection_offline
         CloudStatus.NotAuthenticated -> R.string.settings_account_status_disconnected
-        CloudStatus.DestinationMissing -> R.string.settings_connection_no_channel
+        // An outstanding confirmation offer is still "not set up": Telepic has nowhere to back up
+        // until the user answers, and it must not read as connected in the meantime.
+        CloudStatus.DestinationMissing, is CloudStatus.DestinationConfirmation ->
+            R.string.settings_connection_no_channel
         is CloudStatus.DestinationInvalid, is CloudStatus.Failed -> R.string.settings_connection_problem
     }
 

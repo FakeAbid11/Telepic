@@ -45,6 +45,18 @@ class CloudScreenUiTest {
         override suspend fun prepare() = Unit
         override suspend fun refresh() = Unit
         override suspend fun ensureDestination(): TelepicCloudDestination? = null
+        var confirmCalls = 0
+        var createNewCalls = 0
+        override suspend fun confirmDestination(): TelepicCloudDestination? {
+            confirmCalls++
+            return null
+        }
+
+        override suspend fun createNewDestination(): TelepicCloudDestination? {
+            createNewCalls++
+            return null
+        }
+
         override suspend fun getPreview(media: CloudMedia): CloudPreview? = null
         override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? = null
         override suspend fun uploadMedia(
@@ -138,5 +150,38 @@ class CloudScreenUiTest {
         composeRule.onNodeWithContentDescription("Cloud photo").performClick()
         org.junit.Assert.assertEquals(100L, opened?.chatId)
         org.junit.Assert.assertEquals(7L, opened?.messageId)
+    }
+
+    /**
+     * The consent path for a postable-but-not-owned same-name channel. Both halves matter: the user
+     * is asked, and whichever way they answer, the answer reaches the repository — Telepic never
+     * decides this on its own behalf.
+     */
+    @Test
+    fun `a postable but not owned same-name channel is offered with both choices`() {
+        val repo = FakeCloudRepository(
+            status = CloudStatus.DestinationConfirmation(
+                chatId = 700L,
+                title = "Telepic Backup",
+                reason = "A channel named \"Telepic Backup\" already exists and this account can post to it, " +
+                    "but it does not own it. Telepic will only back up here if you confirm it — or you can have " +
+                    "Telepic create a channel this account owns instead.",
+            ),
+            title = null,
+            mediaList = emptyList(),
+        )
+        render(repo)
+
+        composeRule.onNodeWithText("Use the existing “Telepic Backup” channel?").assertIsDisplayed()
+        // Never silently creating a second channel is the whole point: the offer names the risk.
+        composeRule.onNodeWithText("does not own it", substring = true).assertIsDisplayed()
+
+        composeRule.onNodeWithText("Use this channel").performClick()
+        composeRule.waitForIdle()
+        org.junit.Assert.assertEquals(1, repo.confirmCalls)
+
+        composeRule.onNodeWithText("Create a new one").performClick()
+        composeRule.waitForIdle()
+        org.junit.Assert.assertEquals(1, repo.createNewCalls)
     }
 }

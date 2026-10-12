@@ -48,6 +48,8 @@ class RestoreRepositoryTest {
         override suspend fun prepare() = Unit
         override suspend fun refresh() = Unit
         override suspend fun ensureDestination(): TelepicCloudDestination? = null
+        override suspend fun confirmDestination(): TelepicCloudDestination? = null
+        override suspend fun createNewDestination(): TelepicCloudDestination? = null
         override suspend fun getPreview(media: CloudMedia): CloudPreview? = null
         override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? =
             downloadedPath?.let { LocalDownloadedMedia(it, media.chatId, media.messageId) }

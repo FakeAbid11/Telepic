@@ -33,6 +33,19 @@ interface CloudRepository {
     /** Resolve the Telepic Backup destination (reuse → discover → create), persisting it. */
     suspend fun ensureDestination(): TelepicCloudDestination?
 
+    /**
+     * Confirms the same-name channel offered by [CloudStatus.DestinationConfirmation]: persists it as
+     * the destination and refreshes. A no-op while no offer is outstanding, so a stale tap can never
+     * persist a channel the user has not just been shown.
+     */
+    suspend fun confirmDestination(): TelepicCloudDestination?
+
+    /**
+     * Declines the offered same-name channel — Telepic then creates a channel this account owns,
+     * which is what the discovery path does when nothing usable is found. Same no-op guard.
+     */
+    suspend fun createNewDestination(): TelepicCloudDestination?
+
     suspend fun getPreview(media: CloudMedia): CloudPreview?
 
     suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia?

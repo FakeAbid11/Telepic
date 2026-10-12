@@ -103,6 +103,8 @@ fun CloudScreen(
                     onRetryPreview = viewModel::retryPreview,
                     onOpen = onOpenMedia,
                     onRetry = viewModel::refresh,
+                    onConfirmDestination = viewModel::confirmDestination,
+                    onDeclineDestination = viewModel::createNewDestination,
                 )
             }
         }
@@ -138,6 +140,8 @@ private fun CloudContent(
     onRetryPreview: (CloudMedia) -> Unit,
     onOpen: (CloudMedia) -> Unit,
     onRetry: () -> Unit,
+    onConfirmDestination: () -> Unit = {},
+    onDeclineDestination: () -> Unit = {},
 ) {
     // Read the status once: the branches below smart-cast this local instead of re-reading
     // `uiState.status` and casting (a re-read could observe a different value than the check did).
@@ -166,6 +170,16 @@ private fun CloudContent(
             title = stringResource(R.string.cloud_settingup_title),
             description = cloudStatus.reason,
             primaryAction = StateAction(stringResource(R.string.cloud_retry), onRetry),
+        )
+        // The consent path for a postable-but-not-owned same-name channel. Two explicit choices,
+        // neither of them a default: Telepic never decides this on the user's behalf, because the
+        // alternative (auto-creating a second channel) is exactly what the user did not ask for.
+        is CloudStatus.DestinationConfirmation -> EmptyState(
+            icon = Icons.Outlined.CloudSync,
+            title = stringResource(R.string.cloud_destination_confirm_title, cloudStatus.title),
+            description = cloudStatus.reason,
+            primaryAction = StateAction(stringResource(R.string.cloud_destination_confirm_use), onConfirmDestination),
+            secondaryAction = StateAction(stringResource(R.string.cloud_destination_confirm_create), onDeclineDestination),
         )
         is CloudStatus.Failed -> ErrorState(
             title = stringResource(R.string.cloud_error_title),

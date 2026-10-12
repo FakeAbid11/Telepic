@@ -182,6 +182,87 @@ class TelegramCloudRepositoryTest {
     }
 
     @Test
+    fun `a postable but not owned same-name channel is offered, never auto-selected`() = runBlocking {
+        val source = FakeDataSource(candidates = listOf(candidate(700L, owned = false)), created = candidate(900L))
+        val r = repo(source)
+        r.prepare()
+
+        val status = r.status.value
+        assertTrue("expected a confirmation offer, got $status", status is CloudStatus.DestinationConfirmation)
+        status as CloudStatus.DestinationConfirmation
+        assertEquals(700L, status.chatId)
+        assertEquals("Telepic Backup", status.title)
+        assertTrue("the offer must name the risk", status.reason.contains("does not own"))
+        // Nothing persisted, and no second channel created on top of the one that already exists.
+        assertNull(db.cloudDestinationDao().find("telegram"))
+        assertEquals(0, source.createCalls)
+    }
+
+    @Test
+    fun `confirming the offered channel persists it and browses it`() = runBlocking {
+        val source = FakeDataSource(
+            candidates = listOf(candidate(700L, owned = false)),
+            media = listOf(mediaItem(1)),
+        )
+        val r = repo(source)
+        r.prepare()
+
+        val destination = r.confirmDestination()
+        assertEquals(700L, destination?.chatId)
+        assertEquals(700L, db.cloudDestinationDao().find("telegram")?.chatId)
+        assertEquals(CloudStatus.Ready, r.status.value)
+        assertEquals(1, db.cloudMediaManifestDao().count())
+    }
+
+    @Test
+    fun `declining the offered channel creates one this account owns`() = runBlocking {
+        val source = FakeDataSource(
+            candidates = listOf(candidate(700L, owned = false)),
+            created = candidate(900L),
+            media = listOf(mediaItem(1)),
+        )
+        val r = repo(source)
+        r.prepare()
+
+        val destination = r.createNewDestination()
+        assertEquals(900L, destination?.chatId)
+        assertEquals(900L, db.cloudDestinationDao().find("telegram")?.chatId)
+        assertEquals(CloudStatus.Ready, r.status.value)
+    }
+
+    @Test
+    fun `confirming with no offer outstanding persists nothing`() = runBlocking {
+        val source = FakeDataSource(candidates = listOf(candidate()))
+        val r = repo(source)
+        r.prepare()
+        // A stray confirm (a stale tap after the offer was resolved) must not re-point anything.
+        assertNull(r.confirmDestination())
+        assertEquals(100L, db.cloudDestinationDao().find("telegram")?.chatId)
+        assertEquals(CloudStatus.Ready, r.status.value)
+    }
+
+    @Test
+    fun `a manual refresh does not erase an outstanding confirmation offer`() = runBlocking {
+        val source = FakeDataSource(candidates = listOf(candidate(700L, owned = false)))
+        val r = repo(source)
+        r.prepare()
+        r.refresh()
+        // "Destination missing" would erase the question the screen is still asking.
+        assertTrue(r.status.value is CloudStatus.DestinationConfirmation)
+    }
+
+    @Test
+    fun `an unauthenticated session cannot confirm a destination`() = runBlocking {
+        val auth = MutableStateFlow<TelegramAuthState>(TelegramAuthState.NotConnected)
+        val source = FakeDataSource(candidates = listOf(candidate(700L, owned = false)))
+        val r = repo(source, auth)
+        r.prepare()
+        assertNull(r.confirmDestination())
+        assertNull(r.createNewDestination())
+        assertTrue(r.status.value is CloudStatus.NotAuthenticated)
+    }
+
+    @Test
     fun `empty cloud is Empty not an error`() = runBlocking {
         val r = repo(FakeDataSource(candidates = listOf(candidate()), media = emptyList()))
         r.prepare()
