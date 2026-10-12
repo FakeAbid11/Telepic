@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepic.R
@@ -97,7 +99,13 @@ fun BackupCenterScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = spacing.md),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = spacing.screenMargin),
+                // Bottom padding so the last queue row is not flush against the screen edge — the
+                // list is the last child of a full-height column and has nothing below it.
+                contentPadding = PaddingValues(
+                    start = spacing.screenMargin,
+                    end = spacing.screenMargin,
+                    bottom = spacing.xl,
+                ),
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
                 items(state.items, key = { it.id }) { item ->
@@ -166,7 +174,14 @@ private fun BackupItemRow(item: BackupItem, onRetry: () -> Unit, onCancel: () ->
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = item.fileName ?: item.localMediaId, style = MaterialTheme.typography.bodyLarge)
+                // Clamped: an Android screenshot filename runs past 50 characters, and an unbounded one
+                // wrapped onto a second line and made that card taller than every other in the list.
+                Text(
+                    text = item.fileName ?: item.localMediaId,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Text(
                     text = stringResource(if (stalled) R.string.backup_queue_state_stalled else item.state.labelRes()),
                     style = MaterialTheme.typography.labelMedium,

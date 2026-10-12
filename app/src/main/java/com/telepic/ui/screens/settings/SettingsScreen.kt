@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,6 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepic.BuildConfig
 import com.telepic.R
@@ -122,9 +126,21 @@ fun SettingsScreen(
     val showGifs by viewModel.showGifsInTimeline.collectAsStateWithLifecycle()
     val startMuted by viewModel.startVideosMuted.collectAsStateWithLifecycle()
     val appLockEnabled by viewModel.appLockEnabled.collectAsStateWithLifecycle()
+    val isDeviceSecure by viewModel.isDeviceSecure.collectAsStateWithLifecycle()
     val localCount by viewModel.localLibraryCount.collectAsStateWithLifecycle()
     val localCountLoaded by viewModel.localLibraryCountLoaded.collectAsStateWithLifecycle()
     val cloudCount by viewModel.cloudLibraryCount.collectAsStateWithLifecycle()
+
+    // The device's credential state is re-read on resume. The user sets a PIN in system settings and
+    // comes back; the app-lock row must reflect that on the frame they arrive, not after a restart.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshDeviceSecurity()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // "Back up now" only means something once an automatic option is configured. SELECT_FOLDER with
     // no folders picked backs up nothing, so it counts as unconfigured — matching the coordinator,
@@ -291,13 +307,13 @@ fun SettingsScreen(
                 // offering a toggle that would silently never fire.
                 SettingsToggleRow(
                     title = stringResource(R.string.settings_security_app_lock),
-                    summary = if (viewModel.isDeviceSecure) {
+                    summary = if (isDeviceSecure) {
                         stringResource(R.string.settings_security_app_lock_summary)
                     } else {
                         stringResource(R.string.settings_security_app_lock_unavailable)
                     },
                     checked = appLockEnabled,
-                    enabled = viewModel.isDeviceSecure,
+                    enabled = isDeviceSecure,
                     onCheckedChange = viewModel::setAppLockEnabled,
                 )
             }

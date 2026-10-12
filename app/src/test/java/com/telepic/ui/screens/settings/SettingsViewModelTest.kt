@@ -156,6 +156,7 @@ class SettingsViewModelTest {
         coordinator: RecordingCoordinator = RecordingCoordinator(),
         albums: List<Album> = emptyList(),
         albumRepository: AlbumRepository = FakeAlbums(albums),
+        deviceSecureReader: () -> Boolean = { false },
     ) = SettingsViewModel(
         telegramAuthController = auth,
         onboardingRepository = onboarding,
@@ -163,6 +164,7 @@ class SettingsViewModelTest {
         albumRepository = albumRepository,
         backupCoordinator = coordinator,
         appContext = ApplicationProvider.getApplicationContext<Context>(),
+        deviceSecureReader = deviceSecureReader,
         ioDispatcher = Dispatchers.Unconfined,
     )
 
@@ -286,11 +288,32 @@ class SettingsViewModelTest {
 
         // Robolectric's default KeyguardManager reports no device credential, so the row must be
         // switched off rather than offering a lock the device could never enforce.
-        assertFalse(vm.isDeviceSecure)
+        assertFalse(vm.isDeviceSecure.value)
 
         vm.setAppLockEnabled(true)
         runCurrent()
         assertTrue(settings.appLock.value)
+    }
+
+    @Test
+    fun `the app lock row refreshes when the device gains a credential`() = runTest {
+        var secure = false
+        val vm = viewModel(deviceSecureReader = { secure })
+
+        assertFalse(vm.isDeviceSecure.value)
+
+        // The user sets a PIN in system settings and comes back; refreshDeviceSecurity is what the
+        // screen calls on resume. A row that stayed disabled here would be saying the lock cannot fire
+        // at the exact moment it first became able to.
+        secure = true
+        vm.refreshDeviceSecurity()
+        assertTrue(vm.isDeviceSecure.value)
+
+        // And the other way: removing the credential has to take the row away again, not leave a
+        // switch on that can never authenticate.
+        secure = false
+        vm.refreshDeviceSecurity()
+        assertFalse(vm.isDeviceSecure.value)
     }
 
     @Test

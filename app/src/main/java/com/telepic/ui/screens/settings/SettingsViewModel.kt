@@ -56,8 +56,11 @@ class SettingsViewModel(
     private val albumRepository: AlbumRepository? = null,
     private val backupCoordinator: BackupCoordinator? = null,
     private val cloudRepository: CloudRepository? = null,
-    private val appContext: Context,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+private val appContext: Context,
+private val deviceSecureReader: () -> Boolean = {
+    appContext.getSystemService(KeyguardManager::class.java)?.isDeviceSecure == true
+},
+private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     val authState: StateFlow<TelegramAuthState> = telegramAuthController.state
@@ -129,8 +132,24 @@ class SettingsViewModel(
      * a lock that would never fire — a setting that silently does nothing is exactly the kind of claim
      * this codebase avoids making.
      */
-    val isDeviceSecure: Boolean =
-        appContext.getSystemService(KeyguardManager::class.java)?.isDeviceSecure == true
+    /**
+     * Whether the device has a screen-lock credential the app lock can authenticate against.
+     *
+     * A state rather than a plain value because the credential can be set *while Telepic is open*: the
+     * user leaves for system settings, turns a PIN on, and comes back. A value computed once in the
+     * constructor kept the row disabled until the process was recreated — telling them the lock still
+     * could not fire at the exact moment it first could. [refreshDeviceSecurity] re-reads on resume.
+     *
+     * [deviceSecureReader] is injected rather than read inline so this is testable, the same pattern
+     * `AppLockViewModel` uses for its own credential check.
+     */
+    private val _isDeviceSecure = MutableStateFlow(deviceSecureReader())
+    val isDeviceSecure: StateFlow<Boolean> = _isDeviceSecure.asStateFlow()
+
+    /** Re-reads the device's credential state; the screen calls it when it resumes. */
+    fun refreshDeviceSecurity() {
+        _isDeviceSecure.value = deviceSecureReader()
+    }
 
     /** Device folders for the folder picker, loaded on demand (same source as onboarding). */
     private val _folders = MutableStateFlow<List<Album>>(emptyList())
