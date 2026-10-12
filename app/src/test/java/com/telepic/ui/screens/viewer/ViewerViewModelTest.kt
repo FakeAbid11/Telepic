@@ -15,8 +15,10 @@ import com.telepic.domain.cloud.CloudPreview
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.cloud.LocalDownloadedMedia
 import com.telepic.domain.cloud.TelepicCloudDestination
+import com.telepic.domain.media.CustomAlbum
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
+import com.telepic.domain.media.PhotosItem
 import com.telepic.navigation.MediaSource
 import com.telepic.navigation.OrganizationKind
 import com.telepic.navigation.ViewerScope
