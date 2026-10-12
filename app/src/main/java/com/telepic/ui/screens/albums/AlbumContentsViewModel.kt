@@ -12,6 +12,7 @@ import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
 import com.telepic.ui.components.BulkBackupReport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -115,6 +116,11 @@ class AlbumContentsViewModel(
                 val summary = coordinator.backupAll(items)
                 _selectionReport.value = BulkBackupReport(summary, System.nanoTime())
                 clearSelection()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // No report and no clearSelection: nothing is claimed about work that did not happen,
+                // and the selection survives so the user can simply tap again.
             } finally {
                 _isBackingUp.value = false
             }

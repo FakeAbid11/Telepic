@@ -1,7 +1,12 @@
 package com.telepic.onboarding
 
+import androidx.paging.PagingData
+import com.telepic.data.media.AlbumRepository
+import com.telepic.domain.media.Album
+import com.telepic.domain.media.PhotosItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,7 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger
 @Config(sdk = [33])
 class OnboardingViewModelTest {
 
-    private class FakeRepository : OnboardingRepository {
+    private class FakeRepository(private val failWrites: Boolean = false) : OnboardingRepository {
         val completed = MutableStateFlow(false)
         val backup = MutableStateFlow<BackupPreference?>(null)
         val buckets = MutableStateFlow<Set<Long>>(emptySet())
@@ -34,16 +39,26 @@ class OnboardingViewModelTest {
         var setBucketCalls = 0
         override suspend fun setCompleted(completed: Boolean) {
             setCompletedCalls++
+            if (failWrites) throw IllegalStateException("DataStore write failed")
             this.completed.value = completed
         }
         override suspend fun setBackupPreference(preference: BackupPreference?) {
             setBackupCalls++
+            if (failWrites) throw IllegalStateException("DataStore write failed")
             backup.value = preference
         }
         override suspend fun setBackupBucketIds(ids: Set<Long>) {
             setBucketCalls++
+            if (failWrites) throw IllegalStateException("DataStore write failed")
             buckets.value = ids
         }
+    }
+
+    /** A bucket query that fails the way a revoked or limited media grant makes it fail. */
+    private class ExplodingAlbumRepository : AlbumRepository {
+        override suspend fun albums(): List<Album> = throw SecurityException("media access was revoked")
+        override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() = Unit
     }
 
     private fun settle() {
@@ -110,5 +125,55 @@ class OnboardingViewModelTest {
         // The router/state surface exposes the picked buckets so the step can show the real count.
         assertEquals(setOf(11L, 22L), vm.uiState.value.backupBucketIds)
         assertEquals(1, syncs.get())
+    }
+
+    @Test
+    fun `a failing backup sync is reported instead of closing the app`() {
+        // The reported crash. The sync runs inside `viewModelScope`, so an escaping exception was an
+        // uncaught exception on the main thread: the app closed itself the moment the user confirmed
+        // a folder. The choice is already persisted by then, so the flow must simply carry on.
+        val repository = FakeRepository()
+        val vm = OnboardingViewModel(
+            repository,
+            onBackupChoiceChanged = { throw SecurityException("media access was revoked") },
+        )
+
+        vm.setBackupChoice(BackupPreference.SELECT_FOLDER, bucketIds = setOf(11L))
+        settle()
+
+        assertEquals(BackupPreference.SELECT_FOLDER, repository.backup.value)
+        assertEquals(setOf(11L), repository.buckets.value)
+        assertTrue("expected the failure to be surfaced, not swallowed", vm.setupFailed.value)
+    }
+
+    @Test
+    fun `a failed persist is reported and the backup engine is never asked to start`() {
+        val repository = FakeRepository(failWrites = true)
+        val syncs = AtomicInteger()
+        val vm = OnboardingViewModel(repository, onBackupChoiceChanged = { syncs.incrementAndGet() })
+
+        vm.setBackupChoice(BackupPreference.SELECT_FOLDER, bucketIds = setOf(11L))
+        settle()
+
+        assertEquals(0, syncs.get())
+        assertTrue(vm.setupFailed.value)
+        // Nothing was written, so Continue stays disabled — and this is what explains why.
+        assertEquals(null, repository.backup.value)
+    }
+
+    @Test
+    fun `a failed folder query degrades to an empty picker instead of crashing`() {
+        val repository = FakeRepository()
+        val vm = OnboardingViewModel(repository, albumRepository = ExplodingAlbumRepository())
+
+        vm.loadFolders()
+        settle()
+
+        // The picker's own honest empty copy ("allow photo access first, then reopen") is the right
+        // outcome; the failure must not escape `viewModelScope`.
+        assertTrue("expected the picker to stop loading", vm.foldersLoaded.value)
+        assertEquals(emptyList<Album>(), vm.folders.value)
+        // A permission/provider failure is not a *choice* failure, so it does not claim one.
+        assertTrue("a failed query must not be reported as a failed choice", !vm.setupFailed.value)
     }
 }

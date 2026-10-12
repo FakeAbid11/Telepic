@@ -10,6 +10,7 @@ import com.telepic.domain.backup.ContentHashResult
 import com.telepic.domain.backup.RecognitionUnavailableReason
 import com.telepic.domain.backup.RemoteMediaIdentity
 import com.telepic.domain.media.LocalMedia
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -89,12 +90,21 @@ class DefaultBackupRecognitionRepository(
     }
 
     private suspend fun computeHash(media: LocalMedia, queueRow: BackupQueueEntity?): ContentHashResult? {
-        val expected = hasher.hashSize(media.contentUri)
         return try {
+            // `hashSize` is a ContentResolver query in its own right and fails for the same reasons
+            // `hash` does: a revoked or *limited* media grant, a provider error, or an item deleted
+            // between the scan that found it and this call. It used to sit outside this try, so its
+            // failure escaped recognition entirely and killed whoever called it — which, from the
+            // onboarding backup step, was the app itself.
+            val expected = hasher.hashSize(media.contentUri)
             val result = hasher.hash(media.contentUri)
             // §44: a byte-count that disagrees with the provider's size means the file changed
             // mid-hash — discard rather than persist a torn hash.
             if (expected >= 0 && result.sizeBytes >= 0 && expected != result.sizeBytes) null else result
+        } catch (cancellation: CancellationException) {
+            // A cancelled scan is not a hash failure. Swallowing it here used to keep a rotating or
+            // closing screen hashing the whole library after its coroutine had been cancelled.
+            throw cancellation
         } catch (_: Throwable) {
             null
         }

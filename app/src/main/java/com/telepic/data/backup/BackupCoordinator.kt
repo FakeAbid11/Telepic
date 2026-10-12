@@ -6,6 +6,7 @@ import com.telepic.domain.backup.BackupRecognitionResult
 import com.telepic.domain.media.LocalMedia
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
@@ -110,6 +111,26 @@ class DefaultBackupCoordinator(
     override suspend fun cancel(itemId: Long) = repository.cancel(itemId)
 
     override suspend fun syncFromPreference() {
+        try {
+            applyPreference()
+        } catch (cancellation: CancellationException) {
+            throw cancellation // a cancelled pass is not a failure to report
+        } catch (_: Throwable) {
+            // An automatic pass is a background concern and must never be able to kill its caller.
+            // This used to be unguarded, and the onboarding backup step calls it straight from
+            // `viewModelScope` — so any failure in the scan (a revoked or limited media grant, a
+            // provider error, an unreadable file, a WorkManager init failure) became an uncaught
+            // exception on the main thread and the process died the instant the user confirmed a
+            // folder. By that point the choice is already persisted and the periodic cadence is
+            // already installed, so the right outcome is to carry on and let the next tick retry —
+            // never to take the app down.
+            //
+            // Nothing is claimed as backed up here: an interrupted pass leaves rows unqueued, and
+            // the queue is the only thing that ever reports success.
+        }
+    }
+
+    private suspend fun applyPreference() {
         when (onboardingRepository.backupPreference.first()) {
             BackupPreference.BACKUP_ALL -> {
                 // Install the recurring 12h discovery cadence while automatic backup is on; the KEEP
@@ -149,7 +170,17 @@ class DefaultBackupCoordinator(
         var seen = 0
         var enqueuedAny = false
         while (seen < discoveryMaxItems) {
-            val page = pageLoader.load(offset, discoveryPageSize)
+            val page = try {
+                pageLoader.load(offset, discoveryPageSize)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // One unreadable page ends *this* loader, not the pass. A MediaStore query can fail on
+                // its own — a revoked or limited media grant, a provider error — and that must not
+                // discard the buckets already scanned, nor propagate into whatever is awaiting the
+                // pass (the periodic worker, the app's startup scope, an onboarding ViewModel).
+                return enqueuedAny
+            }
             if (page.isEmpty()) break
             for (item in page) {
                 if (recognizeAndMaybeEnqueue(item).queued > 0) enqueuedAny = true
@@ -165,15 +196,36 @@ class DefaultBackupCoordinator(
      * Recognize one item and enqueue only when it genuinely needs backup. Returns a per-item summary
      * (1 queued, or 1 already-covered). A recognition failure still enqueues the item as queued — a
      * failed hash must never be mistaken for "already backed up", nor silently skipped.
+     *
+     * Never throws for a per-item reason: one bad file cannot be allowed to abort a whole library
+     * scan. If even the fallback enqueue fails, the summary is neither queued nor covered — an
+     * honest "nothing happened", never a fabricated "already backed up".
      */
     private suspend fun recognizeAndMaybeEnqueue(media: LocalMedia): BulkBackupSummary =
-        when (val result = recognition.recognize(media)) {
-            is BackupRecognitionResult.AlreadyBackedUp -> BulkBackupSummary(0, 1) // associated; nothing to do
-            is BackupRecognitionResult.Pending -> BulkBackupSummary(0, 1) // an active operation exists; no duplicate row
-            is BackupRecognitionResult.NeedsBackup ->
-                if (repository.enqueue(media, result.contentHash, result.contentSizeBytes)) BulkBackupSummary(1, 0)
-                else BulkBackupSummary(0, 1) // already present in the queue
-            is BackupRecognitionResult.Unavailable ->
-                if (repository.enqueue(media)) BulkBackupSummary(1, 0) else BulkBackupSummary(0, 1)
+        try {
+            when (val result = recognition.recognize(media)) {
+                is BackupRecognitionResult.AlreadyBackedUp -> BulkBackupSummary(0, 1) // associated; nothing to do
+                is BackupRecognitionResult.Pending -> BulkBackupSummary(0, 1) // an active operation exists; no duplicate row
+                is BackupRecognitionResult.NeedsBackup ->
+                    if (repository.enqueue(media, result.contentHash, result.contentSizeBytes)) BulkBackupSummary(1, 0)
+                    else BulkBackupSummary(0, 1) // already present in the queue
+                is BackupRecognitionResult.Unavailable ->
+                    if (repository.enqueue(media)) BulkBackupSummary(1, 0) else BulkBackupSummary(0, 1)
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            // Recognition failed outside its own boundaries (a database error, an unexpected
+            // provider throwable). Keep the documented rule — an item is never silently skipped —
+            // by queueing it unhashed and letting the worker decide.
+            enqueueUnhashed(media)
         }
+
+    private suspend fun enqueueUnhashed(media: LocalMedia): BulkBackupSummary = try {
+        if (repository.enqueue(media)) BulkBackupSummary(1, 0) else BulkBackupSummary(0, 1)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        BulkBackupSummary.Empty // neither queued nor covered: nothing is claimed about this item
+    }
 }

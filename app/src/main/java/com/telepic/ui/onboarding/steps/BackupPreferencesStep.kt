@@ -51,6 +51,7 @@ fun BackupPreferencesStep(
     onPickFolders: (Set<Long>) -> Unit,
     modifier: Modifier = Modifier,
     foldersLoaded: Boolean = true,
+    setupFailed: Boolean = false,
 ) {
     val spacing = TelepicTokens.spacing
     // Survives rotation: closing the picker on recreation read as a lost selection.
@@ -115,6 +116,18 @@ fun BackupPreferencesStep(
                 title = stringResource(R.string.onboarding_backup_not_now_title),
                 body = stringResource(R.string.onboarding_backup_not_now_body),
                 modifier = Modifier.testTag(TAG_BACKUP_NOT_NOW),
+            )
+        }
+
+        // Reported, not swallowed: the choice did not stick, so the step must not look as though it
+        // had accepted it (the Continue button stays disabled in that case, and this is the only
+        // thing that explains why). Continue itself is never blocked by a *scan* failure — the
+        // preference is persisted by then, and the periodic worker retries the pass.
+        if (setupFailed) {
+            Text(
+                text = stringResource(R.string.onboarding_backup_setup_failed),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
             )
         }
     }

@@ -8,6 +8,7 @@ import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.BackupState
 import com.telepic.telegram.TelegramAuthState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -55,14 +56,31 @@ class BackupViewModel(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BackupUiState())
 
     fun startBackup() {
-        viewModelScope.launch { coordinator.startPendingBackup() }
+        viewModelScope.launch { runAction { coordinator.startPendingBackup() } }
     }
 
     fun retry(itemId: Long) {
-        viewModelScope.launch { coordinator.retry(itemId) }
+        viewModelScope.launch { runAction { coordinator.retry(itemId) } }
     }
 
     fun cancel(itemId: Long) {
-        viewModelScope.launch { coordinator.cancel(itemId) }
+        viewModelScope.launch { runAction { coordinator.cancel(itemId) } }
+    }
+
+    /**
+     * Every action on this screen is a tap the app must survive. Anything that escapes
+     * `viewModelScope` is an uncaught exception on the main thread — the app closes itself — so a
+     * database or scheduling failure here must not be allowed to propagate. Nothing is claimed when
+     * one fails: the queue rows are simply left as they are, still observed, still re-tryable.
+     */
+    private suspend fun runAction(action: suspend () -> Unit) {
+        try {
+            action()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            // Deliberately silent at this layer: the queue flow is the honest report, and the row
+            // the user acted on is still visible with its unchanged state.
+        }
     }
 }

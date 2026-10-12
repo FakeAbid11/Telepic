@@ -81,6 +81,25 @@ class BackupCoordinatorTest {
         override suspend fun markRecognized(media: LocalMedia, remote: RemoteMediaIdentity, hash: String, sizeBytes: Long) = Unit
     }
 
+    /** Serves [pages] and then fails, like a provider that stops answering part-way through a scan. */
+    private class FailingLoader(private val pages: List<List<LocalMedia>>, private val pageSize: Int) :
+        com.telepic.data.media.MediaPageLoader {
+        override suspend fun load(offset: Int, limit: Int): List<LocalMedia> {
+            val index = offset / pageSize
+            if (index >= pages.size) throw SecurityException("media access was revoked mid-scan")
+            return pages[index]
+        }
+    }
+
+    /** Throws for one id, standing in for a recognition failure that is not a hash failure. */
+    private class ThrowingRecognition(private val failFor: Long) : BackupRecognitionRepository {
+        override suspend fun recognize(media: LocalMedia): BackupRecognitionResult {
+            if (media.id == failFor) throw IllegalStateException("recognition blew up")
+            return BackupRecognitionResult.NeedsBackup("hash-${media.id}", media.sizeBytes)
+        }
+        override suspend fun markRecognized(media: LocalMedia, remote: RemoteMediaIdentity, hash: String, sizeBytes: Long) = Unit
+    }
+
     private fun media(id: Long) = LocalMedia(
         id = id, contentUri = Uri.parse("content://m/$id"), type = MediaType.PHOTO, mimeType = "image/jpeg",
         displayName = "p$id.jpg", dateMillis = 1_000L, durationMillis = null, width = 1, height = 1, sizeBytes = 1L,
@@ -219,5 +238,69 @@ class BackupCoordinatorTest {
         val repo = RecordingRepo()
         coordinator(repo, FakeScheduler(), BackupPreference.BACKUP_ALL, pages = pages, pageSize = 100).syncFromPreference()
         assertEquals(2100, repo.enqueuedWithHash.size)
+    }
+
+    @Test
+    fun `a page that fails mid-scan keeps what it already enqueued and does not throw`() = runBlocking {
+        val repo = RecordingRepo()
+        val scheduler = FakeScheduler()
+        coordinator(
+            repo, scheduler, BackupPreference.BACKUP_ALL,
+            pageSize = 1,
+            loaderFactory = { FailingLoader(listOf(listOf(media(1))), pageSize = 1) },
+        ).syncFromPreference()
+        // The first page's item is queued and scheduled; the failing second page ends the scan
+        // rather than discarding that work or propagating a SecurityException into the caller.
+        assertEquals(1, repo.enqueuedWithHash.size)
+        assertEquals(1L, repo.enqueuedWithHash.first().first.id)
+        assertEquals(1, scheduler.scheduled)
+    }
+
+    @Test
+    fun `one failing bucket does not discard the buckets that already scanned`() = runBlocking {
+        val repo = RecordingRepo()
+        coordinator(
+            repo, FakeScheduler(), BackupPreference.SELECT_FOLDER,
+            buckets = setOf(11L, 22L),
+            loaderFactory = { bucketId ->
+                if (bucketId == 22L) {
+                    FailingLoader(emptyList(), pageSize = 100)
+                } else {
+                    FakeLoader(listOf(listOf(media(101))), pageSize = 100)
+                }
+            },
+        ).syncFromPreference()
+        // Bucket 11's item survives bucket 22 failing outright.
+        assertEquals(1, repo.enqueuedWithHash.size)
+        assertEquals(101L, repo.enqueuedWithHash.first().first.id)
+    }
+
+    @Test
+    fun `a recognition failure still queues the item rather than skipping it`() = runBlocking {
+        val repo = RecordingRepo()
+        coordinator(
+            repo, FakeScheduler(), BackupPreference.BACKUP_ALL,
+            recognition = ThrowingRecognition(failFor = 2L),
+            pages = listOf(listOf(media(1), media(2), media(3))),
+        ).syncFromPreference()
+        // 1 and 3 recognized normally; 2 fell back to an unhashed enqueue — never silently skipped,
+        // and never counted as already backed up.
+        assertEquals(2, repo.enqueuedWithHash.size)
+        assertEquals(1, repo.enqueued.size)
+        assertEquals(2L, repo.enqueued.first().id)
+    }
+
+    @Test
+    fun `a pass that cannot start cannot escape into its caller`() = runBlocking {
+        // The reported failure: onboarding calls this straight from `viewModelScope`, so an
+        // exception here became an uncaught main-thread exception and the app closed itself the
+        // moment the user confirmed a folder. The pass now reports nothing and simply returns.
+        val repo = RecordingRepo()
+        coordinator(
+            repo, FakeScheduler(), BackupPreference.BACKUP_ALL,
+            loaderFactory = { _: Long? -> throw IllegalStateException("MediaStore unavailable") },
+        ).syncFromPreference()
+        assertEquals(0, repo.enqueuedWithHash.size)
+        assertEquals(0, repo.enqueued.size)
     }
 }

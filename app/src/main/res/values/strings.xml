@@ -182,6 +182,7 @@
     <string name="onboarding_folder_picker_empty">No folders found yet. Allow photo access first, then reopen this picker.</string>
     <string name="onboarding_backup_not_now_title">Not now</string>
     <string name="onboarding_backup_not_now_body">Continue without configuring backup. You can set it up anytime from Settings.</string>
+    <string name="onboarding_backup_setup_failed">That choice could not be saved. Tap it again, or set backup up later in Settings.</string>
 
     <!-- Screen 6 — Ready -->
     <string name="onboarding_ready_title">You\'re ready to use Telepic</string>

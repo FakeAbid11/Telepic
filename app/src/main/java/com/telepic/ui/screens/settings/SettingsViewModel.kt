@@ -12,6 +12,7 @@ import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingRepository
 import com.telepic.telegram.TelegramAuthController
 import com.telepic.telegram.TelegramAuthState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -82,6 +83,12 @@ class SettingsViewModel(
         viewModelScope.launch {
             try {
                 _folders.value = albumRepository?.albums().orEmpty()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Degrade to the picker's own honest empty state instead of letting a provider
+                // failure escape `viewModelScope` (an uncaught main-thread exception closes the app).
+                _folders.value = emptyList()
             } finally {
                 _foldersLoaded.value = true
             }
@@ -90,10 +97,18 @@ class SettingsViewModel(
 
     fun setBackupChoice(preference: BackupPreference, bucketIds: Set<Long>? = null) {
         viewModelScope.launch {
-            onboardingRepository.setBackupPreference(preference)
-            if (bucketIds != null) onboardingRepository.setBackupBucketIds(bucketIds)
-            // Same immediate-apply path onboarding uses; the coordinator gates NOT_NOW itself.
-            backupCoordinator?.syncFromPreference()
+            try {
+                onboardingRepository.setBackupPreference(preference)
+                if (bucketIds != null) onboardingRepository.setBackupBucketIds(bucketIds)
+                // Same immediate-apply path onboarding uses; the coordinator gates NOT_NOW itself.
+                backupCoordinator?.syncFromPreference()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Nothing is claimed on failure: the preference flow is the single source of truth
+                // and the screen re-reads it, so a choice that did not persist shows as unchanged
+                // rather than as applied.
+            }
         }
     }
 
@@ -111,7 +126,14 @@ class SettingsViewModel(
     fun backupNow() {
         val coordinator = backupCoordinator ?: return
         viewModelScope.launch {
-            withContext(ioDispatcher) { coordinator.syncFromPreference() }
+            try {
+                withContext(ioDispatcher) { coordinator.syncFromPreference() }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // The queue is the only thing that ever reports a backup, so a failed manual pass
+                // leaves it unchanged and honest — and must never close the app.
+            }
         }
     }
 

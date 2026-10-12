@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.media.AlbumRepository
 import com.telepic.domain.media.Album
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +66,13 @@ class OnboardingViewModel(
     private val _foldersLoaded = MutableStateFlow(true)
     val foldersLoaded: StateFlow<Boolean> = _foldersLoaded.asStateFlow()
 
+    /**
+     * True when the last backup choice could not be persisted or applied, so the step can say so
+     * instead of leaving a disabled Continue button with no explanation.
+     */
+    private val _setupFailed = MutableStateFlow(false)
+    val setupFailed: StateFlow<Boolean> = _setupFailed.asStateFlow()
+
     init {
         // The first emission from DataStore means persisted state is available.
         viewModelScope.launch {
@@ -78,6 +86,14 @@ class OnboardingViewModel(
         viewModelScope.launch {
             try {
                 _folders.value = albumRepository?.albums().orEmpty()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // A failed bucket query (no media grant, a *limited* grant, a provider error) must
+                // degrade to the picker's own honest empty state — "allow photo access first, then
+                // reopen this picker" — rather than escape `viewModelScope`, where an uncaught
+                // exception on the main thread closes the app.
+                _folders.value = emptyList()
             } finally {
                 _foldersLoaded.value = true
             }
@@ -86,26 +102,55 @@ class OnboardingViewModel(
 
     fun setBackupPreference(preference: BackupPreference) {
         viewModelScope.launch {
-            repository.setBackupPreference(preference)
-            // A changed choice re-syncs immediately (enqueue + schedule attempt), not only at startup.
-            onBackupChoiceChanged()
+            persistChoice { repository.setBackupPreference(preference) }
         }
     }
 
     /** Persist a folder-scoped choice: the preference plus exactly the buckets the user confirmed. */
     fun setBackupChoice(preference: BackupPreference, bucketIds: Set<Long>? = null) {
         viewModelScope.launch {
-            repository.setBackupPreference(preference)
-            if (bucketIds != null) repository.setBackupBucketIds(bucketIds)
-            onBackupChoiceChanged()
+            persistChoice {
+                repository.setBackupPreference(preference)
+                if (bucketIds != null) repository.setBackupBucketIds(bucketIds)
+            }
         }
     }
 
     /** Persists completion and applies the chosen backup policy now; the router then leaves onboarding. */
     fun completeOnboarding() {
         viewModelScope.launch {
-            repository.setCompleted(true)
+            persistChoice { repository.setCompleted(true) }
+        }
+    }
+
+    /**
+     * Persist a choice, then let the injected hook apply it — with a boundary around both.
+     *
+     * The hook runs the app's first real MediaStore scan (and, for a folder choice, a SHA-256 pass
+     * over every file in the chosen buckets). It is failure-tolerant in its own right now, but this
+     * boundary stays, because anything that escapes `viewModelScope` is an uncaught exception on the
+     * main thread: the app closes itself with no message. That is exactly what happened when a scan
+     * failed the moment the user confirmed a folder.
+     *
+     * A failed *persist* is reported as well as caught — the choice did not stick, so the step must
+     * not look as if it had accepted it.
+     */
+    private suspend fun persistChoice(persist: suspend () -> Unit) {
+        try {
+            persist()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            _setupFailed.value = true
+            return
+        }
+        try {
             onBackupChoiceChanged()
+            _setupFailed.value = false
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            _setupFailed.value = true
         }
     }
 }

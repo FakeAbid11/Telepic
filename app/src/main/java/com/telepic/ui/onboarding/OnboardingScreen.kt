@@ -55,6 +55,7 @@ fun OnboardingScreen(
     onPickFolders: (Set<Long>) -> Unit,
     onComplete: () -> Unit,
     foldersLoaded: Boolean = true,
+    backupSetupFailed: Boolean = false,
 ) {
     var step by rememberSaveable { mutableIntStateOf(0) }
     val permission = rememberMediaPermissionState()
@@ -183,6 +184,7 @@ fun OnboardingScreen(
                         selectedBucketIds = backupBucketIds,
                         folders = folders,
                         foldersLoaded = foldersLoaded,
+                        setupFailed = backupSetupFailed,
                         // Notification access is asked for on the Permissions step, one screen
                         // earlier. It is deliberately NOT re-asked here: prompting again inside the
                         // same flow is the double-prompt anti-pattern, and a second denial in a row

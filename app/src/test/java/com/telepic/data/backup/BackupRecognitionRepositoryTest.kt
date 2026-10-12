@@ -19,6 +19,7 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import java.io.IOException
 import java.io.InputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -60,6 +61,7 @@ class BackupRecognitionRepositoryTest {
         private val byUri: Map<String, String>,
         private val sizeFor: Long = 1000L,
         var throwable: Throwable? = null,
+        var sizeThrowable: Throwable? = null,
         var readable: Boolean = true,
     ) : ContentHasher {
         var hashCalls = 0
@@ -69,7 +71,10 @@ class BackupRecognitionRepositoryTest {
             val h = byUri[uri.toString()] ?: throw IOException("unknown")
             return ContentHashResult(h, sizeFor)
         }
-        override suspend fun hashSize(uri: Uri): Long = sizeFor
+        override suspend fun hashSize(uri: Uri): Long {
+            sizeThrowable?.let { throw it }
+            return sizeFor
+        }
         override suspend fun isReadable(uri: Uri): Boolean = readable
     }
 
@@ -193,6 +198,28 @@ class BackupRecognitionRepositoryTest {
         val hasher = FakeHasher(emptyMap(), throwable = IOException("gone"), readable = false)
         val result = repo(hasher).recognize(media(1, "content://a"))
         assertEquals(BackupRecognitionResult.Unavailable(RecognitionUnavailableReason.SOURCE_UNREADABLE), result)
+    }
+
+    @Test
+    fun `a failing size query degrades to Unavailable instead of escaping recognition`() = runBlocking {
+        // `hashSize` is a ContentResolver query of its own and fails for the same reasons hashing
+        // does. It used to sit outside the try that guards the hash, so a revoked or limited media
+        // grant failed recognition outright — and, from the onboarding backup step, the whole app.
+        val hasher = FakeHasher(
+            byUri = mapOf("content://a" to hashA),
+            sizeThrowable = SecurityException("media access was revoked"),
+        )
+        val result = repo(hasher).recognize(media(1, "content://a"))
+        assertEquals(BackupRecognitionResult.Unavailable(RecognitionUnavailableReason.HASH_FAILED), result)
+    }
+
+    @Test
+    fun `a cancelled scan is rethrown, never downgraded to a hash failure`() = runBlocking {
+        // Swallowing cancellation here kept a rotating or closing screen hashing the whole library
+        // after its coroutine had been cancelled.
+        val hasher = FakeHasher(mapOf("content://a" to hashA), throwable = CancellationException("stopped"))
+        val thrown = runCatching { repo(hasher).recognize(media(1, "content://a")) }.exceptionOrNull()
+        assertTrue("expected the cancellation to propagate, got $thrown", thrown is CancellationException)
     }
 
     @Test

@@ -13,6 +13,7 @@ import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
 import com.telepic.ui.components.BulkBackupReport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -123,6 +124,12 @@ class PhotosViewModel(
                 val summary = coordinator.backupAll(items)
                 _selectionReport.value = BulkBackupReport(summary, System.nanoTime())
                 clearSelection()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // No report and no clearSelection: nothing is claimed about work that did not happen,
+                // and the selection survives so the user can simply tap again. An escaping exception
+                // here would be an uncaught main-thread exception — the app closing on a tap.
             } finally {
                 _isBackingUp.value = false
             }
@@ -162,7 +169,15 @@ class PhotosViewModel(
         changeSyncJob?.cancel()
         changeSyncJob = viewModelScope.launch {
             delay(MEDIA_CHANGE_SYNC_DEBOUNCE_MS)
-            coordinator.syncFromPreference()
+            try {
+                coordinator.syncFromPreference()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // A failed automatic pass leaves the queue unchanged and is retried by the periodic
+                // worker. It must never escape `viewModelScope`: an uncaught main-thread exception
+                // here would close the app while the user is simply looking at their photos.
+            }
         }
     }
 
