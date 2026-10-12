@@ -140,6 +140,32 @@ class DefaultBackupRepositoryTest {
     }
 
     @Test
+    fun `re-queueing a failed item is real work, not "already backed up"`() = runBlocking {
+        val r = repo(FakeCloud(uploadError = CloudUploadRejectedException("Unsupported media")))
+        r.enqueue(media(1))
+        r.processPendingWork(maxItems = 1)
+        val dao = db.backupQueueDao()
+        assertEquals(BackupState.FAILED.name, dao.observeAll().first().first().state)
+
+        // Tapping "Back up" again has to re-queue it. The unique index used to swallow the insert and
+        // the item was reported as "already backed up" — a false claim about a photo that had failed,
+        // with the Backup Center as the only place left to retry it.
+        assertTrue(r.enqueue(media(1)))
+        assertEquals(BackupState.QUEUED.name, dao.observeAll().first().first().state)
+    }
+
+    @Test
+    fun `a backed-up item is still never re-queued`() = runBlocking {
+        val r = repo(FakeCloud())
+        r.enqueue(media(1))
+        r.processPendingWork(maxItems = 1)
+        assertEquals(BackupState.BACKED_UP.name, db.backupQueueDao().observeAll().first().first().state)
+
+        // Terminal on purpose: re-queueing it would post a second copy of the same photo.
+        assertEquals(false, r.enqueue(media(1)))
+    }
+
+    @Test
     fun `a successful upload persists remote identity and marks BACKED_UP`() = runBlocking {
         val cloud = FakeCloud()
         val r = repo(cloud)

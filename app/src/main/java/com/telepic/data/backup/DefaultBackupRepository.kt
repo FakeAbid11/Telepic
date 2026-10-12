@@ -51,13 +51,39 @@ class DefaultBackupRepository(
     override fun observeStats(): Flow<BackupQueueStats> = dao.observeAll().map { rows -> rows.toStats(maxRetries) }
 
     override suspend fun enqueue(media: LocalMedia): Boolean = withContext(dispatcher) {
-        dao.insertIgnore(media.toQueueEntity(clock())) != -1L
+        enqueueInternal(media.toQueueEntity(clock()))
     }
 
     override suspend fun enqueue(media: LocalMedia, contentHash: String, contentSizeBytes: Long): Boolean =
         withContext(dispatcher) {
-            dao.insertIgnore(media.toQueueEntity(clock(), contentHash, contentSizeBytes)) != -1L
+            enqueueInternal(media.toQueueEntity(clock(), contentHash, contentSizeBytes))
         }
+
+    /**
+     * Inserts [entity], or re-queues the row already holding that local id when its previous attempt
+     * ended in a terminal failure.
+     *
+     * A bare `insertIgnore` treats *any* existing row as "already handled". That is right for a row
+     * which is backed up or in flight, but wrong for one that FAILED or was CANCELLED: tapping "Back
+     * up" on such a photo was ignored by the unique index and reported as "already backed up" — a
+     * false claim about the user's data, with the Backup Center as the only place to retry it.
+     * [BackupQueueDao.requeueForRetry] is the same transition that screen's Retry button uses, so the
+     * two paths cannot drift apart.
+     */
+    private suspend fun enqueueInternal(entity: BackupQueueEntity): Boolean {
+        if (dao.insertIgnore(entity) != -1L) return true
+        val existing = dao.findByLocalId(entity.localMediaId) ?: return false
+        val state = BackupState.fromName(existing.state)
+        if (state != BackupState.FAILED && state != BackupState.CANCELLED) return false
+        val now = clock()
+        dao.requeueForRetry(existing.id, now)
+        // Keep the content identity current: recognition may have just recomputed the hash because
+        // the file changed since the failed attempt, so re-queueing must not resurrect a stale one.
+        entity.contentHash?.let {
+            dao.persistHash(existing.id, it, entity.contentSizeBytes ?: entity.sizeBytes, now, now)
+        }
+        return true
+    }
 
     override suspend fun enqueueAll(media: List<LocalMedia>): Int = withContext(dispatcher) {
         media.count { enqueue(it) }
