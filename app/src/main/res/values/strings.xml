@@ -69,7 +69,10 @@
     <string name="settings_section_backup">Backup</string>
     <string name="settings_backup_preferences">Backup preferences</string>
     <string name="settings_backup_pref_unset">Not chosen yet</string>
-    <string name="settings_backup_pref_folders">%1$d folders selected</string>
+    <plurals name="settings_backup_pref_folders">
+        <item quantity="one">%1$d folder selected</item>
+        <item quantity="other">%1$d folders selected</item>
+    </plurals>
     <string name="settings_backup_preferences_dialog_title">Choose your backup</string>
     <string name="settings_backup_now">Back up now</string>
     <string name="settings_backup_now_summary">Scan for new photos and back them up</string>
@@ -104,11 +107,17 @@
     <!-- Settings — library information (local vs cloud) -->
     <string name="settings_section_library">Library</string>
     <string name="settings_library_local">On this device</string>
-    <string name="settings_library_local_summary">%1$d photos &amp; videos</string>
+    <plurals name="settings_library_local_summary">
+        <item quantity="one">%1$d photo &amp; video</item>
+        <item quantity="other">%1$d photos &amp; videos</item>
+    </plurals>
     <string name="settings_library_local_counting">Counting…</string>
     <string name="settings_library_local_unknown">Unavailable</string>
     <string name="settings_library_cloud">In your Telegram cloud</string>
-    <string name="settings_library_cloud_summary">%1$d items</string>
+    <plurals name="settings_library_cloud_summary">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
     <string name="settings_library_cloud_unknown">Not available</string>
 
     <!-- Settings — media behaviour. Hiding a kind filters the library queries only; it never
@@ -125,6 +134,9 @@
     <string name="settings_section_security">Security</string>
     <string name="settings_security_app_lock">App lock</string>
     <string name="settings_security_app_lock_summary">Require your device PIN, pattern or password to open Telepic.</string>
+    <!-- Shown while the lock is ON: without it, flipping the switch on appears to do nothing (the lock
+         fires on the next foregrounding, not now), so the row is the only place that says what happened. -->
+    <string name="settings_security_app_lock_on">On — Telepic asks for your device PIN, pattern or password next time you open it.</string>
     <string name="settings_security_app_lock_unavailable">Set a device PIN, pattern or password to use app lock.</string>
 
     <!-- Settings — storage, image cache -->
@@ -233,7 +245,10 @@
     <string name="onboarding_backup_all_body">Telepic can back up your photo library according to your backup settings.</string>
     <string name="onboarding_backup_folder_title">Select a folder</string>
     <string name="onboarding_backup_folder_body">Choose exactly which folders Telepic backs up.</string>
-    <string name="onboarding_backup_folder_selected">%1$d folders selected</string>
+    <plurals name="onboarding_backup_folder_selected">
+        <item quantity="one">%1$d folder selected</item>
+        <item quantity="other">%1$d folders selected</item>
+    </plurals>
     <string name="onboarding_folder_picker_title">Choose folders</string>
     <string name="onboarding_folder_picker_confirm">Back these up</string>
     <string name="onboarding_folder_picker_empty">No folders found yet. Allow photo access first, then reopen this picker.</string>
@@ -337,7 +352,10 @@
     <string name="albums_permission_description">Telepic needs photo &amp; video access to group your library into albums.</string>
     <string name="albums_error_title">Couldn\'t load your albums</string>
     <string name="albums_error_description">Something went wrong while reading your library. Please try again.</string>
-    <string name="albums_item_count">%1$d items</string>
+    <plurals name="albums_item_count">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
     <string name="albums_open_album">Open album %1$s</string>
     <string name="albums_back">Back to albums</string>
 
@@ -446,7 +464,6 @@
     <string name="organization_delete_forever">Delete forever</string>
     <string name="organization_cancel">Cancel</string>
     <string name="organization_item_description">Photo or video %1$s</string>
-    <string name="organization_item_count">%1$d items</string>
     <string name="organization_deleted_message">This item is still on your device. Telepic does not have permission to delete it from media storage.</string>
 
     <string name="trash_delete_title">Delete permanently?</string>
@@ -464,9 +481,18 @@
     <string name="map_permission_title">See your photo locations</string>
     <string name="map_permission_description">Telepic needs photo &amp; video access to read the location data already stored in your media.</string>
     <string name="map_marker_description">Photo taken at %1$s</string>
-    <string name="map_cluster_description">Group of %1$d photos at this location</string>
-    <string name="map_locations_count">%1$d locations</string>
-    <string name="map_view_description">Map with %1$d photo locations</string>
+    <plurals name="map_cluster_description">
+        <item quantity="one">Group of %1$d photo at this location</item>
+        <item quantity="other">Group of %1$d photos at this location</item>
+    </plurals>
+    <plurals name="map_locations_count">
+        <item quantity="one">%1$d location</item>
+        <item quantity="other">%1$d locations</item>
+    </plurals>
+    <plurals name="map_view_description">
+        <item quantity="one">Map with %1$d photo location</item>
+        <item quantity="other">Map with %1$d photo locations</item>
+    </plurals>
     <string name="map_attribution">© OpenStreetMap contributors</string>
     <string name="map_selected_open">Open</string>
     <string name="map_recenter">Show all photo locations</string>

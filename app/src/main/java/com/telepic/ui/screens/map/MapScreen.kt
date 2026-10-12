@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -122,7 +123,7 @@ fun MapScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (locationCount > 0) {
                             Text(
-                                text = stringResource(R.string.map_locations_count, locationCount),
+                                text = pluralStringResource(R.plurals.map_locations_count, locationCount, locationCount),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -326,7 +327,7 @@ private fun OsmMap(
                             )
                             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             marker.title =
-                                mapView.context.getString(R.string.map_cluster_description, pin.size)
+                                mapView.context.resources.getQuantityString(R.plurals.map_cluster_description, pin.size, pin.size)
                             marker.setOnMarkerClickListener { _, _ ->
                                 // Center on the cluster, then zoom in — the recluster follows via the
                                 // zoom listener; no zoom level is invented here.
@@ -340,7 +341,7 @@ private fun OsmMap(
                 }
                 // TalkBack reads the map as one focusable surface: announce how many pins it holds.
                 mapView.contentDescription =
-                    mapView.context.getString(R.string.map_view_description, pins.size)
+                    mapView.context.resources.getQuantityString(R.plurals.map_view_description, pins.size, pins.size)
                 // The opening framing is applied exactly once — later recompositions (a new overlay, a
                 // changed badge colour) must never move the camera out from under the user.
                 if (!initialApplied) {

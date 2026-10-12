@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -155,7 +156,7 @@ fun SettingsScreen(
     val backupSummary = when (preference) {
         BackupPreference.BACKUP_ALL -> stringResource(BackupPreference.BACKUP_ALL.labelRes)
         BackupPreference.SELECT_FOLDER ->
-            stringResource(R.string.settings_backup_pref_folders, bucketIds.size)
+            pluralStringResource(R.plurals.settings_backup_pref_folders, bucketIds.size, bucketIds.size)
         BackupPreference.NOT_NOW -> stringResource(BackupPreference.NOT_NOW.labelRes)
         null -> stringResource(R.string.settings_backup_pref_unset)
     }
@@ -165,16 +166,19 @@ fun SettingsScreen(
     val localLibrarySummary = when {
         !localCountLoaded -> stringResource(R.string.settings_library_local_counting)
         measuredLocalCount != null ->
-            stringResource(R.string.settings_library_local_summary, measuredLocalCount)
+            pluralStringResource(R.plurals.settings_library_local_summary, measuredLocalCount, measuredLocalCount)
         else -> stringResource(R.string.settings_library_local_unknown)
     }
     val measuredCloudCount = cloudCount
     val cloudLibrarySummary = if (measuredCloudCount != null) {
-        stringResource(R.string.settings_library_cloud_summary, measuredCloudCount)
+        pluralStringResource(R.plurals.settings_library_cloud_summary, measuredCloudCount, measuredCloudCount)
     } else {
         stringResource(R.string.settings_library_cloud_unknown)
     }
 
+    // The scheme's own background rather than `mediaBackdrop` — deliberately. Nothing on this screen is
+    // media, so it takes the document-style surface; the six screens that show thumbnails use
+    // `mediaBackdrop` (see `TelepicExtendedColors.mediaBackdrop` and Backup Center for the rule).
     Surface(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -307,10 +311,13 @@ fun SettingsScreen(
                 // offering a toggle that would silently never fire.
                 SettingsToggleRow(
                     title = stringResource(R.string.settings_security_app_lock),
-                    summary = if (isDeviceSecure) {
-                        stringResource(R.string.settings_security_app_lock_summary)
-                    } else {
-                        stringResource(R.string.settings_security_app_lock_unavailable)
+                    // The summary tracks the switch, because the lock does not fire when you enable it —
+                    // it fires on the next foregrounding. A static description left the row looking like
+                    // a toggle that did nothing; this one says what just changed.
+                    summary = when {
+                        !isDeviceSecure -> stringResource(R.string.settings_security_app_lock_unavailable)
+                        appLockEnabled -> stringResource(R.string.settings_security_app_lock_on)
+                        else -> stringResource(R.string.settings_security_app_lock_summary)
                     },
                     checked = appLockEnabled,
                     enabled = isDeviceSecure,

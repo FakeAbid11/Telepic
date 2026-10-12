@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -103,7 +104,7 @@ fun BackupPreferencesStep(
                 icon = Icons.Outlined.FolderOpen,
                 title = stringResource(R.string.onboarding_backup_folder_title),
                 body = if (selected == BackupPreference.SELECT_FOLDER && selectedBucketIds.isNotEmpty()) {
-                    stringResource(R.string.onboarding_backup_folder_selected, selectedBucketIds.size)
+                    pluralStringResource(R.plurals.onboarding_backup_folder_selected, selectedBucketIds.size, selectedBucketIds.size)
                 } else {
                     stringResource(R.string.onboarding_backup_folder_body)
                 },

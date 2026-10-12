@@ -52,6 +52,10 @@ fun BackupCenterScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val spacing = TelepicTokens.spacing
 
+    // The scheme's own background rather than `mediaBackdrop` — deliberately. `mediaBackdrop` is the
+    // near-black surface that makes *media* pop, and nothing on this screen is media: it is stats,
+    // counts and a queue, the same document-style surface Settings uses. Screens that show thumbnails
+    // (Photos, Albums, Album contents, Cloud, Map, Organization) are the ones on `mediaBackdrop`.
     Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             ScreenHeader(title = stringResource(R.string.backup_center_title), onBack = onBack)

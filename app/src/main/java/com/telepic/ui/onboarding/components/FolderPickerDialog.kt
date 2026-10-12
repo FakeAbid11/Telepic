@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -117,7 +118,7 @@ fun FolderPickerDialog(
                                     modifier = Modifier.weight(1f),
                                 )
                                 Text(
-                                    text = stringResource(R.string.albums_item_count, album.count),
+                                    text = pluralStringResource(R.plurals.albums_item_count, album.count, album.count),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

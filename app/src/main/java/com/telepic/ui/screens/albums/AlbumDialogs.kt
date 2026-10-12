@@ -24,6 +24,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.telepic.R
@@ -136,7 +137,7 @@ fun AlbumPickerDialog(
                                 modifier = Modifier.weight(1f),
                             )
                             Text(
-                                text = stringResource(R.string.albums_item_count, album.count),
+                                text = pluralStringResource(R.plurals.albums_item_count, album.count, album.count),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
