@@ -1,5 +1,6 @@
 package com.telepic.ui.screens.photos
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,12 +20,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -203,6 +206,27 @@ fun MediaGrid(
                 }
                 else -> Unit
             }
+        }
+
+        // Which day the reader is inside right now. `LazyVerticalGrid` has no `stickyHeader`, so the
+        // inline header row simply scrolls away and the timeline stops saying what month you are
+        // looking at. Pinned only once that header's own row has left the viewport, so a day is never
+        // shown twice at the same time.
+        val firstVisibleRow by remember { derivedStateOf { gridState.firstVisibleItemIndex } }
+        val pinnedDay = anchors.lastOrNull { it.index <= firstVisibleRow }
+            ?.takeIf { it.index < firstVisibleRow }
+        pinnedDay?.let { anchor ->
+            DayHeader(
+                epochDay = anchor.epochDay,
+                absoluteLabel = anchor.absoluteLabel,
+                today = today,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .background(TelepicTokens.colors.mediaBackdrop)
+                    // A visual aid only: the list's own header rows already announce the day as a
+                    // heading, so this overlay would read the same date out twice.
+                    .clearAndSetSemantics { },
+            )
         }
 
         DateScrubber(
