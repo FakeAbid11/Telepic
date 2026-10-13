@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
@@ -75,7 +76,10 @@ fun AppLockScreen(
     LaunchedEffect(Unit) { requestUnlock() }
 
     Surface(
-        modifier = modifier.fillMaxSize(),
+        // This screen is rendered outside TelepicApp's Scaffold, so nothing else hands it the system
+        // bar insets that `enableEdgeToEdge` makes the app's responsibility: without this the lock icon
+        // and title can sit under the status bar on a short or landscape display.
+        modifier = modifier.fillMaxSize().safeDrawingPadding(),
         color = MaterialTheme.colorScheme.background,
     ) {
         Column(
@@ -90,6 +94,15 @@ fun AppLockScreen(
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(48.dp),
+            )
+            // The locked-out user's first screen, and until now it said nothing about whose app they
+            // are proving they own. The name is an overline rather than a headline so the prompt — the
+            // thing that actually needs to be legible — stays the loudest element.
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = spacing.md),
             )
             Text(
                 text = stringResource(R.string.app_lock_title),
