@@ -263,35 +263,70 @@ class OrganizationViewModelTest {
         assertFalse(vm.isDeleting.value)
     }
 
+    /** A Trash collection whose permanent delete always goes through the system consent prompt. */
+    private fun consentTrashViewModel(repo: FakeRepo): OrganizationViewModel = OrganizationViewModel(
+        OrganizationKind.TRASH,
+        repo,
+        FakeLookup(),
+        FakeDeleter(DeleteRequest.NeedsConsent(intentSender())),
+    )
+
     @Test
-    fun `finishConsent forgets the items only on a consented success`() = runTest {
+    fun `a cancelled consent forgets nothing and keeps the selection`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val repo = FakeRepo()
-        val vm = OrganizationViewModel(
-            OrganizationKind.TRASH,
-            repo,
-            FakeLookup(),
-            FakeDeleter(DeleteRequest.NeedsConsent(intentSender())),
-        )
+        val vm = consentTrashViewModel(repo)
         vm.selectAll(listOf(media(8), media(9)))
         var consentLaunched = false
         vm.requestDeleteSelected { consentLaunched = true }
         runCurrent()
+
         assertTrue(consentLaunched)
         // Still busy while the system dialog is up: the action is not finished until it answers.
         assertTrue(vm.isDeleting.value)
 
-        // A cancelled consent: nothing is forgotten, the selection survives, and the screen is told.
         assertFalse(vm.finishConsent(success = false))
         assertTrue(repo.removed.isEmpty())
         assertFalse(vm.isDeleting.value)
+        // The selection survives, so the user can simply try again.
         assertEquals(setOf(8L, 9L), vm.selectedItems.value.keys)
+    }
 
-        // A consented success forgets exactly the items the prompt covered.
+    @Test
+    fun `a consented success forgets exactly the items the prompt covered`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo()
+        val vm = consentTrashViewModel(repo)
+        vm.selectAll(listOf(media(8), media(9)))
+        vm.requestDeleteSelected { }
+        runCurrent()
+
         assertTrue(vm.finishConsent(success = true))
         runCurrent()
         assertEquals(setOf(8L, 9L), repo.removed.toSet())
         assertTrue(vm.selectedItems.value.isEmpty())
+        assertFalse(vm.isDeleting.value)
+    }
+
+    @Test
+    fun `a consent result is consumed once, so a repeat cannot delete twice`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo()
+        val vm = consentTrashViewModel(repo)
+        vm.selectAll(listOf(media(8), media(9)))
+        vm.requestDeleteSelected { }
+        runCurrent()
+
+        assertTrue(vm.finishConsent(success = true))
+        runCurrent()
+        assertEquals(setOf(8L, 9L), repo.removed.toSet())
+
+        // One prompt covers one request; a second result has no pending set to act on, so it must not
+        // forget anything on its own.
+        repo.removed.clear()
+        assertTrue(vm.finishConsent(success = true))
+        runCurrent()
+        assertTrue(repo.removed.isEmpty())
     }
 
     @Test
