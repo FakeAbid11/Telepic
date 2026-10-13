@@ -168,6 +168,38 @@ class BackupRecognitionRepositoryTest {
     }
 
     @Test
+    fun `a remote match clears a FAILED row to BACKED_UP with its remote identity`() = runBlocking {
+        // The bug this guards: recognition reached `markBackedUp` only for rows its own SQL denylist
+        // refuses (FAILED / CANCELLED), so the write was a guaranteed no-op. Content that was provably
+        // already in the cloud stayed displayed as FAILED and was re-hashed on every single scan.
+        val id = queueDao.insertIgnore(media(1, "content://a").toQueueEntity(1L))
+        queueDao.markFailed(id, "boom", 2L)
+        insertManifest(chatId = 100L, messageId = 7L, hash = hashA, size = 1000L)
+        repo(FakeHasher(mapOf("content://a" to hashA))).recognize(media(1, "content://a"))
+
+        val row = queueDao.findByLocalId("1")!!
+        assertEquals(BackupState.BACKED_UP.name, row.state)
+        assertEquals(100L, row.telegramChatId)
+        assertEquals(7L, row.telegramMessageId)
+        assertEquals(hashA, row.contentHash)
+    }
+
+    @Test
+    fun `a recognised row is not re-hashed on the next scan`() = runBlocking {
+        // Proves the fix above actually reaches the cheap path: after one recognition pass the queue
+        // answers from its own row, so a second scan must not touch the hasher at all.
+        insertManifest(chatId = 100L, messageId = 7L, hash = hashA, size = 1000L)
+        val first = FakeHasher(mapOf("content://a" to hashA))
+        repo(first).recognize(media(1, "content://a"))
+        assertEquals(1, first.hashCalls)
+
+        val second = FakeHasher(mapOf("content://a" to hashA))
+        val result = repo(second).recognize(media(1, "content://a"))
+        assertTrue(result is BackupRecognitionResult.AlreadyBackedUp)
+        assertEquals(0, second.hashCalls)
+    }
+
+    @Test
     fun `cache reuse - matching size and modified skips re-hashing`() = runBlocking {
         val id = queueDao.insertIgnore(media(1, "content://a", size = 1000L).toQueueEntity(1L, hashA, 1000L))
         queueDao.markFailed(id, "prior transient failure", 2L)

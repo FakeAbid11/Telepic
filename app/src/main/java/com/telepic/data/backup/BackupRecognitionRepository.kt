@@ -4,6 +4,7 @@ import com.telepic.data.backup.BackupMapping.toRecognizedQueueEntity
 import com.telepic.data.backup.db.BackupQueueDao
 import com.telepic.data.backup.db.BackupQueueEntity
 import com.telepic.data.backup.hash.ContentHasher
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.backup.BackupRecognitionResult
 import com.telepic.domain.backup.BackupState
 import com.telepic.domain.backup.ContentHashResult
@@ -100,12 +101,19 @@ class DefaultBackupRecognitionRepository(
             val result = hasher.hash(media.contentUri)
             // §44: a byte-count that disagrees with the provider's size means the file changed
             // mid-hash — discard rather than persist a torn hash.
-            if (expected >= 0 && result.sizeBytes >= 0 && expected != result.sizeBytes) null else result
+            if (expected >= 0 && result.sizeBytes >= 0 && expected != result.sizeBytes) {
+                // §44: the file changed while being hashed. Discard rather than persist a torn hash —
+                // and say so, because this item will now be re-hashed on every scan with no trace of
+                // why recognition keeps refusing to trust the cached one.
+                TelepicLog.warn("BackupRecognition", "content changed mid-hash, discarding it")
+                null
+            } else result
         } catch (cancellation: CancellationException) {
             // A cancelled scan is not a hash failure. Swallowing it here used to keep a rotating or
             // closing screen hashing the whole library after its coroutine had been cancelled.
             throw cancellation
-        } catch (_: Throwable) {
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("BackupRecognition", "hashing unavailable; the item is queued unhashed", throwable)
             null
         }
     }
@@ -138,7 +146,18 @@ class DefaultBackupRecognitionRepository(
             if (existing == null) {
                 queueDao.insertIgnore(media.toRecognizedQueueEntity(remote, hash, sizeBytes, now))
             } else {
-                queueDao.markBackedUp(existing.id, remote.chatId, remote.messageId, null, now)
+                // `confirmRemoteMatch`, not `markBackedUp`: recognition reaches here only for rows the
+                // queue's own denylist would refuse (FAILED / CANCELLED), so the old call was a
+                // guaranteed no-op — content already in the cloud stayed displayed as FAILED and was
+                // re-hashed on every scan. A 0 here now means "already complete", which is the only
+                // honest outcome, and is logged rather than discarded.
+                val applied = queueDao.confirmRemoteMatch(existing.id, remote.chatId, remote.messageId, now)
+                if (applied == 0) {
+                    TelepicLog.debug(
+                        "BackupRecognition",
+                        "remote match already recorded for localMediaId=${existing.localMediaId}",
+                    )
+                }
                 queueDao.persistHash(existing.id, hash, sizeBytes, now, now)
             }
         }

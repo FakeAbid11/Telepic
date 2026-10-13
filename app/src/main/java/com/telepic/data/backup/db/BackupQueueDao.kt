@@ -102,6 +102,26 @@ interface BackupQueueDao {
     suspend fun markBackedUp(id: Long, chatId: Long, messageId: Long, fileId: Int?, now: Long): Int
 
     /**
+     * The remote manifest already holds these exact bytes, so the content **is** backed up — this is
+     * the one write allowed to move a terminal `FAILED`/`CANCELLED` row to `BACKED_UP`, because the
+     * proof is remote and not a worker retrying its own guess. [markBackedUp]'s denylist exists to stop
+     * a late worker from resurrecting a row; recognition carries evidence a worker can never have, so it
+     * uses this instead. Reusing [markBackedUp] here made the write a guaranteed no-op, which left
+     * already-backed-up media displayed as `FAILED` and re-hashed on every scan.
+     *
+     * Also fills the remote identity onto a `BACKED_UP` row that somehow lacks one (the guard's
+     * `telegramMessageId IS NULL` half), and is a genuine no-op only when the row is already complete —
+     * so repeated scans cost nothing and never rewrite a finished row.
+     */
+    @Query(
+        "UPDATE backup_queue SET state = 'BACKED_UP', telegramChatId = :chatId, telegramMessageId = :messageId, " +
+            "lastError = NULL, completedAt = COALESCE(completedAt, :now), updatedAt = :now, " +
+            "pendingTelegramChatId = NULL, pendingTelegramMessageId = NULL " +
+            "WHERE id = :id AND (state != 'BACKED_UP' OR telegramMessageId IS NULL)",
+    )
+    suspend fun confirmRemoteMatch(id: Long, chatId: Long, messageId: Long, now: Long): Int
+
+    /**
      * Persist the remote identity the moment TDLib accepts a send (before delivery confirms).
      * Terminal-state guarded: a row cancelled mid-upload keeps its CANCELLED state and the late
      * identity write simply no-ops.
