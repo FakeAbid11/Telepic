@@ -94,8 +94,11 @@ class AuthorizationStateMapperTest {
 
     @Test
     fun `email address wait maps to its own state instead of initializing`() {
+        // Positional/no-arg only: the TDLib Java constructors carry no parameter names in the
+        // bytecode, so `allowAppleId = ...` does not compile — the mapper does not read those two
+        // flags anyway, it only needs the state's type.
         val mapped = AuthorizationStateMapper.map(
-            TdApi.AuthorizationStateWaitEmailAddress(allowAppleId = false, allowGoogleId = false),
+            TdApi.AuthorizationStateWaitEmailAddress(),
         )
         assertEquals(TelegramAuthState.WaitingForEmailAddress(), mapped)
     }
