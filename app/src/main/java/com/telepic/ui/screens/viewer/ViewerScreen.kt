@@ -1,5 +1,9 @@
 package com.telepic.ui.screens.viewer
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.view.Window
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -68,9 +72,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -79,13 +80,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.imageLoader
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import com.telepic.R
 import com.telepic.data.restore.RestoreFailure
 import com.telepic.domain.backup.MediaBackupVisualState
@@ -151,17 +152,24 @@ fun ViewerScreen(
     // navigation bars stay painted over the media, so "immersive" was two dark strips plus a dimmed
     // screen. They go away with the chrome and come back on the way out — a viewer that left the
     // system bars hidden after unmounting would be worse than one that never hid them.
-    val insetsController = remember(viewerView) { WindowInsetsControllerCompat(viewerView) }
-    DisposableEffect(controlsVisible) {
+    // `WindowInsetsControllerCompat` has no View-only constructor, so the window comes from the hosting
+    // Activity. Null only when there is no Activity to attach to — a Compose preview — and then the
+    // composition keeps the bars it already has rather than guessing at a window.
+    val insetsController = remember(viewerView) {
+        viewerView.context.hostingWindow()?.let { WindowInsetsControllerCompat(it, viewerView) }
+    }
+    DisposableEffect(insetsController, controlsVisible) {
+        val controller = insetsController ?: return@DisposableEffect onDispose { }
         val bars = WindowInsetsCompat.Type.systemBars()
         if (controlsVisible) {
-            insetsController.show(bars)
+            controller.show(bars)
         } else {
-            insetsController.systemBarsBehavior =
+            controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            insetsController.hide(bars)
+            controller.hide(bars)
         }
-        onDispose { insetsController.show(bars) }
+        // Restored on the way out, so no other screen ever inherits a hidden status bar.
+        onDispose { controller.show(bars) }
     }
 
     // Warm Coil's cache for the swipe targets so a committed drag lands on a ready image.
@@ -948,4 +956,18 @@ private fun MissingMedia(onBack: () -> Unit) {
         Text(stringResource(R.string.viewer_missing), style = MaterialTheme.typography.bodyLarge, color = Color.White)
         TextButton(onClick = onBack) { Text(stringResource(R.string.viewer_back), color = Color.White) }
     }
+}
+
+/**
+ * The hosting Activity's window, unwrapping any [ContextWrapper] between the composition's context and
+ * it. Null when the composition is not inside an Activity (a preview), which the caller treats as
+ * "leave the system bars alone" rather than as a failure.
+ */
+private fun Context.hostingWindow(): Window? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current.window
+        current = current.baseContext
+    }
+    return null
 }
