@@ -2,8 +2,11 @@ package com.telepic.telegram
 
 import android.content.Context
 import android.os.Build
+import com.telepic.diagnostics.TelepicLog
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,8 +43,21 @@ class TelegramSessionManager(
 
     private val authorizedUser = MutableStateFlow<TelegramUser?>(null)
     private var lastAuthorizationState: TdApi.AuthorizationState? = null
+
+    @Volatile
     private var collectorJob: kotlinx.coroutines.Job? = null
+
+    @Volatile
     private var parametersSent = false
+
+    /**
+     * Single-flight guard for [initialize]. The work it kicks off runs *inside* a coroutine, so
+     * `@Synchronized` alone never covered the `collectorJob == null` check or `gateway.open()` — two
+     * taps on "Connect Telegram" could both observe a fresh collector and each create a native TDLib
+     * client, of which the binding can never close the first. Written from the caller's thread, read
+     * from the app's; atomic state is the only correct sharing here.
+     */
+    private val starting = AtomicBoolean(false)
 
     // A build compiled without real credentials (CI defaults apiId=0) can never log in; surface that
     // honestly up front instead of opening TDLib and reporting a generic engine error.
@@ -53,6 +69,8 @@ class TelegramSessionManager(
      * only if not already open, and the flow is re-driven from TDLib's *current* authorization state —
      * so a login whose `SetTdlibParameters` was rejected can recover without an app restart (TDLib does
      * not re-announce that wait on its own).
+     *
+     * A call that arrives while one is already in flight is dropped rather than queued: see [starting].
      */
     @Synchronized
     fun initialize() {
@@ -60,37 +78,50 @@ class TelegramSessionManager(
             _state.value = TelegramAuthState.Failed(TelegramError.NotConfigured())
             return
         }
+        if (!starting.compareAndSet(false, true)) {
+            TelepicLog.debug("TelegramAuth", "a start is already in flight; ignoring the duplicate request")
+            return
+        }
         _state.value = TelegramAuthState.Initializing
         scope.launch {
-            val isRetry = collectorJob != null
-            if (collectorJob == null) {
-                // Subscribe to updates BEFORE opening the client, so the initial authorization update
-                // (emitted during/right after open()) is received, not lost. The gateway also replays the
-                // latest update as a second guard against the open/subscribe ordering race.
-                collectorJob = launch { gateway.updates.collect { update -> handle(update) } }
-                try {
-                    gateway.open()
-                } catch (throwable: Throwable) {
-                    collectorJob?.cancel()
-                    collectorJob = null
-                    _state.value = TelegramAuthState.Failed(
-                        TelegramError.Initialization("Telegram engine could not start."),
-                    )
-                    return@launch
-                }
-                // Silence TDLib's own logger *before* the first request that carries a credential.
-                // TDLib logs at a default verbosity, and SetTdlibParameters is handed the api_hash
-                // (sendParameters, below); the app itself logs nothing, so this is the one place a
-                // credential could reach a log. Level 0 = fatal errors only. Best-effort: a rejected
-                // log request must not fail the login.
-                safeRequest(TdApi.SetLogVerbosityLevel(0))
-                // First start: opening makes TDLib emit the initial authorization state, which the
-                // collector handles. No need (and no race) from also querying it here.
-            } else if (isRetry) {
-                // Retry after a failure: the client is already open and TDLib will NOT re-announce the
-                // current wait (e.g. after a rejected SetTdlibParameters), so re-drive from its state.
-                driveFromCurrentState()
+            try {
+                startOnce()
+            } finally {
+                starting.set(false)
             }
+        }
+    }
+
+    private suspend fun startOnce() {
+        val isRetry = collectorJob != null
+        if (collectorJob == null) {
+            // Subscribe to updates BEFORE opening the client, so the initial authorization update
+            // (emitted during/right after open()) is received, not lost. The gateway also replays the
+            // latest update as a second guard against the open/subscribe ordering race.
+            collectorJob = scope.launch { gateway.updates.collect { update -> handle(update) } }
+            try {
+                gateway.open()
+            } catch (throwable: Throwable) {
+                TelepicLog.error("TelegramAuth", "TDLib could not be started", throwable)
+                collectorJob?.cancel()
+                collectorJob = null
+                _state.value = TelegramAuthState.Failed(
+                    TelegramError.Initialization("Telegram engine could not start."),
+                )
+                return
+            }
+            // Silence TDLib's own logger *before* the first request that carries a credential.
+            // TDLib logs at a default verbosity, and SetTdlibParameters is handed the api_hash
+            // (sendParameters, below); Telepic's own logging never carries a credential (see
+            // TelepicLog), so TDLib's logger is the only path one could reach a log through.
+            // Level 0 = fatal errors only. Best-effort: a rejected log request must not fail the login.
+            safeRequest(TdApi.SetLogVerbosityLevel(0))
+            // First start: opening makes TDLib emit the initial authorization state, which the
+            // collector handles. No need (and no race) from also querying it here.
+        } else if (isRetry) {
+            // Retry after a failure: the client is already open and TDLib will NOT re-announce the
+            // current wait (e.g. after a rejected SetTdlibParameters), so re-drive from its state.
+            driveFromCurrentState()
         }
     }
 
@@ -306,10 +337,23 @@ class TelegramSessionManager(
         }
     }
 
+    /**
+     * Sends a request and reports a *failure* as `null` — but never a cancellation.
+     *
+     * The blanket `catch (Throwable)` used to swallow [CancellationException] as well, which silently
+     * downgraded a cancelled scope to "an empty response arrived": [sendParameters] then matched its
+     * `else -> Unit` branch, published nothing, and left the UI parked on
+     * [TelegramAuthState.Initializing] with neither an error nor a timeout to explain it. Cancellation
+     * is control flow, not a Telegram outcome, and has to propagate.
+     */
     private suspend fun safeRequest(request: TdApi.Function<*>): TdApi.Object? =
         try {
             gateway.request(request)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (throwable: Throwable) {
+            // The request's class name only: a request can carry a phone number or a code.
+            TelepicLog.warn("TelegramAuth", "${request.javaClass.simpleName} failed", throwable)
             null
         }
 

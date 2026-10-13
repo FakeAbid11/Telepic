@@ -39,6 +39,10 @@ class TelegramSessionManagerTest {
         @Volatile private var opened = false
         override val isOpen: Boolean get() = opened
 
+        /** How many times the native client was created — the leak a duplicate start would cause. */
+        @Volatile var openCount: Int = 0
+            private set
+
         // When true, SetTdlibParameters is rejected (simulating bad credentials/parameters) until flipped.
         @Volatile var failParameters: Boolean = false
         // When true, CheckAuthenticationCode is rejected (a wrong code) with a recoverable 400.
@@ -57,6 +61,7 @@ class TelegramSessionManagerTest {
 
         override fun open() {
             opened = true
+            openCount++
             _updates.tryEmit(TdApi.UpdateAuthorizationState(TdApi.AuthorizationStateWaitTdlibParameters()))
         }
 
@@ -103,6 +108,25 @@ class TelegramSessionManagerTest {
         }
         assertTrue(gateway.requests.any { it is TdApi.SetTdlibParameters })
         manager.close()
+    }
+
+    @Test
+    fun `a second start while one is in flight never opens a second client`() = runBlocking {
+        // TDLib's Android binding offers no way to close a client, so a second `Client.create()` from a
+        // racing first-open leaks a native client and its threads for the life of the process — with two
+        // collectors both driving the auth state machine and both sending SetTdlibParameters. The gate
+        // "Connect Telegram" is a button the user can tap twice.
+        //
+        // `initialize()` claims its single-flight flag on the caller's thread, before launching, so this
+        // assertion is deterministic rather than a timing win.
+        val gateway = FakeGateway()
+        val m = manager(gateway)
+        m.initialize()
+        m.initialize()
+
+        withTimeout(3_000) { while (gateway.requests.none { it is TdApi.SetTdlibParameters }) delay(20) }
+        assertEquals(1, gateway.openCount)
+        m.close()
     }
 
     @Test

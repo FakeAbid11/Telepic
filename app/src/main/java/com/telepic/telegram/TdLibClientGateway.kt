@@ -52,6 +52,13 @@ class TdLibClientGatewayImpl : TdLibClientGateway {
 
     override val isOpen: Boolean get() = client != null
 
+    /**
+     * Creating the client is expensive, uncloseable, and must happen exactly once per process: the
+     * binding exposes no instance `close()`, so a second [Client.create] from a racing first-open leaks
+     * a native client and its threads for the life of the app. `@Synchronized` is the cheap guarantee —
+     * the caller in `TelegramSessionManager` is already single-flight, and this is the second lock.
+     */
+    @Synchronized
     override fun open() {
         if (client != null) return
         // Client's own static initializer loads "tdjni"; we also attempt it explicitly so a
