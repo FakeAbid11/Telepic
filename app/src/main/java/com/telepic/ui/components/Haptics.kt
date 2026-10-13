@@ -29,7 +29,14 @@ import androidx.compose.ui.platform.LocalView
  * setting and system strength without the app second-guessing it; and it needs **no `VIBRATE`
  * permission**, so the app's declared permission set — which is a documented invariant — stays
  * exactly as it is.
+ *
+ * `InlinedApi` is suppressed rather than obeyed: `HapticFeedbackConstants.CONFIRM` and `REJECT` are
+ * compile-time `Int`s inlined into the call, so referencing them is harmless on older devices, and
+ * [platformFeedback] guards the call with a version check — which is exactly the pattern that check
+ * cannot see through. The suppression sits on the class because the constants are named at the call
+ * sites below, not inside the guard.
  */
+@Suppress("InlinedApi")
 @Immutable
 class TelepicHaptics(
     private val view: View,
@@ -54,12 +61,6 @@ class TelepicHaptics(
         platformFeedback(HapticFeedbackConstants.REJECT)
     }
 
-    /**
-     * `InlinedApi` is suppressed rather than obeyed: the constants are compile-time `Int`s inlined
-     * into the call, so referencing them is harmless on older devices, and the version guard is the
-     * very next line — which is exactly the pattern the check cannot see through.
-     */
-    @Suppress("InlinedApi")
     private fun platformFeedback(constant: Int) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             view.performHapticFeedback(constant)
