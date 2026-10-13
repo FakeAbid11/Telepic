@@ -48,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -66,6 +67,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -79,6 +84,8 @@ import coil.imageLoader
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.telepic.R
 import com.telepic.data.restore.RestoreFailure
 import com.telepic.domain.backup.MediaBackupVisualState
@@ -99,9 +106,11 @@ internal const val TAG_VIEWER_BOTTOM_BAR = "viewer_bottom_bar"
 
 /**
  * The full-screen media Viewer (Phase 9) for both local and cloud items. Photos and GIFs render via
- * Coil with pinch-to-zoom / pan, double-tap-to-reset, and a horizontal swipe that pages to the
- * adjacent item (disabled while zoomed); videos delegate to the isolated Media3 [VideoViewer] and
- * keep button-only navigation. Controls are minimal, the source (Local / Cloud) is labelled, next/
+ * Coil with pinch-to-zoom anchored under the fingers, pan, double-tap to magnify at the tapped point
+ * (and again to return), and a horizontal swipe that pages to the adjacent item (disabled while
+ * zoomed); videos delegate to the isolated Media3 [VideoViewer] and keep button-only navigation.
+ * The display stays awake while a Viewer is on screen and the system bars go with the chrome.
+ * Controls are minimal, the source (Local / Cloud) is labelled, next/
  * previous stay within the originating collection, and a cloud original downloads only on explicit
  * request. A missing item shows an honest error, never another item.
  */
@@ -128,6 +137,32 @@ fun ViewerScreen(
     val backDesc = stringResource(R.string.viewer_back)
     val isCloudReady = state.source is MediaSource.Cloud && state.status == ViewerStatus.READY
     val haptics = rememberTelepicHaptics()
+
+    // A viewer is looked at, not left idle. Without this the display dims and sleeps mid-video, or
+    // halfway through a slow read of a full-screen photo, and a paused clip behind a black screen is
+    // indistinguishable from a crash. Cleared on the way out so the device keeps its own timeout.
+    val viewerView = LocalView.current
+    DisposableEffect(Unit) {
+        viewerView.setKeepScreenOn(true)
+        onDispose { viewerView.setKeepScreenOn(false) }
+    }
+
+    // The app's own chrome hiding is not the whole job: on an edge-to-edge window the status and
+    // navigation bars stay painted over the media, so "immersive" was two dark strips plus a dimmed
+    // screen. They go away with the chrome and come back on the way out — a viewer that left the
+    // system bars hidden after unmounting would be worse than one that never hid them.
+    val insetsController = remember(viewerView) { WindowInsetsControllerCompat(viewerView) }
+    DisposableEffect(controlsVisible) {
+        val bars = WindowInsetsCompat.Type.systemBars()
+        if (controlsVisible) {
+            insetsController.show(bars)
+        } else {
+            insetsController.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insetsController.hide(bars)
+        }
+        onDispose { insetsController.show(bars) }
+    }
 
     // Warm Coil's cache for the swipe targets so a committed drag lands on a ready image.
     val context = LocalContext.current
@@ -395,7 +430,16 @@ private fun ViewerContent(
                                 val dist = (a.position - b.position).getDistance()
                                 val centroid = (a.position + b.position) / 2f
                                 if (lastPinchDist > 0f && dist > 0f) {
-                                    val scaled = zoom.onScale(dist / lastPinchDist)
+                                    // Scale about the fingers, then carry the centroid's own movement.
+                                    // Scaling via onScale instead anchors the zoom on the viewport centre,
+                                    // so the patch being pinched slides away from the fingers mid-gesture.
+                                    val scaled = zoom.onScaleAt(
+                                        factor = dist / lastPinchDist,
+                                        pivotX = centroid.x,
+                                        pivotY = centroid.y,
+                                        centerX = size.width / 2f,
+                                        centerY = size.height / 2f,
+                                    )
                                     // Re-clamp the pan against the NEW scale so pinch-out can't leave
                                     // the image stranded off-screen.
                                     zoom = scaled.onPan(
@@ -458,7 +502,17 @@ private fun ViewerContent(
                 .pointerInput(state.source) {
                     detectTapGestures(
                         onTap = { onRequestToggle() },
-                        onDoubleTap = { zoom = zoom.reset() },
+                        // Magnifies at the tapped point, and taps out again. It used to be
+                        // `zoom.reset()` alone, which meant the expected gesture did nothing at all
+                        // until the user had already pinched in — where it then undid their zoom.
+                        onDoubleTap = { point ->
+                            zoom = zoom.toggleAt(
+                                pivotX = point.x,
+                                pivotY = point.y,
+                                centerX = size.width / 2f,
+                                centerY = size.height / 2f,
+                            )
+                        },
                     )
                 }
                 .graphicsLayer(

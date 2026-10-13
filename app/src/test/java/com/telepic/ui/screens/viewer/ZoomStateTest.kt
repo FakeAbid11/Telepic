@@ -74,4 +74,44 @@ class ZoomStateTest {
         assertEquals(0f, collapsed.offsetX, 0.001f)
         assertEquals(0f, collapsed.offsetY, 0.001f)
     }
+
+    /** Where a content point `p` (measured from the viewport centre) lands on screen. */
+    private fun screenAt(z: ZoomState, p: Float): Float = z.scale * p + z.offsetX
+
+    @Test
+    fun `onScaleAt keeps the tapped point exactly where it already was on screen`() {
+        // A 1000x1000 viewport: centre 500, pivot 200px right of it.
+        val before = ZoomState()
+        val after = before.onScaleAt(factor = 2.5f, pivotX = 700f, pivotY = 500f, centerX = 500f, centerY = 500f)
+        assertEquals(2.5f, after.scale, 0.001f)
+        assertEquals(
+            "the content under the finger must not slide towards the viewport centre",
+            screenAt(before, 200f),
+            screenAt(after, 200f),
+            0.001f,
+        )
+    }
+
+    @Test
+    fun `onScaleAt keeps the pivot fixed even when the scale clamps at the max`() {
+        val after = ZoomState(scale = 4f).onScaleAt(10f, 700f, 500f, 500f, 500f)
+        assertEquals(ZoomState.MAX_SCALE, after.scale, 0.001f)
+        assertEquals(4f * 200f, screenAt(after, 200f), 0.001f)
+    }
+
+    @Test
+    fun `onScaleAt pinching back out to fit returns to identity`() {
+        val out = ZoomState().onScaleAt(2.5f, 700f, 500f, 500f, 500f).onScaleAt(1f / 2.5f, 700f, 500f, 500f, 500f)
+        assertEquals(1f, out.scale, 0.001f)
+        assertEquals(0f, out.offsetX, 0.001f)
+    }
+
+    @Test
+    fun `toggleAt magnifies a fit image at the tap, and taps back out again`() {
+        val tapped = ZoomState().toggleAt(pivotX = 700f, pivotY = 500f, centerX = 500f, centerY = 500f)
+        assertEquals(ZoomState.DOUBLE_TAP_SCALE, tapped.scale, 0.001f)
+        assertEquals(screenAt(ZoomState(), 200f), screenAt(tapped, 200f), 0.001f)
+        // The second double-tap is the way back out — the gesture has to be reversible.
+        assertEquals(ZoomState(), tapped.toggleAt(700f, 500f, 500f, 500f))
+    }
 }

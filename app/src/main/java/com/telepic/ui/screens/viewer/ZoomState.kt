@@ -17,6 +17,46 @@ data class ZoomState(val scale: Float = 1f, val offsetX: Float = 0f, val offsetY
     fun onScale(factor: Float): ZoomState =
         copy(scale = (scale * factor).coerceIn(MIN_SCALE, MAX_SCALE)).bounded()
 
+    /**
+     * Scale about a viewport point, so the content under that point stays under it.
+     *
+     * [onScale] scales about the layer's origin (the viewport centre), which is why a pinch or a
+     * double-tap currently magnifies towards the middle of the screen rather than towards the thing
+     * the user is looking at. With the origin centred, a point `p` measured from the centre lands on
+     * screen at `scale·p + offset`; keeping it fixed across a scale change therefore requires
+     * `offset' = offset + (scale - target)·p`.
+     */
+    fun onScaleAt(
+        factor: Float,
+        pivotX: Float,
+        pivotY: Float,
+        centerX: Float,
+        centerY: Float,
+    ): ZoomState {
+        val target = (scale * factor).coerceIn(MIN_SCALE, MAX_SCALE)
+        if (target == scale) return this
+        return copy(
+            scale = target,
+            offsetX = offsetX + (scale - target) * (pivotX - centerX),
+            offsetY = offsetY + (scale - target) * (pivotY - centerY),
+        ).bounded()
+    }
+
+    /**
+     * The double-tap gesture: magnify to [DOUBLE_TAP_SCALE] centred on the tapped point, or return to
+     * fit when already zoomed. Doubling as "reset" keeps the gesture reversible with no separate control.
+     */
+    fun toggleAt(
+        pivotX: Float,
+        pivotY: Float,
+        centerX: Float,
+        centerY: Float,
+    ): ZoomState = if (isZoomed) {
+        reset()
+    } else {
+        onScaleAt(DOUBLE_TAP_SCALE / scale, pivotX, pivotY, centerX, centerY)
+    }
+
     fun onPan(
         dx: Float,
         dy: Float,
@@ -39,6 +79,9 @@ data class ZoomState(val scale: Float = 1f, val offsetX: Float = 0f, val offsetY
     companion object {
         const val MIN_SCALE = 1f
         const val MAX_SCALE = 5f
+
+        /** Where a double-tap lands when the image is at fit-to-screen. */
+        const val DOUBLE_TAP_SCALE = 2.5f
         private const val EPSILON = 0.001f
     }
 }
