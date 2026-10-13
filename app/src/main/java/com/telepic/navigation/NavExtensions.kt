@@ -28,3 +28,18 @@ fun NavHostController.navigateToTopLevel(destination: TelepicDestination) {
         popBackStack(route, inclusive = false)
     }
 }
+
+/**
+ * Open Settings from the gear in a screen's header.
+ *
+ * Deliberately **not** [navigateToTopLevel]: Settings is a destination, not a bottom-bar tab, and the
+ * top-level form pops to the start destination with `saveState`/`restoreState`. Opening the gear while
+ * on Cloud and pressing Back therefore landed the user on Photos — the tab they were in was gone, and
+ * so was the context they opened Settings for. A plain push leaves the originating screen underneath,
+ * so Back returns to it. `launchSingleTop` keeps double-tapping the gear from stacking Settings.
+ */
+fun NavHostController.navigateToSettings(settingsRoute: String = TelepicDestination.Settings.route) {
+    navigate(settingsRoute) {
+        launchSingleTop = true
+    }
+}

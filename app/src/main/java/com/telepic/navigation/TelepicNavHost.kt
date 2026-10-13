@@ -124,7 +124,7 @@ private fun TelepicNavGraph(
                 PhotosScreen(
                     viewModel = photosViewModel,
                     onMediaSelected = { media -> navController.navigate(ViewerRoute.local(media.id)) },
-                    onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
+                    onOpenSettings = { navController.navigateToSettings() },
                 )
             }
         }
@@ -136,7 +136,7 @@ private fun TelepicNavGraph(
             CloudScreen(
                 viewModel = cloudViewModel,
                 onOpenMedia = { media -> navController.navigate(ViewerRoute.cloud(media.chatId, media.messageId)) },
-                onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
+                onOpenSettings = { navController.navigateToSettings() },
             )
         }
         composable(TelepicDestination.Albums.route) {
@@ -152,7 +152,7 @@ private fun TelepicNavGraph(
                 viewModel = albumsViewModel,
                 onOpenAlbum = { album -> navController.navigate(AlbumRoute.create(album.bucketId, album.title)) },
                 onOpenOrganization = { kind -> navController.navigate(OrganizationRoute.create(kind)) },
-                onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
+                onOpenSettings = { navController.navigateToSettings() },
                 onOpenCustomAlbum = { album ->
                     navController.navigate(AlbumRoute.createCustom(album.id, album.name))
                 },
@@ -286,7 +286,7 @@ private fun TelepicNavGraph(
                 viewModel = mapViewModel,
                 onOpenMedia = { mediaId -> navController.navigate(ViewerRoute.local(mediaId)) },
                 focusRequest = mapFocusRequest,
-                onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
+                onOpenSettings = { navController.navigateToSettings() },
             )
         }
         composable(TelepicDestination.Settings.route) {

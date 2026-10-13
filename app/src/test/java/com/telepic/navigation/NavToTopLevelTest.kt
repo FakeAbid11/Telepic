@@ -39,6 +39,7 @@ class NavToTopLevelTest {
             NavHost(navController = nc, startDestination = TelepicDestination.Photos.route) {
                 composable(TelepicDestination.Photos.route) { Text("photos") }
                 composable(TelepicDestination.Cloud.route) { Text("cloud") }
+                composable(TelepicDestination.Settings.route) { Text("settings") }
                 composable("viewer/{mediaId}") { Text("viewer") }
             }
         }
@@ -70,5 +71,39 @@ class NavToTopLevelTest {
         nav.navigateToTopLevel(TelepicDestination.Cloud)
         rule.waitForIdle()
         assertEquals(TelepicDestination.Cloud.route, nav.currentDestination?.route)
+    }
+
+    @Test
+    fun `back from Settings returns to the screen the gear was pressed on`() {
+        setNav()
+        val nav = controller!!
+        nav.navigateToTopLevel(TelepicDestination.Cloud)
+        rule.waitForIdle()
+
+        nav.navigateToSettings()
+        rule.waitForIdle()
+        assertEquals(TelepicDestination.Settings.route, nav.currentDestination?.route)
+
+        nav.popBackStack()
+        rule.waitForIdle()
+        // The regression: Settings used to be navigated with the top-level helper, which pops to the
+        // start destination with saveState/restoreState — so Back landed on Photos and the Cloud tab
+        // the user opened the gear from was simply gone.
+        assertEquals(TelepicDestination.Cloud.route, nav.currentDestination?.route)
+    }
+
+    @Test
+    fun `tapping the gear twice does not stack two Settings screens`() {
+        setNav()
+        val nav = controller!!
+        nav.navigateToSettings()
+        rule.waitForIdle()
+        val entriesAfterFirst = nav.currentBackStackEntry?.id
+
+        nav.navigateToSettings()
+        rule.waitForIdle()
+        // launchSingleTop: the same entry is reused rather than a second Settings pushed on top, which
+        // would have cost two Back presses to leave.
+        assertEquals(entriesAfterFirst, nav.currentBackStackEntry?.id)
     }
 }
