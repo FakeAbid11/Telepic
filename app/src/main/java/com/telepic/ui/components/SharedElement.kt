@@ -60,7 +60,16 @@ internal fun ProvideSharedElementScopes(
  * nothing to grow from and the Viewer should simply appear. Returning [Modifier] rather than
  * registering an unmatched element keeps that a plain transition instead of a shared one with a
  * missing partner.
+ *
+ * `ModifierFactoryExtensionFunction` is suppressed rather than obeyed: lint's rule for a function that
+ * returns a [Modifier] is to make it `Modifier.xxx()`, but this one has to be `@Composable` — it reads
+ * two composition locals and calls `rememberSharedContentState` — and Compose's own rule for a
+ * *composable* modifier factory is the opposite one (a composable factory cannot be hoisted, skipped
+ * or safely used as a plain modifier). Obeying lint here would trade this warning for
+ * `ComposableModifierFactory`. The `remember`-prefixed name says what it actually is: a composable
+ * state helper that happens to hand back a modifier.
  */
+@Suppress("ModifierFactoryExtensionFunction")
 @Composable
 internal fun rememberSharedMediaModifier(mediaId: Long?): Modifier {
     val sharedTransitionScope = LocalSharedTransitionScope.current
