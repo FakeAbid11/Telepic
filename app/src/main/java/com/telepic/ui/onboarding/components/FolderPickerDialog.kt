@@ -2,6 +2,7 @@ package com.telepic.ui.onboarding.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -28,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import com.telepic.R
 import com.telepic.domain.media.Album
 import com.telepic.ui.theme.TelepicTokens
@@ -41,6 +44,15 @@ const val TAG_FOLDER_PICKER_EMPTY = "folder_picker_empty"
  * `bucketId` — never the name — matching everything else in the backup pipeline. Confirm is only
  * offered with at least one folder: "only these folders" with none chosen backs up nothing, so the
  * dialog never writes an empty SELECT_FOLDER state (the coordinator treats that as NOT_NOW anyway).
+ *
+ * A bucket's name is only its last path segment, so `DCIM/Camera` and `Pictures/Camera` are two
+ * rows both reading "Camera" — indistinguishable, and therefore not really a choice. Where that
+ * happens the folder's path is shown as a second line so the user can tell them apart; where it does
+ * not, the row stays one line, because a path on every row is noise that pushes the count off screen.
+ *
+ * [folders] must come from the *backup* scope (`AppContainer.backupAlbumRepository`), not the
+ * display one: a folder whose media the timeline currently hides would otherwise be missing from
+ * this list entirely, and its count would disagree with what the backup pass actually discovers.
  */
 @Composable
 fun FolderPickerDialog(
@@ -57,6 +69,11 @@ fun FolderPickerDialog(
             restore = { it.toSet() },
         ),
     ) { mutableStateOf(initiallySelected) }
+    // Titles shared by more than one folder — exactly the rows that cannot be told apart by name.
+    // Derived from the list rather than stored, so it stays correct if the folders reload.
+    val ambiguousTitles = remember(folders) {
+        folders.groupingBy { it.title }.eachCount().filterValues { it > 1 }.keys
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -112,11 +129,28 @@ fun FolderPickerDialog(
                                 // onCheckedChange = null: the row owns the toggle, so the checkbox
                                 // must not be a separately focusable control of its own.
                                 Checkbox(checked = isChecked, onCheckedChange = null)
-                                Text(
-                                    text = album.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f),
-                                )
+                                // The name and its optional path are one column so the count keeps
+                                // its slot on the right regardless of how long the path is.
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = album.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    // Only for a name shared by two folders, and only when the
+                                    // provider gave us a path to show (API 29+).
+                                    val path = album.relativePath
+                                    if (path != null && album.title in ambiguousTitles) {
+                                        Text(
+                                            text = path,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
                                 Text(
                                     text = pluralStringResource(R.plurals.albums_item_count, album.count, album.count),
                                     style = MaterialTheme.typography.labelMedium,

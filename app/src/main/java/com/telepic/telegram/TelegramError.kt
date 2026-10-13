@@ -13,6 +13,8 @@ sealed class TelegramError(
     class InvalidPhoneNumber(message: String) : TelegramError(message)
     class InvalidCode(message: String) : TelegramError(message)
     class InvalidPassword(message: String) : TelegramError(message)
+    class InvalidEmailAddress(message: String) : TelegramError(message)
+    class InvalidEmailCode(message: String) : TelegramError(message)
     class FloodWait(seconds: Int) :
         TelegramError("Too many attempts. Please wait before trying again.", seconds)
 
@@ -46,6 +48,8 @@ sealed class TelegramError(
                     AuthStage.PhoneNumber -> InvalidPhoneNumber(sanitize(message))
                     AuthStage.Code -> InvalidCode(sanitize(message))
                     AuthStage.Password -> InvalidPassword(sanitize(message))
+                    AuthStage.EmailAddress -> InvalidEmailAddress(sanitize(message))
+                    AuthStage.EmailCode -> InvalidEmailCode(sanitize(message))
                     AuthStage.None -> Unknown(sanitize(message))
                 }
                 else -> Unknown(sanitize(message))
@@ -60,5 +64,5 @@ sealed class TelegramError(
             message.trim().replace('\n', ' ').take(160).ifBlank { "Telegram reported a problem." }
     }
 
-    enum class AuthStage { None, PhoneNumber, Code, Password }
+    enum class AuthStage { None, PhoneNumber, Code, Password, EmailAddress, EmailCode }
 }

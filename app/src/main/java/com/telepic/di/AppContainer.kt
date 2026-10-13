@@ -87,6 +87,19 @@ interface AppContainer {
     val localMediaRepository: LocalMediaRepository
     val localMediaLookup: LocalMediaLookup
     val albumRepository: AlbumRepository
+
+    /**
+     * The same MediaStore buckets, scoped to what a backup would actually take.
+     *
+     * [albumRepository] is a *display* view: it hides videos/GIFs and archived media, because the
+     * Albums screen must describe what the timeline shows. Feeding that into the SELECT_FOLDER picker
+     * made the choice dishonest in two ways — a folder holding only videos vanished from the list
+     * entirely when the user hid videos, and the count beside a folder disagreed with the number of
+     * items `BackupCoordinator` would discover in that bucket. This instance mirrors
+     * `backupDiscoveryLoader`: trashed media excluded (it is on its way out), archived media included,
+     * no display filter. Use it wherever a folder is chosen *for backup*.
+     */
+    val backupAlbumRepository: AlbumRepository
     val customAlbumRepository: CustomAlbumRepository
     val mediaOrganizationRepository: MediaOrganizationRepository
     val mediaDeleter: LocalMediaDeleter
@@ -254,6 +267,17 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             context = appContext,
             hiddenIdsProvider = { mediaOrganizationRepository.hiddenIds() },
             typeFilterProvider = timelineFilterProvider,
+        )
+    }
+
+    /**
+     * The SELECT_FOLDER picker's folder list. Trashed-only exclusion and no type filter, so it agrees
+     * with the per-bucket [MediaStoreBucketLoader]s the coordinator scans — see [backupAlbumRepository].
+     */
+    override val backupAlbumRepository: AlbumRepository by lazy {
+        MediaStoreAlbumRepository(
+            context = appContext,
+            hiddenIdsProvider = { mediaOrganizationRepository.trashedIds.first() },
         )
     }
 

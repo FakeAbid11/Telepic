@@ -22,6 +22,38 @@ sealed interface TelegramAuthState {
     /** Waiting for the 2FA password. A wrong password keeps this state and surfaces [error]. */
     data class WaitingForPassword(val error: String? = null) : TelegramAuthState
 
+    /**
+     * Waiting for an **email address** instead of a phone number (TDLib
+     * `AuthorizationStateWaitEmailAddress`). Telegram asks for this when the account was registered
+     * by email or when the number route is unavailable; a rejected address keeps this state and
+     * surfaces [error] rather than becoming a dead end.
+     */
+    data class WaitingForEmailAddress(val error: String? = null) : TelegramAuthState
+
+    /**
+     * Waiting for the code Telegram emailed (TDLib `AuthorizationStateWaitEmailCode`).
+     *
+     * [emailPattern] is TDLib's own masked rendering of the destination (e.g. `a***@gmail.com`) —
+     * shown as-is, never reconstructed, so the UI cannot claim an address it does not know.
+     * [codeLength] is the length Telegram expects, used to gate the submit button; 0 means unknown.
+     */
+    data class WaitingForEmailCode(
+        val emailPattern: String? = null,
+        val codeLength: Int = 0,
+        val error: String? = null,
+    ) : TelegramAuthState
+
+    /**
+     * TDLib requires a Telegram Premium purchase to finish this login
+     * (`AuthorizationStateWaitPremiumPurchase`). Telepic cannot make that purchase — it is not a
+     * Telegram client with a store front — so this is reported honestly, with the support contact
+     * TDLib supplies, instead of spinning forever.
+     */
+    data class WaitingForPremiumPurchase(
+        val supportEmailAddress: String? = null,
+        val supportEmailSubject: String? = null,
+    ) : TelegramAuthState
+
     data class WaitingForOtherDeviceConfirmation(val link: String) : TelegramAuthState
 
     data object WaitingForRegistration : TelegramAuthState

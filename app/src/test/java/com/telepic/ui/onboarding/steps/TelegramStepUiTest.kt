@@ -2,6 +2,7 @@ package com.telepic.ui.onboarding.steps
 
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -47,10 +48,16 @@ class TelegramStepUiTest {
         var submittedPhone: String? = null
         var submittedCode: String? = null
         var submittedPassword: String? = null
+        var submittedEmail: String? = null
+        var submittedEmailCode: String? = null
+        var resendCount = 0
         override fun start() { startCount++ }
         override fun submitPhoneNumber(phoneNumber: String) { submittedPhone = phoneNumber }
         override fun submitCode(code: String) { submittedCode = code }
         override fun submitPassword(password: String) { submittedPassword = password }
+        override fun submitEmailAddress(emailAddress: String) { submittedEmail = emailAddress }
+        override fun submitEmailCode(code: String) { submittedEmailCode = code }
+        override fun resendEmailCode() { resendCount++ }
         var logoutCount = 0
         override fun logout() { logoutCount++ }
     }
@@ -152,6 +159,110 @@ class TelegramStepUiTest {
         // The link TDLib produced has to actually reach the user, wired to a real action...
         composeRule.onNodeWithText("Open in Telegram").assertIsDisplayed().assertHasClickAction()
         // ...and the state must always offer a way out instead of stranding the user here.
+        composeRule.onNodeWithText("Use a different account").performClick()
+        assertEquals(1, controller.logoutCount)
+    }
+
+    // --- Email sign-in ---------------------------------------------------------------------
+    //
+    // These three TDLib states used to fall through the mapper to `Initializing`, which renders a
+    // spinner with no input and no button. For an account that signs in by email that is a permanent
+    // dead end, so each one is pinned here as a real, escapable step.
+
+    @Test
+    fun `email address state shows an email input and submits to the controller`() {
+        val controller = FakeController(isBackendAvailable = true)
+        render(controller, TelegramAuthState.WaitingForEmailAddress())
+        composeRule.onNodeWithText("Email address").assertIsDisplayed()
+        // Disabled until something address-shaped is entered — Telegram is the real validator.
+        composeRule.onNodeWithText("Send code").assertIsNotEnabled()
+        composeRule.onNode(hasSetTextAction()).performTextInput("abid@example.com")
+        composeRule.onNodeWithText("Send code").performClick()
+        assertEquals("abid@example.com", controller.submittedEmail)
+    }
+
+    @Test
+    fun `a rejected email address stays on the field and shows the reason inline`() {
+        render(
+            FakeController(isBackendAvailable = true),
+            TelegramAuthState.WaitingForEmailAddress(error = "The email address is invalid."),
+        )
+        composeRule.onNodeWithText("Email address").assertIsDisplayed()
+        composeRule.onNodeWithText("The email address is invalid.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `email code state shows the masked address and submits the code`() {
+        val controller = FakeController(isBackendAvailable = true)
+        render(
+            controller,
+            TelegramAuthState.WaitingForEmailCode(emailPattern = "a***@gmail.com", codeLength = 5),
+        )
+        // TDLib's own masked address, shown as-is rather than reconstructed.
+        composeRule.onNodeWithText("We sent a code to a***@gmail.com").assertIsDisplayed()
+        composeRule.onNode(hasSetTextAction()).performTextInput("12345")
+        composeRule.onNodeWithText("Sign in").performClick()
+        assertEquals("12345", controller.submittedEmailCode)
+    }
+
+    @Test
+    fun `the email code submit waits for the length Telegram reported`() {
+        val controller = FakeController(isBackendAvailable = true)
+        render(
+            controller,
+            TelegramAuthState.WaitingForEmailCode(emailPattern = "a***@gmail.com", codeLength = 5),
+        )
+        composeRule.onNodeWithText("Sign in").assertIsNotEnabled()
+        composeRule.onNode(hasSetTextAction()).performTextInput("123")
+        composeRule.onNodeWithText("Sign in").assertIsNotEnabled()
+        composeRule.onNode(hasSetTextAction()).performTextInput("45")
+        composeRule.onNodeWithText("Sign in").assertIsEnabled()
+    }
+
+    @Test
+    fun `an unknown code length falls back to a non-empty check rather than blocking`() {
+        render(
+            FakeController(isBackendAvailable = true),
+            // codeLength = 0 means TDLib did not say; the button must still become usable.
+            TelegramAuthState.WaitingForEmailCode(emailPattern = null, codeLength = 0),
+        )
+        composeRule.onNodeWithText("We sent a code to your email address").assertIsDisplayed()
+        composeRule.onNode(hasSetTextAction()).performTextInput("9")
+        composeRule.onNodeWithText("Sign in").assertIsEnabled()
+    }
+
+    @Test
+    fun `an email code can be resent, and the state never dead-ends`() {
+        val controller = FakeController(isBackendAvailable = true)
+        render(
+            controller,
+            TelegramAuthState.WaitingForEmailCode(emailPattern = "a***@gmail.com", codeLength = 5),
+        )
+        composeRule.onNodeWithText("Resend code").assertHasClickAction().performClick()
+        assertEquals(1, controller.resendCount)
+        composeRule.onNodeWithText("Use a different account").performClick()
+        assertEquals(1, controller.logoutCount)
+    }
+
+    @Test
+    fun `premium purchase is reported honestly and never dead-ends`() {
+        val controller = FakeController(isBackendAvailable = true)
+        render(
+            controller,
+            TelegramAuthState.WaitingForPremiumPurchase(
+                supportEmailAddress = "premium@telegram.org",
+                supportEmailSubject = "Premium",
+            ),
+        )
+        // Said plainly, not hidden behind a spinner that never resolves.
+        composeRule
+            .onNodeWithText(
+                "This account has to complete a Telegram Premium purchase before it can sign in, " +
+                    "and Telepic cannot make that purchase for you. Please finish it in the official " +
+                    "Telegram app, then sign in here.",
+            )
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Contact Telegram support").assertHasClickAction()
         composeRule.onNodeWithText("Use a different account").performClick()
         assertEquals(1, controller.logoutCount)
     }

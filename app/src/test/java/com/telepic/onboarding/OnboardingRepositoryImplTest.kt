@@ -1,6 +1,7 @@
 package com.telepic.onboarding
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -15,6 +16,10 @@ import org.junit.rules.TemporaryFolder
 /**
  * Verifies onboarding persistence through real DataStore: the safe defaults on a fresh
  * install and round-tripping completion + backup preference.
+ *
+ * The stored shape of the folder selection is a **string set of decimal bucket ids**, and that must
+ * not change: the backup engine reads the same flow to decide which folders to scan, so a format
+ * change would silently forget the user's choice on upgrade. The last two tests pin that contract.
  */
 class OnboardingRepositoryImplTest {
 
@@ -74,5 +79,37 @@ class OnboardingRepositoryImplTest {
         repository.setBackupPreference(BackupPreference.BACKUP_ALL)
         repository.setBackupPreference(null)
         assertNull(repository.backupPreference.first())
+    }
+
+    @Test
+    fun `folder ids persisted by an earlier build still read back`() = runTest {
+        // Written through the raw key, exactly as a previous version of the app left it — the point
+        // is that upgrading must not lose which folders the user chose.
+        val dataStore = PreferenceDataStoreFactory.create {
+            File(tempFolder.root, "legacy_buckets.preferences_pb")
+        }
+        dataStore.edit { preferences ->
+            preferences[OnboardingRepositoryImpl.KEY_BACKUP_BUCKET_IDS] = setOf("11", "22", "33")
+        }
+
+        val repository = OnboardingRepositoryImpl(dataStore)
+
+        assertEquals(setOf(11L, 22L, 33L), repository.backupBucketIds.first())
+    }
+
+    @Test
+    fun `an unparseable stored folder id is skipped, not fatal`() = runTest {
+        // A corrupt or hand-edited store must not take down the picker — nor the backup engine,
+        // which reads this same flow to decide what to scan. Bad entries drop out; good ones survive.
+        val dataStore = PreferenceDataStoreFactory.create {
+            File(tempFolder.root, "corrupt_buckets.preferences_pb")
+        }
+        dataStore.edit { preferences ->
+            preferences[OnboardingRepositoryImpl.KEY_BACKUP_BUCKET_IDS] = setOf("11", "not-a-number")
+        }
+
+        val repository = OnboardingRepositoryImpl(dataStore)
+
+        assertEquals(setOf(11L), repository.backupBucketIds.first())
     }
 }

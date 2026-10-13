@@ -259,7 +259,10 @@ fun TelepicNavHost(
                             telegramAuthController = container.telegramAuthController,
                             onboardingRepository = container.onboardingRepository,
                             settingsRepository = container.settingsRepository,
+                            // Display scope: the library count describes what the library shows.
                             albumRepository = container.albumRepository,
+                            // Backup scope: the folder picker lists what a backup would take.
+                            foldersRepository = container.backupAlbumRepository,
                             backupCoordinator = container.backupCoordinator,
                             cloudRepository = container.cloudRepository,
                             appContext = checkNotNull(

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.drinkless.tdlib.TdApi
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -42,9 +43,17 @@ class TelegramSessionManagerTest {
         @Volatile var failParameters: Boolean = false
         // When true, CheckAuthenticationCode is rejected (a wrong code) with a recoverable 400.
         @Volatile var failCode: Boolean = false
+        // When true, the email-address / email-code requests are rejected with a recoverable 400.
+        @Volatile var failEmailAddress: Boolean = false
+        @Volatile var failEmailCode: Boolean = false
         @Volatile var requests: List<TdApi.Function<*>> = emptyList()
 
         fun setParametersSent(): Int = requests.count { it is TdApi.SetTdlibParameters }
+
+        /** Push a TDLib authorization update, as the native client would. */
+        fun emit(state: TdApi.AuthorizationState) {
+            _updates.tryEmit(TdApi.UpdateAuthorizationState(state))
+        }
 
         override fun open() {
             opened = true
@@ -57,6 +66,12 @@ class TelegramSessionManagerTest {
                 is TdApi.GetAuthorizationState -> authorizationState
                 is TdApi.SetTdlibParameters -> if (failParameters) TdApi.Error(400, "invalid api_id") else TdApi.Ok()
                 is TdApi.CheckAuthenticationCode -> if (failCode) TdApi.Error(400, "code invalid") else TdApi.Ok()
+                is TdApi.SetAuthenticationEmailAddress ->
+                    if (failEmailAddress) TdApi.Error(400, "email invalid") else TdApi.Ok()
+                is TdApi.CheckAuthenticationEmailCode ->
+                    if (failEmailCode) TdApi.Error(400, "code invalid") else TdApi.Ok()
+                is TdApi.ResendLoginEmailAddressCode ->
+                    TdApi.EmailAddressAuthenticationCodeInfo("a***@gmail.com", 5)
                 else -> TdApi.Ok()
             }
         }
@@ -147,6 +162,110 @@ class TelegramSessionManagerTest {
         val state = m.state.value as TelegramAuthState.WaitingForCode
         // Recoverable: still the code-waiting state (input stays visible) carrying an inline reason.
         assertNotNull(state.error)
+        m.close()
+    }
+
+    // --- Email sign-in ------------------------------------------------------------------------
+
+    @Test
+    fun `a rejected email address returns to the email field instead of a dead-end`() = runBlocking {
+        val gateway = FakeGateway().apply { failEmailAddress = true }
+        val m = manager(gateway)
+        m.submitEmailAddress("not-an-address")
+
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForEmailAddress) delay(20) }
+        val state = m.state.value as TelegramAuthState.WaitingForEmailAddress
+        // Still the email-waiting state, with an inline reason — the input never disappears.
+        assertNotNull(state.error)
+        // And the address actually reached TDLib rather than being swallowed locally.
+        assertTrue(gateway.requests.any { it is TdApi.SetAuthenticationEmailAddress })
+        m.close()
+    }
+
+    @Test
+    fun `an empty email address is never sent to TDLib`() = runBlocking {
+        val gateway = FakeGateway()
+        val m = manager(gateway)
+        m.submitEmailAddress("   ")
+        delay(200)
+        assertTrue(gateway.requests.none { it is TdApi.SetAuthenticationEmailAddress })
+        m.close()
+    }
+
+    @Test
+    fun `a rejected email code keeps the masked address and stays on the field`() = runBlocking {
+        val gateway = FakeGateway().apply { failEmailCode = true }
+        val m = manager(gateway)
+        m.initialize()
+        // Drive TDLib into the email-code wait, as it would after accepting an address.
+        gateway.emit(
+            TdApi.AuthorizationStateWaitEmailCode().apply {
+                codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("a***@gmail.com", 5)
+            },
+        )
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForEmailCode) delay(20) }
+
+        m.submitEmailCode("00000")
+        withTimeout(3_000) {
+            while ((m.state.value as? TelegramAuthState.WaitingForEmailCode)?.error == null) delay(20)
+        }
+        val state = m.state.value as TelegramAuthState.WaitingForEmailCode
+        assertEquals("a***@gmail.com", state.emailPattern)
+        assertEquals(5, state.codeLength)
+        assertNotNull(state.error)
+        m.close()
+    }
+
+    @Test
+    fun `resending an email code refreshes the masked address and clears the error`() = runBlocking {
+        val gateway = FakeGateway()
+        val m = manager(gateway)
+        m.initialize()
+        gateway.emit(
+            TdApi.AuthorizationStateWaitEmailCode().apply {
+                codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("old***@gmail.com", 4)
+            },
+        )
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForEmailCode) delay(20) }
+
+        m.resendEmailCode()
+        withTimeout(3_000) {
+            while ((m.state.value as? TelegramAuthState.WaitingForEmailCode)?.emailPattern != "a***@gmail.com") delay(20)
+        }
+        val state = m.state.value as TelegramAuthState.WaitingForEmailCode
+        assertEquals(5, state.codeLength)
+        assertEquals(null, state.error)
+        assertTrue(gateway.requests.any { it is TdApi.ResendLoginEmailAddressCode })
+        m.close()
+    }
+
+    @Test
+    fun `a stale email-code reply never pulls the session back to the input screen`() = runBlocking {
+        // Two taps on Submit, or a reply that lands after TDLib already moved on. Re-publishing the
+        // email-code wait here would put an input back on screen for a code the server has already
+        // accepted — and every further attempt would then be rejected as "no email code pending",
+        // which is exactly the dead end this flow exists to remove.
+        val gateway = FakeGateway().apply { failEmailCode = true }
+        val m = manager(gateway)
+        m.initialize()
+        gateway.emit(
+            TdApi.AuthorizationStateWaitEmailCode().apply {
+                codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("a***@gmail.com", 5)
+            },
+        )
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForEmailCode) delay(20) }
+
+        // TDLib accepts the code and leaves the wait.
+        gateway.emit(TdApi.AuthorizationStateReady())
+        withTimeout(3_000) { while (m.state.value is TelegramAuthState.WaitingForEmailCode) delay(20) }
+
+        m.submitEmailCode("00000")
+        delay(200)
+
+        assertTrue(
+            "a late reply must not restore the email-code input",
+            m.state.value !is TelegramAuthState.WaitingForEmailCode,
+        )
         m.close()
     }
 }

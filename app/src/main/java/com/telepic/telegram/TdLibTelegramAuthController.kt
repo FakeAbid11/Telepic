@@ -22,5 +22,11 @@ class TdLibTelegramAuthController(
 
     override fun submitPassword(password: String) = sessionManager.submitPassword(password)
 
+    override fun submitEmailAddress(emailAddress: String) = sessionManager.submitEmailAddress(emailAddress)
+
+    override fun submitEmailCode(code: String) = sessionManager.submitEmailCode(code)
+
+    override fun resendEmailCode() = sessionManager.resendEmailCode()
+
     override fun logout() = sessionManager.logout()
 }

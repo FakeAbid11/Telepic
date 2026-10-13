@@ -33,6 +33,14 @@ class TelegramErrorTest {
             TelegramError.classify(400, "bad", TelegramError.AuthStage.Password)
                 is TelegramError.InvalidPassword,
         )
+        assertTrue(
+            TelegramError.classify(400, "bad", TelegramError.AuthStage.EmailAddress)
+                is TelegramError.InvalidEmailAddress,
+        )
+        assertTrue(
+            TelegramError.classify(400, "bad", TelegramError.AuthStage.EmailCode)
+                is TelegramError.InvalidEmailCode,
+        )
         assertTrue(TelegramError.classify(400, "bad") is TelegramError.Unknown)
     }
 

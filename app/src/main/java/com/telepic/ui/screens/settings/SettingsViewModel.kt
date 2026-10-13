@@ -53,7 +53,16 @@ class SettingsViewModel(
     private val telegramAuthController: TelegramAuthController,
     private val onboardingRepository: OnboardingRepository,
     private val settingsRepository: SettingsRepository,
+    /** The *display* album repository — what the library screens show, used for the library count. */
     private val albumRepository: AlbumRepository? = null,
+    /**
+     * The *backup-scoped* album repository behind the SELECT_FOLDER picker (see
+     * `AppContainer.backupAlbumRepository`). Deliberately separate from [albumRepository]: the picker
+     * must list every folder a backup could take — including one whose media the timeline currently
+     * hides — and the count beside a folder must match what the backup pass discovers in it, while
+     * the library count on this screen must keep describing what the library displays.
+     */
+    private val foldersRepository: AlbumRepository? = null,
     private val backupCoordinator: BackupCoordinator? = null,
     private val cloudRepository: CloudRepository? = null,
 private val appContext: Context,
@@ -151,7 +160,10 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         _isDeviceSecure.value = deviceSecureReader()
     }
 
-    /** Device folders for the folder picker, loaded on demand (same source as onboarding). */
+    /**
+     * Device folders for the folder picker, loaded on demand from the **backup-scoped** repository —
+     * the same source onboarding uses, so both pickers offer the same set.
+     */
     private val _folders = MutableStateFlow<List<Album>>(emptyList())
     val folders: StateFlow<List<Album>> = _folders.asStateFlow()
 
@@ -190,7 +202,7 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         _foldersLoaded.value = false
         viewModelScope.launch {
             try {
-                _folders.value = albumRepository?.albums().orEmpty()
+                _folders.value = foldersRepository?.albums().orEmpty()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {

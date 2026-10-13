@@ -36,6 +36,7 @@ secrets.properties
 /Telepic_Codebase_Review_*.md
 /Telepic_Static_Code_Review_*.md
 /Telepic_Technical_Review_*.md
+/Telepic_Full_Static_Review_*.md
 
 # Product requirements doc — local working copy only, never committed
 /PRD.md

@@ -212,6 +212,94 @@ class TelegramSessionManager(
         }
     }
 
+    /**
+     * Submit the email address TDLib asked for (`AuthorizationStateWaitEmailAddress`).
+     *
+     * A rejected address is recoverable: TDLib stays at the email wait and does not re-emit, so this
+     * keeps the input on screen and surfaces the reason inline — the same shape [submitPhoneNumber]
+     * uses, and the reason an email-only account is no longer stranded on a spinner.
+     */
+    fun submitEmailAddress(emailAddress: String) {
+        val normalized = emailAddress.trim()
+        if (normalized.isEmpty()) return
+        scope.launch {
+            when (val response = safeRequest(TdApi.SetAuthenticationEmailAddress(normalized))) {
+                is TdApi.Error -> _state.value = TelegramAuthState.WaitingForEmailAddress(
+                    error = TelegramError.classify(
+                        response.code,
+                        response.message,
+                        TelegramError.AuthStage.EmailAddress,
+                    ).message,
+                )
+                else -> Unit
+            }
+        }
+    }
+
+    /** Submit the code Telegram emailed (`AuthorizationStateWaitEmailCode`). */
+    fun submitEmailCode(code: String) {
+        val normalized = code.trim()
+        if (normalized.isEmpty()) return
+        scope.launch {
+            val request = TdApi.CheckAuthenticationEmailCode(
+                TdApi.EmailAddressAuthenticationCode(normalized),
+            )
+            when (val response = safeRequest(request)) {
+                is TdApi.Error -> publishEmailCode(
+                    error = TelegramError.classify(
+                        response.code,
+                        response.message,
+                        TelegramError.AuthStage.EmailCode,
+                    ).message,
+                )
+                else -> Unit
+            }
+        }
+    }
+
+    /**
+     * Ask Telegram to email a fresh code. Without this, a code that expired or never arrived left the
+     * user with no way forward except signing out entirely.
+     */
+    fun resendEmailCode() {
+        scope.launch {
+            when (val response = safeRequest(TdApi.ResendLoginEmailAddressCode())) {
+                is TdApi.Error -> publishEmailCode(
+                    error = TelegramError.classify(response.code, response.message).message,
+                )
+                is TdApi.EmailAddressAuthenticationCodeInfo -> publishEmailCode(error = null, info = response)
+                else -> Unit
+            }
+        }
+    }
+
+    /**
+     * Publish the email-code wait, carrying [error] (or refreshed [info] after a resend).
+     *
+     * The masked destination and expected length are read back from the published state rather than
+     * cached in a field: `_state` is a `StateFlow`, so this is both memory-safe across coroutines and
+     * free of a second copy of the same facts that could drift. [info] supersedes them when a resend
+     * returned fresh values.
+     *
+     * Nothing is published unless the session is **still** waiting for an email code. TDLib moves on
+     * the moment the code is accepted, so a slow or duplicated response — a second tap on Submit, a
+     * resend that lands after sign-in already completed — would otherwise drag a signed-in session
+     * back to an input screen, and every further attempt would be rejected as "no email code
+     * pending". That is precisely the dead end this flow exists to remove, so a stale reply is
+     * dropped rather than rendered.
+     */
+    private fun publishEmailCode(
+        error: String?,
+        info: TdApi.EmailAddressAuthenticationCodeInfo? = null,
+    ) {
+        val current = _state.value as? TelegramAuthState.WaitingForEmailCode ?: return
+        _state.value = TelegramAuthState.WaitingForEmailCode(
+            emailPattern = info?.emailAddressPattern?.takeIf { it.isNotBlank() } ?: current.emailPattern,
+            codeLength = info?.length ?: current.codeLength,
+            error = error,
+        )
+    }
+
     fun logout() {
         scope.launch {
             safeRequest(TdApi.LogOut())

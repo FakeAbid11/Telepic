@@ -217,6 +217,85 @@ private fun AuthContent(
                 },
             )
         }
+        is TelegramAuthState.WaitingForEmailAddress -> {
+            // Telegram asks for an email address instead of a number when the account was registered
+            // by email. This used to fall through to Initializing — a spinner with no input and no
+            // button, i.e. a permanent dead end — so it gets a real field and a guaranteed exit.
+            var email by rememberSaveable { mutableStateOf("") }
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text(stringResource(R.string.telegram_email_label)) },
+                supportingText = { Text(state.error ?: stringResource(R.string.telegram_email_hint)) },
+                isError = state.error != null,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            PrimaryButton(
+                label = stringResource(R.string.telegram_email_send_code),
+                // A bare "@" check, not a validator: Telegram is the authority on whether the address
+                // is usable, and it reports a rejection inline. This only stops an obviously
+                // empty submission from being sent.
+                enabled = email.contains('@') && email.substringAfter('@').contains('.'),
+                onClick = { controller.submitEmailAddress(email.trim()) },
+            )
+            TextButton(onClick = controller::logout, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.telegram_change_account))
+            }
+        }
+        is TelegramAuthState.WaitingForEmailCode -> {
+            var code by rememberSaveable { mutableStateOf("") }
+            Text(
+                // TDLib's own masked address when it supplied one; never a reconstructed guess.
+                text = state.emailPattern
+                    ?.let { stringResource(R.string.telegram_email_code_sent_to, it) }
+                    ?: stringResource(R.string.telegram_email_code_sent_generic),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = code,
+                onValueChange = { code = it },
+                label = { Text(stringResource(R.string.telegram_email_code_label)) },
+                supportingText = { Text(state.error ?: stringResource(R.string.telegram_email_code_hint)) },
+                isError = state.error != null,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            PrimaryButton(
+                label = stringResource(R.string.telegram_verify),
+                // Telegram tells us the code length; when it does, wait for exactly that many digits.
+                // When it does not (0), fall back to a non-empty check rather than blocking the user.
+                enabled = if (state.codeLength > 0) code.length == state.codeLength else code.isNotBlank(),
+                onClick = { controller.submitEmailCode(code.trim()) },
+            )
+            // An expired or lost code must not be a dead end: resend, or switch account.
+            TextButton(onClick = controller::resendEmailCode, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.telegram_email_resend))
+            }
+            TextButton(onClick = controller::logout, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.telegram_change_account))
+            }
+        }
+        is TelegramAuthState.WaitingForPremiumPurchase -> {
+            // TDLib gates this login behind a Telegram Premium purchase. Telepic has no store front
+            // and must not pretend it can complete one, so it says so — with the support contact
+            // TDLib supplied — instead of spinning forever.
+            StatusRow(stringResource(R.string.telegram_premium_required), busy = false)
+            state.supportEmailAddress?.let { address ->
+                val context = LocalContext.current
+                val subject = state.supportEmailSubject.orEmpty()
+                PrimaryButton(
+                    label = stringResource(R.string.telegram_premium_contact),
+                    onClick = { context.emailSupport(address, subject) },
+                )
+            }
+            TextButton(onClick = controller::logout, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.telegram_change_account))
+            }
+        }
         is TelegramAuthState.WaitingForOtherDeviceConfirmation -> {
             StatusRow(stringResource(R.string.telegram_other_device), busy = true)
             // TDLib hands us the confirmation link precisely so it can be opened where the account
@@ -288,6 +367,18 @@ private fun rememberDefaultCountry(): CountryDialCode {
  */
 private fun Context.openTelegramLink(link: String) {
     runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }
+}
+
+/**
+ * Opens a mail draft to the Telegram support address TDLib reported. Best-effort for the same reason
+ * as [openTelegramLink]: a device with no mail client has no `mailto:` handler, and the "use a
+ * different account" action beside it is the guaranteed exit from the state.
+ */
+private fun Context.emailSupport(address: String, subject: String) {
+    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$address")).apply {
+        if (subject.isNotBlank()) putExtra(Intent.EXTRA_SUBJECT, subject)
+    }
+    runCatching { startActivity(intent) }
 }
 
 @Composable

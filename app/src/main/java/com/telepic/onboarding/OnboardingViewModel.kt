@@ -34,7 +34,14 @@ data class OnboardingUiState(
  */
 class OnboardingViewModel(
     private val repository: OnboardingRepository,
-    private val albumRepository: AlbumRepository? = null,
+    /**
+     * The **backup-scoped** album repository behind the SELECT_FOLDER picker — the same one the
+     * per-bucket discovery loaders read, so the folders listed and the counts beside them describe
+     * what a backup would actually take rather than what the timeline happens to display. See
+     * `AppContainer.backupAlbumRepository`. Nullable so a test — or a build with no media grant —
+     * degrades to the picker's own honest empty state instead of crashing.
+     */
+    private val foldersRepository: AlbumRepository? = null,
     private val onBackupChoiceChanged: suspend () -> Unit = {},
 ) : ViewModel() {
 
@@ -85,7 +92,7 @@ class OnboardingViewModel(
         _foldersLoaded.value = false
         viewModelScope.launch {
             try {
-                _folders.value = albumRepository?.albums().orEmpty()
+                _folders.value = foldersRepository?.albums().orEmpty()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {

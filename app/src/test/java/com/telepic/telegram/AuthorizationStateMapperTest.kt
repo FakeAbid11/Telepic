@@ -85,4 +85,80 @@ class AuthorizationStateMapperTest {
         assertTrue(authorized is TelegramAuthState.Authorized)
         assertEquals(user, (authorized as TelegramAuthState.Authorized).user)
     }
+
+    // --- Email sign-in -----------------------------------------------------------------------
+    //
+    // All three of these used to fall through to `else -> Initializing`, which renders a spinner
+    // with no input and no button. For an email-only account that is a permanent dead end, so the
+    // mapper must name them.
+
+    @Test
+    fun `email address wait maps to its own state instead of initializing`() {
+        val mapped = AuthorizationStateMapper.map(
+            TdApi.AuthorizationStateWaitEmailAddress(allowAppleId = false, allowGoogleId = false),
+        )
+        assertEquals(TelegramAuthState.WaitingForEmailAddress(), mapped)
+    }
+
+    @Test
+    fun `email code wait carries the masked address and expected length`() {
+        val state = TdApi.AuthorizationStateWaitEmailCode().apply {
+            codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("a***@gmail.com", 5)
+        }
+        assertEquals(
+            TelegramAuthState.WaitingForEmailCode(emailPattern = "a***@gmail.com", codeLength = 5),
+            AuthorizationStateMapper.map(state),
+        )
+    }
+
+    @Test
+    fun `email code wait without code info still maps to the email code state`() {
+        // TDLib can emit the wait before the code info arrives; that must not collapse to Initializing.
+        val state = TdApi.AuthorizationStateWaitEmailCode().apply { codeInfo = null }
+        assertEquals(
+            TelegramAuthState.WaitingForEmailCode(emailPattern = null, codeLength = 0),
+            AuthorizationStateMapper.map(state),
+        )
+    }
+
+    @Test
+    fun `blank code info fields are not surfaced as real values`() {
+        val state = TdApi.AuthorizationStateWaitEmailCode().apply {
+            codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("   ", 0)
+        }
+        assertEquals(
+            TelegramAuthState.WaitingForEmailCode(emailPattern = null, codeLength = 0),
+            AuthorizationStateMapper.map(state),
+        )
+    }
+
+    @Test
+    fun `premium purchase wait maps with the support contact TDLib supplied`() {
+        val state = TdApi.AuthorizationStateWaitPremiumPurchase().apply {
+            supportEmailAddress = "premium@telegram.org"
+            supportEmailSubject = "Premium"
+        }
+        assertEquals(
+            TelegramAuthState.WaitingForPremiumPurchase(
+                supportEmailAddress = "premium@telegram.org",
+                supportEmailSubject = "Premium",
+            ),
+            AuthorizationStateMapper.map(state),
+        )
+    }
+
+    @Test
+    fun `premium purchase wait with no contact still maps to its own state`() {
+        val state = TdApi.AuthorizationStateWaitPremiumPurchase().apply {
+            supportEmailAddress = ""
+            supportEmailSubject = ""
+        }
+        assertEquals(
+            TelegramAuthState.WaitingForPremiumPurchase(
+                supportEmailAddress = null,
+                supportEmailSubject = null,
+            ),
+            AuthorizationStateMapper.map(state),
+        )
+    }
 }

@@ -25,6 +25,17 @@ import kotlinx.coroutines.withContext
  * album *grouping* as well as to the contents, so an album's cover and count describe what the user
  * can actually see rather than counting media the grid refuses to show — the same reasoning that
  * already excludes archived/trashed ids here.
+ *
+ * That makes this class **two different things depending on how it is constructed**, and the
+ * difference matters wherever a number is used to make a decision rather than to describe a grid:
+ *
+ * - Constructed with [typeFilterProvider] and `hiddenIds()` (archived + trashed) it is the
+ *   *display* repository behind the Albums screen. Counts and covers match the timeline.
+ * - Constructed without a type filter and with trashed-only exclusion it is the *backup* repository
+ *   behind the SELECT_FOLDER picker. A folder holding only videos must still be listed when the user
+ *   has hidden videos from the timeline, and the count beside a folder has to be the number of items
+ *   `BackupCoordinator` will actually discover in that bucket — not the number the grid would show.
+ *   See `AppContainer.backupAlbumRepository`.
  */
 class MediaStoreAlbumRepository(
     context: Context,
@@ -43,6 +54,9 @@ class MediaStoreAlbumRepository(
         MediaStore.MediaColumns.DATE_MODIFIED,
         MediaStore.MediaColumns.BUCKET_ID,
         MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
+        // The bucket's last path segment is its display name, so this is the only column that can
+        // tell `DCIM/Camera` from `Pictures/Camera`. API 29+ only, hence the column-index guard below.
+        MediaStore.MediaColumns.RELATIVE_PATH,
     )
 
     private val mediaSelection =
@@ -77,6 +91,9 @@ class MediaStoreAlbumRepository(
             val modCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
             val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_ID)
             val bucketNameCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+            // RELATIVE_PATH arrived in API 29; on 26–28 the provider does not offer it, so the index
+            // is -1 and every album simply has no path (callers fall back to the display name).
+            val pathCol = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
             if (bucketCol < 0) return@use
             while (cursor.moveToNext()) {
                 scope.ensureActive()
@@ -87,6 +104,7 @@ class MediaStoreAlbumRepository(
                     id = cursor.getLong(idCol),
                     bucketId = bucketId,
                     bucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol) else null,
+                    relativePath = if (pathCol >= 0) cursor.getString(pathCol) else null,
                     mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null,
                     whenMillis = if (taken > 0L) taken else mod * 1000L,
                 )

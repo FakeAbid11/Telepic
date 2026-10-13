@@ -42,7 +42,9 @@ class MainActivity : ComponentActivity() {
                     initializer {
                         OnboardingViewModel(
                             repository = container.onboardingRepository,
-                            albumRepository = container.albumRepository,
+                            // The picker offers folders as a *backup* choice, so it reads the
+                            // backup-scoped repository rather than the display-filtered one.
+                            foldersRepository = container.backupAlbumRepository,
                             // Apply a first-run or changed backup choice immediately instead of only at next launch.
                             onBackupChoiceChanged = { container.backupCoordinator.syncFromPreference() },
                         )

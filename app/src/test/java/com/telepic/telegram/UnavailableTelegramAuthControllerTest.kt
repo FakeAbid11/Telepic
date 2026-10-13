@@ -28,6 +28,10 @@ class UnavailableTelegramAuthControllerTest {
         controller.start()
         controller.submitPhoneNumber("+10000000000")
         controller.submitCode("12345")
+        controller.submitPassword("hunter2")
+        controller.submitEmailAddress("abid@example.com")
+        controller.submitEmailCode("12345")
+        controller.resendEmailCode()
         controller.logout()
         assertTrue(controller.state.value is TelegramAuthState.NotConnected)
     }

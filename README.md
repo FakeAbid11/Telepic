@@ -142,7 +142,7 @@ Open **Photos** for the full timeline, or **Albums** to browse by folder. Scroll
 **3. Turn on backup**
 Choose a backup mode during onboarding or later in **Settings → Backup**:
 - **Back up all photos** — discovers and uploads eligible media automatically.
-- **Select a folder** — records your folder selection (the automatic folder filter is not implemented yet; see [Limitations](#limitations)).
+- **Select a folder** — opens a picker listing the device's actual media folders; only the folders you tick are scanned and uploaded. Confirm requires at least one folder, and nothing else is uploaded automatically.
 - **Not now** — never uploads automatically.
 
 Use **Back up now** to scan for new media immediately, and **Backup Center** to watch progress, retry, or cancel individual items.
@@ -341,7 +341,7 @@ never run against the real thing.
 | Surface | Why it is device-gated |
 |---|---|
 | TDLib request/response shapes | Written against `io.github.tdlib-android:core:0.1.1` (TDLib 1.8.x); the generated `TdApi` surface must be finalized on-device |
-| Telegram auth round-trip | Needs a real phone number, code, and optional 2FA |
+| Telegram auth round-trip | Needs a real phone number, code, and optional 2FA — or, for an account registered by email, the emailed code (and possibly a Telegram Premium purchase) |
 | Cloud browse / preview / original download | Needs a populated channel and a live session |
 | Backup upload (`SendMessage` + `InputFile`) | Same bring-up; until then `TdLibCloudDataSource.upload` throws an honest transient failure and items stay `QUEUED`/`WAITING` — never falsely `BACKED_UP` |
 | MediaStore write (restore) and delete consent | Provider behaviour and the system consent dialog are device-only |
@@ -405,9 +405,11 @@ A chronological log of what each phase built. Two status labels are used:
 - **Java TDLib** bindings (`org.drinkless.tdlib.Client` / `TdApi`) via the `io.github.tdlib-android:core` AAR — **no JSON client, no hand-written JNI shim**
 - **ARM-only** native libraries (`arm64-v8a`, `armeabi-v7a`) selected via `ndk.abiFilters`; the APK excludes x86/x86_64. `minSdk` raised to **26** (required by the TDLib artifact)
 - Clean layer boundary: **UI → `TelegramAuthController` → `TelegramSessionManager` → `TdLibClientGateway` → TDLib**. The UI never touches `Client` directly
-- Full authentication state machine mapping **every** TDLib authorization state to `TelegramAuthState` (initializing → phone number → code → optional 2FA password → authorized; closing/closed; errors)
+- Full authentication state machine mapping **every** TDLib authorization state to `TelegramAuthState` (initializing → phone number → code → optional 2FA password → authorized; closing/closed; errors) — including the states TDLib uses for accounts registered by email (`WaitEmailAddress`, `WaitEmailCode`) and `WaitPremiumPurchase`
 - **Persistent, app-private TDLib database** (`noBackupFilesDir`) with a **Keystore-wrapped encryption key** (AES-256-GCM) — login survives app restart and process death, and is never stored on shared storage
 - Real onboarding Telegram UI: phone / code / 2FA inputs, account identity on success, and recoverable errors (invalid credentials, **flood wait**, network) — **never fakes a login**
+- **Email sign-in is a real path, not a dead end.** `WaitEmailAddress` renders an email field and `WaitEmailCode` a code field with a resend action, so an email-registered account can finish signing in. Both previously fell through to the `Initializing` spinner — a screen with no input and no button, and therefore no way forward. A rejected address or code keeps its field and shows the reason inline, and a **late or duplicated reply is dropped rather than re-opening the input**, so a session that has already signed in cannot be dragged back.
+- **`WaitPremiumPurchase` says so honestly.** TDLib can gate a login behind a Telegram Premium purchase; Telepic has no store front, so instead of spinning forever it states that the purchase must be completed in the official Telegram app and offers the support contact TDLib supplied.
 - **Non-blocking startup**: TDLib initializes without ever delaying or crashing the local Photos flow
 - **No sensitive data in logs**: the API hash, phone number, authentication code, 2FA password, and the encryption key cannot leak through logs. (The app performs no logging at all today — a structured logging layer is planned.)
 
@@ -431,7 +433,8 @@ A chronological log of what each phase built. Two status labels are used:
 - **Safe staging** — a MediaStore content URI is streamed (fixed-size buffer, never `readBytes()`) into app-private storage, used for the upload, and cleaned up in a `finally`. The **original is never modified or deleted**.
 - **WorkManager orchestration**: `BackupWorkScheduler` → `BackupWorker` (a `CoroutineWorker`) with a **network constraint** and an honest **foreground notification** ("Uploading n of m"). Offline just leaves rows `QUEUED` and resumes on reconnect; the engine never depends on a screen staying open.
 - **Cloud upload contract** — the engine calls `CloudRepository.uploadMedia(request, onProgress)` and knows **no TDLib details**; the real Telegram request shapes stay behind the data layer.
-- **Backup preference honored**: `BACKUP_ALL` incrementally discovers and enqueues eligible media; `NOT_NOW` never auto-enqueues; `SELECT_FOLDER` is **not faked** as enforceable — folder selection has no real implementation yet, so the queue treats it as "nothing automatic" and the pipeline is ready for a folder filter.
+- **Backup preference honored**: `BACKUP_ALL` incrementally discovers and enqueues eligible media; `NOT_NOW` never auto-enqueues; `SELECT_FOLDER` scans **exactly the folders the user chose** — one bucket-scoped loader per selected folder — and an empty selection backs up nothing, which is the honest equivalent of `NOT_NOW` rather than a silent fallback to the whole library.
+- **Real folder picker, scoped to what will actually be uploaded** — choosing "a folder" opens a multi-select list of the device's media folders (MediaStore buckets), identified by the stable **bucket id**, never by name. The list and its per-folder counts come from the **backup** scope rather than the library view, so a folder whose media the timeline currently hides is still offered, and the count beside it matches what the pass discovers. Where two folders share a name (`DCIM/Camera` vs `Pictures/Camera`), the folder's path is shown so the choice is unambiguous.
 - **Backup Center** foundation (reached contextually from Settings): status, pending / uploading / completed / failed counts, and per-item retry / cancel — no upload polish, no full restore.
 - **Phase 7 ready**: the queue keeps nullable `contentHash` / timestamps and the manifest keeps its reserved hash field, but **no SHA-256 recognition or dedup is performed** here.
 
@@ -516,11 +519,11 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 
 - **Device validation is outstanding.** The entire live Telegram path (auth, cloud browse/preview, upload, download), MediaStore write/delete consent, all rendering (ExoPlayer, osmdroid, GIF decode), and the app lock's credential prompt are unverified on a device. See [Device validation status](#device-validation-status).
 - **App lock re-locks on a grace window, not instantly.** Returning to the foreground within 30 seconds does not re-prompt, because launching a system activity (the photo picker, the delete-consent dialog, the Telegram link) stops this activity and an instant re-lock would interrupt the user's own flow. It locks on cold start and after longer background trips; see `AppLockTimer` for the exact rule.
-- **Hiding videos or GIFs does not change what gets backed up.** The Media preferences filter the library *views* only; backup eligibility stays governed by the backup preference.
+- **Hiding videos or GIFs does not change what gets backed up.** The Media preferences filter the library *views* only; backup eligibility stays governed by the backup preference. The folder picker therefore lists folders by what a backup would take, not by what the timeline happens to show.
 - **No instrumented tests.** All tests are JVM/Robolectric; there is no `app/src/androidTest` source set, so nothing device-bound is covered by automated tests.
 - **No logging.** The app performs no logging at all today, which makes field diagnosis of a device-gated failure difficult. Structured logging is planned.
 - **No offline map tiles.** The map requires connectivity.
-- **`SELECT_FOLDER` has no real folder filter.** Folder selection is persisted, but the backup engine treats it as "nothing automatic" rather than faking enforcement.
+- **`SELECT_FOLDER` is keyed to MediaStore buckets.** A folder *is* a bucket, and the bucket id is derived from the folder's path — so a folder renamed or moved outside the app drops out of the selection and has to be picked again. Only folders that currently hold photos or videos are offered (an empty folder produces no bucket), and on Android 9 and below there is no `RELATIVE_PATH`, so two folders sharing a name cannot be told apart in the picker there.
 - **Restored images are not byte-for-byte identical** to the source, because Telegram may recompress photos; only the *restored* bytes are hashed.
 - **The open-source licence list is hand-maintained** (`OpenSourceLicenses.kt`), so it has to be updated whenever a runtime dependency changes. It mirrors `gradle/libs.versions.toml` rather than being generated.
 - **ARM-only**, `minSdk 26`.

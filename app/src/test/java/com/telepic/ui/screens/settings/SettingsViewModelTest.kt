@@ -63,6 +63,9 @@ class SettingsViewModelTest {
         override fun submitPhoneNumber(phoneNumber: String) = Unit
         override fun submitCode(code: String) = Unit
         override fun submitPassword(password: String) = Unit
+        override fun submitEmailAddress(emailAddress: String) = Unit
+        override fun submitEmailCode(code: String) = Unit
+        override fun resendEmailCode() = Unit
         var logoutCalls = 0
         override fun logout() { logoutCalls++ }
         fun authorize() {
@@ -156,12 +159,16 @@ class SettingsViewModelTest {
         coordinator: RecordingCoordinator = RecordingCoordinator(),
         albums: List<Album> = emptyList(),
         albumRepository: AlbumRepository = FakeAlbums(albums),
+        // Defaults to the same fake so a test that is not about the two scopes need not know they
+        // are separate; the picker tests below pass a different one on purpose.
+        foldersRepository: AlbumRepository = albumRepository,
         deviceSecureReader: () -> Boolean = { false },
     ) = SettingsViewModel(
         telegramAuthController = auth,
         onboardingRepository = onboarding,
         settingsRepository = settings,
         albumRepository = albumRepository,
+        foldersRepository = foldersRepository,
         backupCoordinator = coordinator,
         appContext = ApplicationProvider.getApplicationContext<Context>(),
         deviceSecureReader = deviceSecureReader,
@@ -206,7 +213,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `folder list loads from the album repository on demand`() = runTest {
+    fun `folder list loads on demand from the backup-scoped repository`() = runTest {
         val album = Album(
             bucketId = 8L,
             title = "Camera",
@@ -214,12 +221,48 @@ class SettingsViewModelTest {
             coverIsVideo = false,
             count = 5,
             latestMillis = 1L,
+            relativePath = "DCIM/Camera/",
         )
         val vm = viewModel(albums = listOf(album))
         assertTrue(vm.folders.value.isEmpty())
         vm.loadFolders()
         runCurrent()
         assertEquals(listOf(album), vm.folders.value)
+    }
+
+    @Test
+    fun `the folder picker reads the backup scope, not the display scope`() = runTest {
+        // The two repositories are deliberately different objects, and they must not be
+        // interchangeable: the display one hides videos/GIFs and archived media, so wiring it into
+        // the picker drops whole folders from the list and misstates every count against what the
+        // backup pass actually discovers. Passing different fakes is how that is pinned.
+        val photos = Album(
+            bucketId = 8L,
+            title = "Camera",
+            coverUri = Uri.parse("content://media/cover"),
+            coverIsVideo = false,
+            count = 5,
+            latestMillis = 1L,
+            relativePath = "DCIM/Camera/",
+        )
+        val videosOnly = Album(
+            bucketId = 9L,
+            title = "Screen recordings",
+            coverUri = Uri.parse("content://media/cover2"),
+            coverIsVideo = true,
+            count = 3,
+            latestMillis = 2L,
+            relativePath = "Movies/Recordings/",
+        )
+        val vm = viewModel(
+            albumRepository = FakeAlbums(listOf(photos)), // what the library screens show
+            foldersRepository = FakeAlbums(listOf(photos, videosOnly)), // what a backup would take
+        )
+
+        vm.loadFolders()
+        runCurrent()
+
+        assertEquals(listOf(photos, videosOnly), vm.folders.value)
     }
 
     @Test

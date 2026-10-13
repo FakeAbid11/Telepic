@@ -236,6 +236,20 @@
     <string name="telegram_registration">This phone number doesn\'t have a Telegram account yet. Telepic backs up to an existing account — please create one in the official Telegram app first, then sign in here.</string>
     <string name="telegram_connected_as">Connected as %1$s</string>
     <string name="telegram_retry">Retry</string>
+    <!--
+      Email sign-in. Telegram asks for an email address instead of a phone number when the account
+      was registered by email; the flow continues with a code Telegram emails.
+    -->
+    <string name="telegram_email_label">Email address</string>
+    <string name="telegram_email_hint">The email address on your Telegram account</string>
+    <string name="telegram_email_send_code">Send code</string>
+    <string name="telegram_email_code_label">Email code</string>
+    <string name="telegram_email_code_hint">Enter the code Telegram emailed you</string>
+    <string name="telegram_email_code_sent_to">We sent a code to %1$s</string>
+    <string name="telegram_email_code_sent_generic">We sent a code to your email address</string>
+    <string name="telegram_email_resend">Resend code</string>
+    <string name="telegram_premium_required">This account has to complete a Telegram Premium purchase before it can sign in, and Telepic cannot make that purchase for you. Please finish it in the official Telegram app, then sign in here.</string>
+    <string name="telegram_premium_contact">Contact Telegram support</string>
     <string name="telegram_change_account">Use a different account</string>
 
     <!-- Screen 5 — Backup Preferences -->

@@ -1,5 +1,6 @@
 package com.telepic.onboarding
 
+import android.net.Uri
 import androidx.paging.PagingData
 import com.telepic.data.media.AlbumRepository
 import com.telepic.domain.media.Album
@@ -57,6 +58,18 @@ class OnboardingViewModelTest {
     /** A bucket query that fails the way a revoked or limited media grant makes it fail. */
     private class ExplodingAlbumRepository : AlbumRepository {
         override suspend fun albums(): List<Album> = throw SecurityException("media access was revoked")
+        override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() = Unit
+    }
+
+    /** Records that the folder query was made, so "loaded on demand" is actually observed. */
+    private class FakeFolders(private val folders: List<Album>) : AlbumRepository {
+        var calls = 0
+        override suspend fun albums(): List<Album> {
+            calls++
+            return folders
+        }
+
         override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
         override fun refresh() = Unit
     }
@@ -164,7 +177,7 @@ class OnboardingViewModelTest {
     @Test
     fun `a failed folder query degrades to an empty picker instead of crashing`() {
         val repository = FakeRepository()
-        val vm = OnboardingViewModel(repository, albumRepository = ExplodingAlbumRepository())
+        val vm = OnboardingViewModel(repository, foldersRepository = ExplodingAlbumRepository())
 
         vm.loadFolders()
         settle()
@@ -175,5 +188,36 @@ class OnboardingViewModelTest {
         assertEquals(emptyList<Album>(), vm.folders.value)
         // A permission/provider failure is not a *choice* failure, so it does not claim one.
         assertTrue("a failed query must not be reported as a failed choice", !vm.setupFailed.value)
+    }
+
+    @Test
+    fun `the folder picker reads the backup-scoped repository, and only when asked`() {
+        // The picker's list is a *backup* choice, so it must come from the backup-scoped repository
+        // rather than the display-filtered one — otherwise a folder whose media the timeline hides
+        // cannot be selected at all. Loading is on demand: opening the step must not scan MediaStore.
+        val folders = listOf(
+            Album(
+                bucketId = 42L,
+                title = "Camera",
+                coverUri = Uri.parse("content://media/external/images/media/42"),
+                coverIsVideo = false,
+                count = 7,
+                latestMillis = 1_700_000_000_000L,
+                relativePath = "DCIM/Camera/",
+            ),
+        )
+        val folderSource = FakeFolders(folders)
+        val vm = OnboardingViewModel(FakeRepository(), foldersRepository = folderSource)
+
+        assertEquals(0, folderSource.calls)
+
+        vm.loadFolders()
+        settle()
+
+        assertEquals(1, folderSource.calls)
+        assertTrue("expected the picker to stop loading", vm.foldersLoaded.value)
+        assertEquals(folders, vm.folders.value)
+        // The path survives the round trip, which is what lets the dialog disambiguate later.
+        assertEquals("DCIM/Camera/", vm.folders.value.single().relativePath)
     }
 }

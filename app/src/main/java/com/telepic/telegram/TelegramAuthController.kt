@@ -24,5 +24,14 @@ interface TelegramAuthController {
 
     fun submitPassword(password: String)
 
+    /** Submit the email address TDLib asked for instead of a phone number. */
+    fun submitEmailAddress(emailAddress: String)
+
+    /** Submit the code Telegram emailed. */
+    fun submitEmailCode(code: String)
+
+    /** Ask Telegram to email a fresh code (an expired or lost code is otherwise a dead end). */
+    fun resendEmailCode()
+
     fun logout()
 }

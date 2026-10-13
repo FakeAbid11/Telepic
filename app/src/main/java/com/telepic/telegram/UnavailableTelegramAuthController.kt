@@ -20,5 +20,8 @@ class UnavailableTelegramAuthController : TelegramAuthController {
     override fun submitPhoneNumber(phoneNumber: String) = Unit
     override fun submitCode(code: String) = Unit
     override fun submitPassword(password: String) = Unit
+    override fun submitEmailAddress(emailAddress: String) = Unit
+    override fun submitEmailCode(code: String) = Unit
+    override fun resendEmailCode() = Unit
     override fun logout() = Unit
 }
