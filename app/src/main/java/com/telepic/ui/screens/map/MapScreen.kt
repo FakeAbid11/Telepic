@@ -233,6 +233,15 @@ private fun OsmMap(
     var pendingCamera by remember { mutableStateOf<MapCameraResolver.Decision?>(null) }
     var selected by remember { mutableStateOf<MapClusterer.MapPin.Single?>(null) }
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+    // Claimed and applied here rather than inside the AndroidView factory: a factory block runs once,
+    // when the view is created, and is never re-run when `focus` changes. A request that arrived while
+    // the map was already on screen was therefore neither applied nor cleared, so it replayed onto a
+    // later visit the user did not ask for — the opposite of what the surface promises.
+    LaunchedEffect(focus) {
+        val requested = focus ?: return@LaunchedEffect
+        pendingCamera = MapCameraResolver.focus(requested.latitude, requested.longitude)
+        onFocusConsumed()
+    }
     // Created once per surface and detached with the surface: osmdroid keeps every listener added to a
     // MapView, and the anonymous one the factory used to add survived the screen — still writing
     // Compose state from a map that had already left the composition.
@@ -287,9 +296,6 @@ private fun OsmMap(
                 val config = Configuration.getInstance()
                 config.load(context, prefs)
                 if (config.userAgentValue.isNullOrBlank()) config.userAgentValue = context.packageName
-                // The focus is claimed by the surface that consumes it, so it is never replayed onto a
-                // later visit that the user did not ask for.
-                if (focus != null) onFocusConsumed()
                 MapView(context).apply {
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
