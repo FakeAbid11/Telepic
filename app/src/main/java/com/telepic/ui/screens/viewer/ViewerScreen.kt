@@ -689,7 +689,6 @@ private fun ViewerTopBar(
     }
 }
 
-@Composable
 /**
  * The single-item backup control, in the viewer's action band beside the favourite star.
  *
