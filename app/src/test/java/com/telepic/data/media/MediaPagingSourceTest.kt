@@ -87,6 +87,17 @@ class MediaPagingSourceTest {
     }
 
     @Test
+    fun `no page ever reports a preceding key`() = runTest {
+        // The invariant `getRefreshKey` now states outright. A newest-first timeline has nothing above
+        // its first item, so a refresh cannot resume at the reader's anchor without emitting a duplicate
+        // day header where the resumed page meets the anchor — every page must say "nothing before me".
+        val source = MediaPagingSource(FakeLoader(listOf(media(5, dayA), media(4, dayA), media(3, dayB))))
+        assertEquals(null, source.refreshTop(size = 1).prevKey)
+        val appended = source.load(PagingSource.LoadParams.Append(1, 1, false)) as Page
+        assertEquals(null, appended.prevKey)
+    }
+
+    @Test
     fun `loader failure surfaces as an error result`() = runTest {
         val failing = object : MediaPageLoader {
             override suspend fun load(offset: Int, limit: Int): List<LocalMedia> =

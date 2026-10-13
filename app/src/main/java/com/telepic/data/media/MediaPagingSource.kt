@@ -59,6 +59,22 @@ class MediaPagingSource(
         }
     }
 
-    override fun getRefreshKey(state: PagingState<Int, PhotosItem>): Int =
-        state.anchorPosition?.let(state::closestPageToPosition)?.prevKey ?: 0
+    /**
+     * An invalidation reloads from the **newest** item — stated as the decision it is, not as a resume
+     * key that never was.
+     *
+     * This source is forward-only: [load] answers `prevKey = null`, because a newest-first timeline has
+     * nothing above its first item. The previous `closestPageToPosition(...)?.prevKey ?: 0` therefore
+     * *read* like it resumed at the reader's anchor while resolving to 0 on every single call.
+     *
+     * Resuming for real is not merely a key change: the day headers interleaved into the stream are only
+     * correct when a page is appended ([lastDayKey] carries the day boundary forward), so a page
+     * refreshed from mid-list would emit a duplicate header where it meets the anchor page. A true
+     * resume needs the headers derived at the UI layer from item dates rather than produced here.
+     *
+     * The honest consequence: a MediaStore change scrolls the timeline back to the top.
+     * `PhotosViewModel` debounces those notifications and Paging's `cachedIn` keeps the visible items
+     * painted while the reload runs, so it is rare rather than absent.
+     */
+    override fun getRefreshKey(state: PagingState<Int, PhotosItem>): Int? = null
 }

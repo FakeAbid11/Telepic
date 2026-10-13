@@ -33,9 +33,11 @@ interface LocalMediaLookup {
     suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long? = null): Long?
 
     /**
-     * Resolve many items in a single bounded `_ID IN (...)` query (used by Favorites / Archive /
-     * Trash, whose id-sets come from Room). Missing/inaccessible ids are simply absent from the
-     * result, so an item deleted outside the app never crashes a screen. Order is newest-first.
+     * Resolve many items by id (used by Favorites / Archive / Trash, whose id-sets come from Room).
+     * Missing/inaccessible ids are simply absent from the result, so an item deleted outside the app
+     * never crashes a screen. Order is newest-first, and **every** id in [ids] is resolved: SQLite bounds
+     * how many placeholders one query can carry, so collections past that bound are read in chunks and
+     * merged rather than truncated.
      *
      * **A failed query propagates.** It used to swallow the throwable, which made a provider that
      * refused to answer indistinguishable from a collection with nothing in it — and a curated screen
@@ -117,8 +119,21 @@ class MediaStoreLocalLookup(
 
     override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = withContext(Dispatchers.IO) {
         if (ids.isEmpty()) return@withContext emptyList()
-        val bounded = ids.take(MAX_LOOKUP_IDS)
-        val placeholders = bounded.joinToString(",") { "?" }
+        if (ids.size <= MAX_LOOKUP_IDS) return@withContext queryByIds(ids)
+        // Past the placeholder bound the chunks are the only honest option: this used to `take()` the
+        // first 500 ids and return them as if that were the whole collection, so a Favorites or Trash
+        // list longer than the cap came back short and *confident* — the screen showed 500 items and
+        // never said the rest were not there. Merging the chunks restores the newest-first order across
+        // them, which a per-chunk sort cannot do on its own. A failing chunk still propagates, keeping
+        // the contract on LocalMediaLookup.byIdList.
+        ids.chunked(MAX_LOOKUP_IDS)
+            .flatMap { queryByIds(it) }
+            .sortedWith(MediaSortOrder.TIMELINE_DESC_COMPARATOR)
+    }
+
+    /** One bounded `_ID IN (...)` read. Callers must keep [ids] within [MAX_LOOKUP_IDS]. */
+    private suspend fun queryByIds(ids: Collection<Long>): List<LocalMedia> {
+        val placeholders = ids.joinToString(",") { "?" }
         val selection = "$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} IN ($placeholders)"
         // No try/catch: a failed read must be distinguishable from an empty collection. See the
         // contract on LocalMediaLookup.byIdList.
@@ -126,12 +141,12 @@ class MediaStoreLocalLookup(
             MediaStore.Files.getContentUri("external"),
             projection,
             selection,
-            bounded.map { it.toString() }.toTypedArray(),
+            ids.map { it.toString() }.toTypedArray(),
             // Same coalesced newest-first order the timeline displays, so a curated collection
             // (favorites/archive/trash) steps in exactly the order the user sees.
             MediaSortOrder.TIMELINE_DESC,
         )?.use { cursor ->
-            val out = ArrayList<LocalMedia>(bounded.size)
+            val out = ArrayList<LocalMedia>(ids.size)
             while (cursor.moveToNext()) {
                 val row = CursorMediaRow(cursor)
                 val id = row.long(MediaStore.MediaColumns._ID) ?: continue
