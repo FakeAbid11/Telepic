@@ -1,6 +1,7 @@
 package com.telepic.ui.screens.settings
 
 import android.text.format.Formatter
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -180,213 +181,217 @@ fun SettingsScreen(
     // The scheme's own background rather than `mediaBackdrop` — deliberately. Nothing on this screen is
     // media, so it takes the document-style surface; the six screens that show thumbnails use
     // `mediaBackdrop` (see `TelepicExtendedColors.mediaBackdrop` and Backup Center for the rule).
-    // `contentAlignment = TopCenter` is what caps the measure: Surface lays its content out in a
-    // full-size Box, so the Column below can ask for `contentMaxWidth` and still be centred. On a
-    // tablet an uncapped settings row leaves the label and its summary most of a screen apart, so one
-    // sentence takes a head-turn to read. The surface itself stays edge-to-edge.
-    Surface(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = spacing.contentMaxWidth)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-        ) {
-            ScreenHeader(
-                title = stringResource(R.string.settings_title),
-                onBack = onBack,
-            )
+    //
+    // The centring Box is what caps the measure: on a tablet an uncapped settings row leaves the label
+    // and its summary most of a screen apart, so one sentence takes a head-turn to read. The Box fills
+    // the screen and the Column asks for `contentMaxWidth`, so the surface and the scroll gesture stay
+    // edge-to-edge while the text does not. Material3's Surface has no content-alignment parameter in
+    // this version, which is why this is an explicit Box rather than a `Surface` argument.
+    Surface(modifier = modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = spacing.contentMaxWidth)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                ScreenHeader(
+                    title = stringResource(R.string.settings_title),
+                    onBack = onBack,
+                )
 
-            SettingsSection(title = stringResource(R.string.settings_section_account)) {
-                // Info row: enabled (not dimmed) with no onClick — a real state read, not a stub.
-                SettingsRow(
-                    title = stringResource(R.string.settings_account_telegram),
-                    summary = accountSummary,
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_account_connection),
-                    summary = stringResource(cloudStatus.connectionSummaryRes),
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_account_backup_channel),
-                    summary = channelTitle ?: stringResource(R.string.settings_backup_channel_none),
-                )
-                if (authState is TelegramAuthState.Authorized) {
+                SettingsSection(title = stringResource(R.string.settings_section_account)) {
+                    // Info row: enabled (not dimmed) with no onClick — a real state read, not a stub.
                     SettingsRow(
-                        title = stringResource(R.string.settings_account_sign_out),
+                        title = stringResource(R.string.settings_account_telegram),
+                        summary = accountSummary,
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_account_connection),
+                        summary = stringResource(cloudStatus.connectionSummaryRes),
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_account_backup_channel),
+                        summary = channelTitle ?: stringResource(R.string.settings_backup_channel_none),
+                    )
+                    if (authState is TelegramAuthState.Authorized) {
+                        SettingsRow(
+                            title = stringResource(R.string.settings_account_sign_out),
+                            enabled = true,
+                            onClick = { showSignOutConfirm = true },
+                        )
+                    }
+                }
+
+                SettingsSection(title = stringResource(R.string.settings_section_backup)) {
+                    SettingsRow(
+                        title = stringResource(R.string.backup_settings_entry),
+                        summary = stringResource(R.string.backup_settings_entry_summary),
                         enabled = true,
-                        onClick = { showSignOutConfirm = true },
+                        onClick = onOpenBackupCenter,
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_backup_preferences),
+                        summary = backupSummary,
+                        enabled = true,
+                        onClick = { showBackupDialog = true },
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_backup_now),
+                        summary = if (backupConfigured) {
+                            stringResource(R.string.settings_backup_now_summary)
+                        } else {
+                            stringResource(R.string.settings_backup_now_unavailable)
+                        },
+                        enabled = backupConfigured,
+                        onClick = viewModel::backupNow,
+                    )
+                    // The three rows below are WorkManager constraints: a run is simply not started until
+                    // the condition holds, so nothing is ever failed for a condition the user chose.
+                    SettingsRow(
+                        title = stringResource(R.string.settings_backup_network),
+                        summary = stringResource(networkPreference.labelRes),
+                        enabled = true,
+                        onClick = { showNetworkDialog = true },
+                    )
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_backup_charge_only),
+                        summary = stringResource(R.string.settings_backup_charge_only_summary),
+                        checked = requiresCharging,
+                        onCheckedChange = viewModel::setBackupRequiresCharging,
+                    )
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_backup_battery_not_low),
+                        summary = stringResource(R.string.settings_backup_battery_not_low_summary),
+                        checked = requiresBatteryNotLow,
+                        onCheckedChange = viewModel::setBackupRequiresBatteryNotLow,
+                    )
+                    // Informational: Telepic has no re-encoding path, so "Original" is the only truthful
+                    // value and the row states it rather than offering a choice it cannot honour.
+                    SettingsRow(
+                        title = stringResource(R.string.settings_backup_quality),
+                        summary = stringResource(R.string.settings_backup_quality_value),
                     )
                 }
-            }
 
-            SettingsSection(title = stringResource(R.string.settings_section_backup)) {
-                SettingsRow(
-                    title = stringResource(R.string.backup_settings_entry),
-                    summary = stringResource(R.string.backup_settings_entry_summary),
-                    enabled = true,
-                    onClick = onOpenBackupCenter,
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_backup_preferences),
-                    summary = backupSummary,
-                    enabled = true,
-                    onClick = { showBackupDialog = true },
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_backup_now),
-                    summary = if (backupConfigured) {
-                        stringResource(R.string.settings_backup_now_summary)
-                    } else {
-                        stringResource(R.string.settings_backup_now_unavailable)
-                    },
-                    enabled = backupConfigured,
-                    onClick = viewModel::backupNow,
-                )
-                // The three rows below are WorkManager constraints: a run is simply not started until
-                // the condition holds, so nothing is ever failed for a condition the user chose.
-                SettingsRow(
-                    title = stringResource(R.string.settings_backup_network),
-                    summary = stringResource(networkPreference.labelRes),
-                    enabled = true,
-                    onClick = { showNetworkDialog = true },
-                )
-                SettingsToggleRow(
-                    title = stringResource(R.string.settings_backup_charge_only),
-                    summary = stringResource(R.string.settings_backup_charge_only_summary),
-                    checked = requiresCharging,
-                    onCheckedChange = viewModel::setBackupRequiresCharging,
-                )
-                SettingsToggleRow(
-                    title = stringResource(R.string.settings_backup_battery_not_low),
-                    summary = stringResource(R.string.settings_backup_battery_not_low_summary),
-                    checked = requiresBatteryNotLow,
-                    onCheckedChange = viewModel::setBackupRequiresBatteryNotLow,
-                )
-                // Informational: Telepic has no re-encoding path, so "Original" is the only truthful
-                // value and the row states it rather than offering a choice it cannot honour.
-                SettingsRow(
-                    title = stringResource(R.string.settings_backup_quality),
-                    summary = stringResource(R.string.settings_backup_quality_value),
-                )
-            }
+                SettingsSection(title = stringResource(R.string.settings_section_library)) {
+                    SettingsRow(
+                        title = stringResource(R.string.settings_library_local),
+                        summary = localLibrarySummary,
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_library_cloud),
+                        summary = cloudLibrarySummary,
+                    )
+                }
 
-            SettingsSection(title = stringResource(R.string.settings_section_library)) {
-                SettingsRow(
-                    title = stringResource(R.string.settings_library_local),
-                    summary = localLibrarySummary,
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_library_cloud),
-                    summary = cloudLibrarySummary,
-                )
-            }
+                SettingsSection(title = stringResource(R.string.settings_section_media)) {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_media_show_videos),
+                        summary = stringResource(R.string.settings_media_show_videos_summary),
+                        checked = showVideos,
+                        onCheckedChange = viewModel::setShowVideosInTimeline,
+                    )
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_media_show_gifs),
+                        summary = stringResource(R.string.settings_media_show_gifs_summary),
+                        checked = showGifs,
+                        onCheckedChange = viewModel::setShowGifsInTimeline,
+                    )
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_media_start_muted),
+                        summary = stringResource(R.string.settings_media_start_muted_summary),
+                        checked = startMuted,
+                        onCheckedChange = viewModel::setStartVideosMuted,
+                    )
+                }
 
-            SettingsSection(title = stringResource(R.string.settings_section_media)) {
-                SettingsToggleRow(
-                    title = stringResource(R.string.settings_media_show_videos),
-                    summary = stringResource(R.string.settings_media_show_videos_summary),
-                    checked = showVideos,
-                    onCheckedChange = viewModel::setShowVideosInTimeline,
-                )
-                SettingsToggleRow(
-                    title = stringResource(R.string.settings_media_show_gifs),
-                    summary = stringResource(R.string.settings_media_show_gifs_summary),
-                    checked = showGifs,
-                    onCheckedChange = viewModel::setShowGifsInTimeline,
-                )
-                SettingsToggleRow(
-                    title = stringResource(R.string.settings_media_start_muted),
-                    summary = stringResource(R.string.settings_media_start_muted_summary),
-                    checked = startMuted,
-                    onCheckedChange = viewModel::setStartVideosMuted,
-                )
-            }
+                SettingsSection(title = stringResource(R.string.settings_section_appearance)) {
+                    SettingsRow(
+                        title = stringResource(R.string.settings_appearance_theme),
+                        summary = stringResource(themeMode.labelRes),
+                        enabled = true,
+                        onClick = { showThemeDialog = true },
+                    )
+                }
 
-            SettingsSection(title = stringResource(R.string.settings_section_appearance)) {
-                SettingsRow(
-                    title = stringResource(R.string.settings_appearance_theme),
-                    summary = stringResource(themeMode.labelRes),
-                    enabled = true,
-                    onClick = { showThemeDialog = true },
-                )
-            }
+                SettingsSection(title = stringResource(R.string.settings_section_security)) {
+                    // The lock is enforced by the device's own credential, so with none configured there
+                    // is nothing to authenticate against: the row says so and is switched off rather than
+                    // offering a toggle that would silently never fire.
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_security_app_lock),
+                        // The summary tracks the switch, because the lock does not fire when you enable it —
+                        // it fires on the next foregrounding. A static description left the row looking like
+                        // a toggle that did nothing; this one says what just changed.
+                        summary = when {
+                            !isDeviceSecure -> stringResource(R.string.settings_security_app_lock_unavailable)
+                            appLockEnabled -> stringResource(R.string.settings_security_app_lock_on)
+                            else -> stringResource(R.string.settings_security_app_lock_summary)
+                        },
+                        checked = appLockEnabled,
+                        enabled = isDeviceSecure,
+                        onCheckedChange = viewModel::setAppLockEnabled,
+                    )
+                }
 
-            SettingsSection(title = stringResource(R.string.settings_section_security)) {
-                // The lock is enforced by the device's own credential, so with none configured there
-                // is nothing to authenticate against: the row says so and is switched off rather than
-                // offering a toggle that would silently never fire.
-                SettingsToggleRow(
-                    title = stringResource(R.string.settings_security_app_lock),
-                    // The summary tracks the switch, because the lock does not fire when you enable it —
-                    // it fires on the next foregrounding. A static description left the row looking like
-                    // a toggle that did nothing; this one says what just changed.
-                    summary = when {
-                        !isDeviceSecure -> stringResource(R.string.settings_security_app_lock_unavailable)
-                        appLockEnabled -> stringResource(R.string.settings_security_app_lock_on)
-                        else -> stringResource(R.string.settings_security_app_lock_summary)
-                    },
-                    checked = appLockEnabled,
-                    enabled = isDeviceSecure,
-                    onCheckedChange = viewModel::setAppLockEnabled,
-                )
-            }
+                SettingsSection(title = stringResource(R.string.settings_section_storage)) {
+                    // Trash lives here because it is a storage concern, and because the Viewer's own
+                    // confirmation can only offer a single-step Undo — anything older has to be
+                    // reachable. Its previous sole entry point was a bare text button inside Albums,
+                    // which users did not find.
+                    SettingsRow(
+                        title = stringResource(R.string.settings_storage_trash),
+                        summary = stringResource(R.string.settings_storage_trash_summary),
+                        enabled = true,
+                        onClick = onOpenTrash,
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_storage_telegram_cache),
+                        summary = if (storage.loaded) {
+                            Formatter.formatShortFileSize(context, storage.tdlibBytes)
+                        } else {
+                            stringResource(R.string.settings_storage_measuring)
+                        },
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_storage_backup_cache),
+                        summary = if (storage.loaded) {
+                            Formatter.formatShortFileSize(context, storage.stagingBytes)
+                        } else {
+                            stringResource(R.string.settings_storage_measuring)
+                        },
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_storage_clear),
+                        summary = stringResource(R.string.settings_storage_clear_summary),
+                        enabled = true,
+                        onClick = viewModel::clearBackupCache,
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_storage_image_cache),
+                        summary = stringResource(R.string.settings_storage_image_cache_summary),
+                        enabled = true,
+                        onClick = viewModel::clearImageCache,
+                    )
+                }
 
-            SettingsSection(title = stringResource(R.string.settings_section_storage)) {
-                // Trash lives here because it is a storage concern, and because the Viewer's own
-                // confirmation can only offer a single-step Undo — anything older has to be
-                // reachable. Its previous sole entry point was a bare text button inside Albums,
-                // which users did not find.
-                SettingsRow(
-                    title = stringResource(R.string.settings_storage_trash),
-                    summary = stringResource(R.string.settings_storage_trash_summary),
-                    enabled = true,
-                    onClick = onOpenTrash,
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_storage_telegram_cache),
-                    summary = if (storage.loaded) {
-                        Formatter.formatShortFileSize(context, storage.tdlibBytes)
-                    } else {
-                        stringResource(R.string.settings_storage_measuring)
-                    },
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_storage_backup_cache),
-                    summary = if (storage.loaded) {
-                        Formatter.formatShortFileSize(context, storage.stagingBytes)
-                    } else {
-                        stringResource(R.string.settings_storage_measuring)
-                    },
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_storage_clear),
-                    summary = stringResource(R.string.settings_storage_clear_summary),
-                    enabled = true,
-                    onClick = viewModel::clearBackupCache,
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_storage_image_cache),
-                    summary = stringResource(R.string.settings_storage_image_cache_summary),
-                    enabled = true,
-                    onClick = viewModel::clearImageCache,
-                )
-            }
+                SettingsSection(title = stringResource(R.string.settings_section_about)) {
+                    SettingsRow(
+                        title = stringResource(R.string.settings_about_version),
+                        summary = BuildConfig.VERSION_NAME,
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_about_licenses),
+                        summary = stringResource(R.string.settings_about_licenses_summary),
+                        enabled = true,
+                        onClick = { showLicenses = true },
+                    )
+                }
 
-            SettingsSection(title = stringResource(R.string.settings_section_about)) {
-                SettingsRow(
-                    title = stringResource(R.string.settings_about_version),
-                    summary = BuildConfig.VERSION_NAME,
-                )
-                SettingsRow(
-                    title = stringResource(R.string.settings_about_licenses),
-                    summary = stringResource(R.string.settings_about_licenses_summary),
-                    enabled = true,
-                    onClick = { showLicenses = true },
-                )
+                // Bottom breathing room so the last row clears the navigation bar.
+                Column(modifier = Modifier.padding(bottom = spacing.xl)) {}
             }
-
-            // Bottom breathing room so the last row clears the navigation bar.
-            Column(modifier = Modifier.padding(bottom = spacing.xl)) {}
         }
     }
 

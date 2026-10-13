@@ -1,6 +1,7 @@
 package com.telepic.ui.screens.backup
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -59,74 +60,77 @@ fun BackupCenterScreen(
     // (Photos, Albums, Album contents, Cloud, Map, Organization) are the ones on `mediaBackdrop`.
     // Capped and centred for the same reason Settings is: this is a document-style column of stats
     // and queue rows, not a media wall, so on a tablet a full-bleed row would stretch a filename and
-    // its retry button to opposite edges. `Surface` lays its content out in a full-size Box, so the
-    // Column can ask for `contentMaxWidth` and still be centred while the surface stays edge-to-edge.
-    Surface(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = spacing.contentMaxWidth)
-                .fillMaxSize(),
-        ) {
-            ScreenHeader(title = stringResource(R.string.backup_center_title), onBack = onBack)
-
-            // Not read yet: say so, rather than claiming the queue is empty. A local Room read is
-            // quick so this is brief, but the alternative was asserting "no backups yet" over a queue
-            // that already had rows in it.
-            if (!state.isLoaded) {
-                LoadingState(modifier = Modifier.weight(1f))
-                return@Column
-            }
-
-            if (state.isEmpty) {
-                EmptyState(
-                    icon = Icons.Outlined.CloudUpload,
-                    title = stringResource(R.string.backup_center_empty_title),
-                    description = stringResource(R.string.backup_center_empty_body),
-                    primaryAction = StateActionStartBackup(viewModel::startBackup, enabled = !state.isRunning),
-                )
-                return@Column
-            }
-
-            Text(
-                text = stringResource(statusLineRes(state)),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = spacing.screenMargin),
-            )
-
-            StatsRow(stats = state.stats, modifier = Modifier.padding(horizontal = spacing.screenMargin, vertical = spacing.md))
-
-            Button(
-                onClick = viewModel::startBackup,
-                // Honest gating: while TDLib is uploading (stats.uploading > 0), a second start
-                // would just queue against a live run — the disabled state says so.
-                enabled = !state.isRunning,
+    // its retry button to opposite edges. The Box fills the screen and the Column asks for
+    // `contentMaxWidth`, so the surface stays edge-to-edge while the text does not. Material3's
+    // Surface has no content-alignment parameter in this version, hence the explicit Box.
+    Surface(modifier = modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(
                 modifier = Modifier
-                    .padding(horizontal = spacing.screenMargin)
-                    .fillMaxWidth(),
+                    .widthIn(max = spacing.contentMaxWidth)
+                    .fillMaxSize(),
             ) {
-                Text(stringResource(R.string.backup_action_start))
-            }
+                ScreenHeader(title = stringResource(R.string.backup_center_title), onBack = onBack)
 
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = spacing.md),
-                // Bottom padding so the last queue row is not flush against the screen edge — the
-                // list is the last child of a full-height column and has nothing below it.
-                contentPadding = PaddingValues(
-                    start = spacing.screenMargin,
-                    end = spacing.screenMargin,
-                    bottom = spacing.xl,
-                ),
-                verticalArrangement = Arrangement.spacedBy(spacing.sm),
-            ) {
-                items(state.items, key = { it.id }) { item ->
-                    BackupItemRow(
-                        item = item,
-                        onRetry = { viewModel.retry(item.id) },
-                        onCancel = { viewModel.cancel(item.id) },
+                // Not read yet: say so, rather than claiming the queue is empty. A local Room read is
+                // quick so this is brief, but the alternative was asserting "no backups yet" over a queue
+                // that already had rows in it.
+                if (!state.isLoaded) {
+                    LoadingState(modifier = Modifier.weight(1f))
+                    return@Column
+                }
+
+                if (state.isEmpty) {
+                    EmptyState(
+                        icon = Icons.Outlined.CloudUpload,
+                        title = stringResource(R.string.backup_center_empty_title),
+                        description = stringResource(R.string.backup_center_empty_body),
+                        primaryAction = StateActionStartBackup(viewModel::startBackup, enabled = !state.isRunning),
                     )
+                    return@Column
+                }
+
+                Text(
+                    text = stringResource(statusLineRes(state)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = spacing.screenMargin),
+                )
+
+                StatsRow(stats = state.stats, modifier = Modifier.padding(horizontal = spacing.screenMargin, vertical = spacing.md))
+
+                Button(
+                    onClick = viewModel::startBackup,
+                    // Honest gating: while TDLib is uploading (stats.uploading > 0), a second start
+                    // would just queue against a live run — the disabled state says so.
+                    enabled = !state.isRunning,
+                    modifier = Modifier
+                        .padding(horizontal = spacing.screenMargin)
+                        .fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.backup_action_start))
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = spacing.md),
+                    // Bottom padding so the last queue row is not flush against the screen edge — the
+                    // list is the last child of a full-height column and has nothing below it.
+                    contentPadding = PaddingValues(
+                        start = spacing.screenMargin,
+                        end = spacing.screenMargin,
+                        bottom = spacing.xl,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
+                    items(state.items, key = { it.id }) { item ->
+                        BackupItemRow(
+                            item = item,
+                            onRetry = { viewModel.retry(item.id) },
+                            onCancel = { viewModel.cancel(item.id) },
+                        )
+                    }
                 }
             }
         }

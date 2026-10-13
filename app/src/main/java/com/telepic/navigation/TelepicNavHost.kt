@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.combine
  * never share an untyped id. The Viewer is pushed onto whichever screen opened it, so system Back
  * returns to the originating context.
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun TelepicNavHost(
     navController: NavHostController,
