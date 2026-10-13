@@ -197,6 +197,11 @@ class TelegramSessionManagerTest {
         val gateway = FakeGateway().apply { failEmailCode = true }
         val m = manager(gateway)
         m.initialize()
+        // open() emits the parameters wait, and the update flow has replay = 1 with DROP_OLDEST, so a
+        // state pushed before that exchange finishes is dropped rather than replayed. Wait for the
+        // parameters request to be issued first — sendParameters() publishes nothing on success, so
+        // once it has been sent nothing else will overwrite what we push next.
+        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
         // Drive TDLib into the email-code wait, as it would after accepting an address.
         gateway.emit(
             TdApi.AuthorizationStateWaitEmailCode().apply {
@@ -221,6 +226,11 @@ class TelegramSessionManagerTest {
         val gateway = FakeGateway()
         val m = manager(gateway)
         m.initialize()
+        // open() emits the parameters wait, and the update flow has replay = 1 with DROP_OLDEST, so a
+        // state pushed before that exchange finishes is dropped rather than replayed. Wait for the
+        // parameters request to be issued first — sendParameters() publishes nothing on success, so
+        // once it has been sent nothing else will overwrite what we push next.
+        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
         gateway.emit(
             TdApi.AuthorizationStateWaitEmailCode().apply {
                 codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("old***@gmail.com", 4)
@@ -248,6 +258,9 @@ class TelegramSessionManagerTest {
         val gateway = FakeGateway().apply { failEmailCode = true }
         val m = manager(gateway)
         m.initialize()
+        // See the note above: wait for the parameters request before pushing state, or replay = 1 with
+        // DROP_OLDEST discards it when open()'s own parameters wait lands on the same flow.
+        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
         gateway.emit(
             TdApi.AuthorizationStateWaitEmailCode().apply {
                 codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("a***@gmail.com", 5)
