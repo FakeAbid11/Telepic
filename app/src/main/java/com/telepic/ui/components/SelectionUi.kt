@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,11 +42,31 @@ import com.telepic.ui.theme.TelepicTokens
  */
 data class BulkBackupReport(val summary: BulkBackupSummary, val id: Long)
 
-/** The selection-mode header: a close action and the live selected count in place of the title. */
+/**
+ * An optional "select all" action for [SelectionTopBar].
+ *
+ * [total] is how many items the action will select, when the caller already knows: the label shows it
+ * ("Select all (240)") so the scope of the action is never implied. It is null when the caller does
+ * not know yet — a paged grid has to read the rest of the library before it can promise a number —
+ * and the label then claims no number at all rather than guessing one. [busy] puts a spinner in the
+ * leading glyph while that read runs, keeping the label where the user can still read it.
+ */
+data class SelectAllAction(
+    val onSelectAll: () -> Unit,
+    val busy: Boolean = false,
+    val total: Int? = null,
+)
+
+/** The selection-mode header: a close action, the live selected count, and optional "select all". */
 @Composable
-fun SelectionTopBar(count: Int, onCancel: () -> Unit) {
+fun SelectionTopBar(
+    count: Int,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+    selectAll: SelectAllAction? = null,
+) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(
                 start = TelepicTokens.spacing.xs,
@@ -65,7 +86,25 @@ fun SelectionTopBar(count: Int, onCancel: () -> Unit) {
             text = stringResource(R.string.photos_selection_count, count),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
+            // Weighted so the select-all action sits at the trailing edge instead of hugging the count.
+            modifier = Modifier.weight(1f),
         )
+        // Hidden once the count already covers the known total: an action that would select nothing
+        // new is a dead control, and it is only knowable when the caller passed a total.
+        if (selectAll != null && (selectAll.total == null || selectAll.total > count)) {
+            TextButton(onClick = selectAll.onSelectAll, enabled = !selectAll.busy) {
+                ActionGlyph(busy = selectAll.busy, icon = Icons.Outlined.SelectAll)
+                val total = selectAll.total
+                Text(
+                    text = if (total != null) {
+                        stringResource(R.string.photos_selection_select_all_count, total)
+                    } else {
+                        stringResource(R.string.photos_selection_select_all)
+                    },
+                    modifier = Modifier.padding(start = TelepicTokens.spacing.xs),
+                )
+            }
+        }
     }
 }
 

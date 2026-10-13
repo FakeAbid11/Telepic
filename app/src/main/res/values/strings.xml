@@ -478,13 +478,26 @@
     <string name="organization_delete_forever">Delete forever</string>
     <string name="organization_cancel">Cancel</string>
     <string name="organization_item_description">Photo or video %1$s</string>
+    <!-- TalkBack's name for the long press that starts a multi-item selection. The gesture itself is
+         invisible, so without this the only way into selection mode is one a screen-reader user
+         cannot discover. -->
+    <string name="organization_long_press_select">Select</string>
     <string name="organization_deleted_message">This item is still on your device. Telepic does not have permission to delete it from media storage.</string>
 
     <string name="trash_delete_title">Delete permanently?</string>
-    <string name="trash_delete_body">This deletes the file from your device through the system. It cannot be undone. Your Telegram backup copy is not affected.</string>
+    <!-- Numbered, because Delete forever now acts on the whole selection: the singular sentence would
+         have described one file while the app deleted (or refused to delete) however many were
+         selected. Both quantities carry the argument so the formats stay consistent. -->
+    <plurals name="trash_delete_body_count">
+        <item quantity="one">This deletes %1$d file from your device through the system. It cannot be undone. Your Telegram backup copy is not affected.</item>
+        <item quantity="other">This deletes %1$d files from your device through the system. It cannot be undone. Your Telegram backup copies are not affected.</item>
+    </plurals>
     <string name="trash_delete_confirm">Delete from device</string>
     <string name="trash_delete_consent_needed">Android asked you to confirm this deletion.</string>
-    <string name="trash_delete_failed">Android didn\'t allow the deletion. The item stays in trash.</string>
+    <plurals name="trash_delete_failed_count">
+        <item quantity="one">Android didn\'t allow the deletion. The item stays in trash.</item>
+        <item quantity="other">Android didn\'t allow the deletion. The items stay in trash.</item>
+    </plurals>
 
     <!-- ============================ Map (Phase 10) ============================ -->
     <string name="map_title">Map</string>
@@ -518,6 +531,10 @@
     <string name="photos_selection_cancel">Cancel</string>
     <string name="photos_selection_backup">Back up</string>
     <string name="photos_selection_result">%1$d queued for backup · %2$d already backed up</string>
+    <!-- "Select all" is offered from the selection header. The counted variant is used only where the
+         caller already knows the total, so the number shown is always one the app actually has. -->
+    <string name="photos_selection_select_all">Select all</string>
+    <string name="photos_selection_select_all_count">Select all (%1$d)</string>
 
     <!-- ============================ Media Details (Feature 2) ============================ -->
     <string name="viewer_details">Details</string>

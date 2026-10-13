@@ -1,5 +1,9 @@
 package com.telepic.ui.screens.organization
 
+import android.app.Activity
+import android.app.PendingIntent
+import android.content.Intent
+import android.content.IntentSender
 import android.net.Uri
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.NeighborDirection
@@ -22,15 +26,17 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 /**
- * The collection ViewModel maps favorite/archive/trash id-sets to media, and its undo / consented
+ * The collection ViewModel maps favorite/archive/trash id-sets to media, and its bulk undo / consented
  * delete actions drive the repository correctly. Fakes only — the permanent-delete system consent is
  * device-gated and is exercised here only through the [LocalMediaDeleter] seam.
  */
@@ -47,6 +53,13 @@ class OrganizationViewModelTest {
         displayName = "f$id", dateMillis = 1L, durationMillis = null, width = 1, height = 1, sizeBytes = 1L,
         bucketId = null, bucketName = null, relativePath = null,
     )
+
+    /** A real IntentSender, because the consent path hands one back to the screen. */
+    private fun intentSender(): IntentSender {
+        val context = RuntimeEnvironment.getApplication()
+        val intent = Intent(context, Activity::class.java)
+        return PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE).intentSender
+    }
 
     private class FakeRepo : MediaOrganizationRepository {
         val favs = MutableStateFlow<Set<Long>>(emptySet())
@@ -91,9 +104,13 @@ class OrganizationViewModelTest {
             ids.toList().mapNotNull { store[it] }
     }
 
+    /** Records the batch it was handed, so a bulk delete can be checked to be one request, not N. */
     private class FakeDeleter(private val outcome: DeleteRequest) : LocalMediaDeleter {
-        var requested: LocalMedia? = null
-        override suspend fun requestDelete(media: LocalMedia): DeleteRequest {
+        var requested: List<LocalMedia> = emptyList()
+        var calls = 0
+        override suspend fun requestDelete(media: LocalMedia): DeleteRequest = requestDeleteAll(listOf(media))
+        override suspend fun requestDeleteAll(media: List<LocalMedia>): DeleteRequest {
+            calls++
             requested = media
             return outcome
         }
@@ -123,87 +140,170 @@ class OrganizationViewModelTest {
         assertNull(vm.items.value)
     }
 
+    // --- Selection ------------------------------------------------------------------------------
+
     @Test
-    fun `undo removes from favorites`() = runTest {
+    fun `long-press begins selection and tapping toggles by stable id`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        val repo = FakeRepo().apply { favs.value = setOf(5L) }
-        val vm = OrganizationViewModel(OrganizationKind.FAVORITES, repo, FakeLookup(), FakeDeleter(DeleteRequest.Failed))
-        vm.undo(5L)
-        runCurrent()
-        assertTrue(repo.removed.isEmpty())
-        assertEquals(emptySet<Long>(), repo.favs.value)
+        val vm = OrganizationViewModel(OrganizationKind.TRASH, FakeRepo(), FakeLookup(), FakeDeleter(DeleteRequest.Failed))
+        assertTrue(vm.selectedItems.value.isEmpty())
+
+        vm.beginSelection(media(1))
+        vm.toggleSelection(media(2))
+        assertEquals(setOf(1L, 2L), vm.selectedItems.value.keys)
+
+        // Re-tapping an already-selected id removes only it; beginning again is idempotent.
+        vm.beginSelection(media(1))
+        assertEquals(setOf(1L, 2L), vm.selectedItems.value.keys)
+        vm.toggleSelection(media(1))
+        assertEquals(setOf(2L), vm.selectedItems.value.keys)
     }
 
     @Test
-    fun `archive undo unarchives`() = runTest {
+    fun `select all takes the whole collection`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        val repo = FakeRepo().apply { arch.value = setOf(3L) }
+        val vm = OrganizationViewModel(OrganizationKind.FAVORITES, FakeRepo(), FakeLookup(), FakeDeleter(DeleteRequest.Failed))
+        vm.beginSelection(media(1))
+        vm.selectAll(listOf(media(1), media(2), media(3)))
+        assertEquals(setOf(1L, 2L, 3L), vm.selectedItems.value.keys)
+        // An empty collection selects nothing rather than clearing a selection that is already empty.
+        vm.clearSelection()
+        vm.selectAll(emptyList())
+        assertTrue(vm.selectedItems.value.isEmpty())
+    }
+
+    // --- Bulk undo ------------------------------------------------------------------------------
+
+    @Test
+    fun `undo removes every selected item from favorites`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo().apply { favs.value = setOf(5L, 6L, 7L) }
+        val vm = OrganizationViewModel(OrganizationKind.FAVORITES, repo, FakeLookup(), FakeDeleter(DeleteRequest.Failed))
+        vm.beginSelection(media(5))
+        vm.toggleSelection(media(6))
+        vm.undoSelected()
+        runCurrent()
+        assertTrue(repo.removed.isEmpty())
+        assertEquals(setOf(7L), repo.favs.value)
+        // The selection is consumed by the action, so the bar does not linger over a done job.
+        assertTrue(vm.selectedItems.value.isEmpty())
+        assertFalse(vm.isRestoring.value)
+    }
+
+    @Test
+    fun `archive undo unarchives every selected item`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo().apply { arch.value = setOf(3L, 4L) }
         val vm = OrganizationViewModel(OrganizationKind.ARCHIVE, repo, FakeLookup(), FakeDeleter(DeleteRequest.Failed))
-        vm.undo(3L)
+        vm.selectAll(listOf(media(3), media(4)))
+        vm.undoSelected()
         runCurrent()
         assertEquals(emptySet<Long>(), repo.arch.value)
     }
 
     @Test
-    fun `trash undo restores the item`() = runTest {
+    fun `trash undo restores every selected item`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        val repo = FakeRepo().apply { trash.value = setOf(4L) }
+        val repo = FakeRepo().apply { trash.value = setOf(4L, 8L) }
         val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FakeLookup(), FakeDeleter(DeleteRequest.Failed))
-        vm.undo(4L)
+        vm.selectAll(listOf(media(4), media(8)))
+        vm.undoSelected()
         runCurrent()
-        assertTrue(repo.restored.contains(4L))
+        assertEquals(listOf(4L, 8L), repo.restored)
     }
 
-    @Test
-    fun `a direct delete outcome forgets the item`() = runTest {
-        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        val repo = FakeRepo()
-        val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FakeLookup(), FakeDeleter(DeleteRequest.Deleted))
-        vm.onDeleteConfirmed(9L)
-        runCurrent()
-        assertTrue(repo.removed.contains(9L))
-    }
+    // --- Permanent delete -----------------------------------------------------------------------
 
     @Test
-    fun `requestDeleteForever delegates to the deleter seam and clears the busy state`() = runTest {
-        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        val deleter = FakeDeleter(DeleteRequest.Failed)
-        val vm = OrganizationViewModel(OrganizationKind.TRASH, FakeRepo(), FakeLookup(), deleter)
-        var consentRequested = false
-        vm.requestDeleteForever(media(7L)) { consentRequested = true }
-        runCurrent()
-        // The Failed outcome never needs consent, so the callback must not have fired…
-        assertEquals(7L, deleter.requested?.id)
-        org.junit.Assert.assertFalse(consentRequested)
-        // …and the busy state is cleared with an honest failure message.
-        assertNull(vm.deletingId.value)
-        assertEquals(OrgMessage.DeleteFailed, vm.message.value)
-    }
-
-    @Test
-    fun `a direct delete outcome forgets the item and clears the busy state`() = runTest {
+    fun `a direct delete outcome forgets the items and clears the busy state`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val repo = FakeRepo()
         val deleter = FakeDeleter(DeleteRequest.Deleted)
         val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FakeLookup(), deleter)
-        vm.requestDeleteForever(media(8L)) { org.junit.Assert.fail("Deleted outcome needs no consent") }
+        vm.selectAll(listOf(media(8), media(9)))
+        vm.requestDeleteSelected { org.junit.Assert.fail("Deleted outcome needs no consent") }
         runCurrent()
-        assertTrue(repo.removed.contains(8L))
-        assertNull(vm.deletingId.value)
+
+        // One request for the whole selection, never one per item.
+        assertEquals(1, deleter.calls)
+        assertEquals(setOf(8L, 9L), deleter.requested.map { it.id }.toSet())
+        assertEquals(setOf(8L, 9L), repo.removed.toSet())
+        assertFalse(vm.isDeleting.value)
+        assertTrue(vm.selectedItems.value.isEmpty())
     }
 
     @Test
-    fun `finishConsent forgets the item only on a consented success`() = runTest {
+    fun `a refused delete reports the count and keeps the selection`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val repo = FakeRepo()
         val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FakeLookup(), FakeDeleter(DeleteRequest.Failed))
-        // A cancelled consent: nothing is forgotten, and the screen is told not to clear selection.
-        org.junit.Assert.assertFalse(vm.finishConsent(8L, success = false))
-        assertTrue(repo.removed.isEmpty())
-        // A consented success forgets the item.
-        org.junit.Assert.assertTrue(vm.finishConsent(9L, success = true))
+        vm.selectAll(listOf(media(1), media(2), media(3)))
+        var consentRequested = false
+        vm.requestDeleteSelected { consentRequested = true }
         runCurrent()
-        assertTrue(repo.removed.contains(9L))
-        assertNull(vm.deletingId.value)
+
+        // The Failed outcome never needs consent, so the callback must not have fired…
+        assertFalse(consentRequested)
+        assertTrue(repo.removed.isEmpty())
+        assertFalse(vm.isDeleting.value)
+        // …the selection survives so the user can retry…
+        assertEquals(setOf(1L, 2L, 3L), vm.selectedItems.value.keys)
+        // …and the message names how many items the refusal actually covered.
+        assertEquals(OrgMessage.DeleteFailed(3), vm.message.value)
+    }
+
+    @Test
+    fun `delete with an empty selection does not reach the deleter`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val deleter = FakeDeleter(DeleteRequest.Deleted)
+        val vm = OrganizationViewModel(OrganizationKind.TRASH, FakeRepo(), FakeLookup(), deleter)
+        vm.requestDeleteSelected { org.junit.Assert.fail("nothing was selected") }
+        runCurrent()
+        assertEquals(0, deleter.calls)
+        assertFalse(vm.isDeleting.value)
+    }
+
+    @Test
+    fun `finishConsent forgets the items only on a consented success`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo()
+        val vm = OrganizationViewModel(
+            OrganizationKind.TRASH,
+            repo,
+            FakeLookup(),
+            FakeDeleter(DeleteRequest.NeedsConsent(intentSender())),
+        )
+        vm.selectAll(listOf(media(8), media(9)))
+        var consentLaunched = false
+        vm.requestDeleteSelected { consentLaunched = true }
+        runCurrent()
+        assertTrue(consentLaunched)
+        // Still busy while the system dialog is up: the action is not finished until it answers.
+        assertTrue(vm.isDeleting.value)
+
+        // A cancelled consent: nothing is forgotten, the selection survives, and the screen is told.
+        assertFalse(vm.finishConsent(success = false))
+        assertTrue(repo.removed.isEmpty())
+        assertFalse(vm.isDeleting.value)
+        assertEquals(setOf(8L, 9L), vm.selectedItems.value.keys)
+
+        // A consented success forgets exactly the items the prompt covered.
+        assertTrue(vm.finishConsent(success = true))
+        runCurrent()
+        assertEquals(setOf(8L, 9L), repo.removed.toSet())
+        assertTrue(vm.selectedItems.value.isEmpty())
+    }
+
+    @Test
+    fun `a consent result with no pending request forgets nothing`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo()
+        val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FakeLookup(), FakeDeleter(DeleteRequest.Failed))
+        // E.g. the process was killed while the system dialog was up: an unverifiable delete is never
+        // claimed, so the result is a no-op rather than a mass removal.
+        vm.finishConsent(success = true)
+        runCurrent()
+        assertTrue(repo.removed.isEmpty())
+        assertFalse(vm.isDeleting.value)
     }
 }

@@ -1,5 +1,8 @@
 package com.telepic.navigation
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +28,7 @@ import androidx.navigation.navArgument
 import com.telepic.R
 import com.telepic.di.AppContainer
 import com.telepic.settings.ThemeMode
+import com.telepic.ui.components.ProvideSharedElementScopes
 import com.telepic.ui.screens.albums.AlbumContentsScreen
 import com.telepic.ui.screens.albums.AlbumContentsViewModel
 import com.telepic.ui.screens.albums.AlbumsScreen
@@ -62,13 +66,37 @@ fun TelepicNavHost(
     onThemeModeChange: (ThemeMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The shared-element host has to sit *above* the NavHost: a shared element pairs one composable in
+    // the grid's destination with one in the Viewer's, and both must live inside the same transition
+    // layout for the bounds to interpolate between them. The graph itself is a separate function so
+    // this wrapper adds no indentation to it.
+    SharedTransitionLayout(modifier = modifier) {
+        TelepicNavGraph(
+            sharedTransitionScope = this@SharedTransitionLayout,
+            navController = navController,
+            container = container,
+            themeMode = themeMode,
+            onThemeModeChange = onThemeModeChange,
+        )
+    }
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun TelepicNavGraph(
+    sharedTransitionScope: SharedTransitionScope,
+    navController: NavHostController,
+    container: AppContainer,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+) {
     // One handoff channel for "show this photo on the map", hoisted above the graph so the Viewer's
     // Details sheet and the Map tab share it without touching the Map route (see [MapFocusRequest]).
     val mapFocusRequest = remember { MapFocusRequest() }
     NavHost(
         navController = navController,
         startDestination = TelepicDestination.Start.route,
-        modifier = modifier,
+        modifier = Modifier.fillMaxSize(),
     ) {
         composable(TelepicDestination.Photos.route) {
             // Factories are remembered per container so recomposition never hands `viewModel` a new
@@ -88,11 +116,16 @@ fun TelepicNavHost(
                 }
             }
             val photosViewModel: PhotosViewModel = viewModel(factory = photosFactory)
-            PhotosScreen(
-                viewModel = photosViewModel,
-                onMediaSelected = { media -> navController.navigate(ViewerRoute.local(media.id)) },
-                onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
-            )
+            // The grid's tiles are the source end of the Viewer's shared-element transition, so this
+            // destination publishes its scopes. Every other destination simply does not, and its tiles
+            // are ordinary tiles.
+            ProvideSharedElementScopes(sharedTransitionScope, this) {
+                PhotosScreen(
+                    viewModel = photosViewModel,
+                    onMediaSelected = { media -> navController.navigate(ViewerRoute.local(media.id)) },
+                    onOpenSettings = { navController.navigateToTopLevel(TelepicDestination.Settings) },
+                )
+            }
         }
         composable(TelepicDestination.Cloud.route) {
             val cloudFactory = remember(container) {
@@ -181,11 +214,13 @@ fun TelepicNavHost(
                 }
             }
             val contentsViewModel: AlbumContentsViewModel = viewModel(factory = contentsFactory)
-            AlbumContentsScreen(
-                viewModel = contentsViewModel,
-                onBack = { navController.popBackStack() },
-                onMediaSelected = { media -> navController.navigate(ViewerRoute.localInBucket(media.id, bucketId)) },
-            )
+            ProvideSharedElementScopes(sharedTransitionScope, this) {
+                AlbumContentsScreen(
+                    viewModel = contentsViewModel,
+                    onBack = { navController.popBackStack() },
+                    onMediaSelected = { media -> navController.navigate(ViewerRoute.localInBucket(media.id, bucketId)) },
+                )
+            }
         }
         composable(
             route = AlbumRoute.CUSTOM_PATTERN,
@@ -218,15 +253,17 @@ fun TelepicNavHost(
                 }
             }
             val contentsViewModel: AlbumContentsViewModel = viewModel(factory = contentsFactory)
-            AlbumContentsScreen(
-                viewModel = contentsViewModel,
-                onBack = { navController.popBackStack() },
-                // Scoped to this album, so swiping stays inside it — the same guarantee a folder album
-                // and the curated collections already had.
-                onMediaSelected = { media ->
-                    navController.navigate(ViewerRoute.localInCustomAlbum(media.id, albumId))
-                },
-            )
+            ProvideSharedElementScopes(sharedTransitionScope, this) {
+                AlbumContentsScreen(
+                    viewModel = contentsViewModel,
+                    onBack = { navController.popBackStack() },
+                    // Scoped to this album, so swiping stays inside it — the same guarantee a folder album
+                    // and the curated collections already had.
+                    onMediaSelected = { media ->
+                        navController.navigate(ViewerRoute.localInCustomAlbum(media.id, albumId))
+                    },
+                )
+            }
         }
         composable(TelepicDestination.Map.route) {
             val mapFactory = remember(container) {
@@ -330,14 +367,16 @@ fun TelepicNavHost(
                 }
             }
             val viewerViewModel: ViewerViewModel = viewModel(factory = viewerFactory)
-            ViewerScreen(
-                viewModel = viewerViewModel,
-                onBack = { navController.popBackStack() },
-                onShowOnMap = { latitude, longitude ->
-                    mapFocusRequest.request(latitude, longitude)
-                    navController.navigateToTopLevel(TelepicDestination.Map)
-                },
-            )
+            ProvideSharedElementScopes(sharedTransitionScope, this) {
+                ViewerScreen(
+                    viewModel = viewerViewModel,
+                    onBack = { navController.popBackStack() },
+                    onShowOnMap = { latitude, longitude ->
+                        mapFocusRequest.request(latitude, longitude)
+                        navController.navigateToTopLevel(TelepicDestination.Map)
+                    },
+                )
+            }
         }
         composable(
             route = ViewerRoute.CLOUD,
@@ -366,7 +405,11 @@ fun TelepicNavHost(
                 }
             }
             val viewerViewModel: ViewerViewModel = viewModel(factory = viewerFactory)
-            ViewerScreen(viewModel = viewerViewModel, onBack = { navController.popBackStack() })
+            // Cloud items publish the scopes too, but have no matching tile, so the Viewer just appears
+            // (see rememberSharedMediaModifier) rather than being special-cased here.
+            ProvideSharedElementScopes(sharedTransitionScope, this) {
+                ViewerScreen(viewModel = viewerViewModel, onBack = { navController.popBackStack() })
+            }
         }
     }
 }

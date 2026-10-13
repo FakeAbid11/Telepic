@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -56,8 +57,16 @@ fun BackupCenterScreen(
     // near-black surface that makes *media* pop, and nothing on this screen is media: it is stats,
     // counts and a queue, the same document-style surface Settings uses. Screens that show thumbnails
     // (Photos, Albums, Album contents, Cloud, Map, Organization) are the ones on `mediaBackdrop`.
-    Surface(modifier = modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
+    // Capped and centred for the same reason Settings is: this is a document-style column of stats
+    // and queue rows, not a media wall, so on a tablet a full-bleed row would stretch a filename and
+    // its retry button to opposite edges. `Surface` lays its content out in a full-size Box, so the
+    // Column can ask for `contentMaxWidth` and still be centred while the surface stays edge-to-edge.
+    Surface(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = spacing.contentMaxWidth)
+                .fillMaxSize(),
+        ) {
             ScreenHeader(title = stringResource(R.string.backup_center_title), onBack = onBack)
 
             // Not read yet: say so, rather than claiming the queue is empty. A local Room read is

@@ -43,12 +43,14 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class PhotosViewModelTest {
 
-    private class FakeRepository : LocalMediaRepository {
+    private class FakeRepository(private val all: List<LocalMedia> = emptyList()) : LocalMediaRepository {
         var refreshCount = 0
         override val media: Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
         override fun refresh() {
             refreshCount++
         }
+
+        override suspend fun allMedia(): List<LocalMedia> = all
     }
 
     private class FakeWatcher : MediaChangeWatcher {
@@ -211,6 +213,41 @@ class PhotosViewModelTest {
         // Still selected (nothing enqueued), no crash, no message.
         assertEquals(setOf(1L), vm.selectedItems.value.keys)
         assertEquals(null, vm.selectionReport.value)
+    }
+
+    // --- Select all ---------------------------------------------------------------------------
+
+    /** A library that cannot be read at all — select-all must claim nothing rather than part of it. */
+    private class ThrowingRepository : LocalMediaRepository {
+        override val media: Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() = Unit
+        override suspend fun allMedia(): List<LocalMedia> =
+            throw IllegalStateException("library unreadable")
+    }
+
+    @Test
+    fun `select all takes the whole view from the repository, not just the loaded page`() = runTest {
+        // The paged grid is empty while the repository holds three items — precisely the case a
+        // "select the loaded window" shortcut would get wrong.
+        val repository = FakeRepository(listOf(photo(1), photo(2), photo(3)))
+        val vm = PhotosViewModel(repository, FakeWatcher(), backupCoordinator = RecordingCoordinator())
+        vm.selectAll()
+        runCurrent()
+
+        assertEquals(setOf(1L, 2L, 3L), vm.selectedItems.value.keys)
+        assertFalse(vm.isSelectingAll.value)
+    }
+
+    @Test
+    fun `select all keeps the previous selection when the library cannot be read`() = runTest {
+        val vm = PhotosViewModel(ThrowingRepository(), FakeWatcher())
+        vm.beginSelection(photo(9))
+        vm.selectAll()
+        runCurrent()
+
+        // Nothing is claimed: the item the user had already chosen is still the whole selection.
+        assertEquals(setOf(9L), vm.selectedItems.value.keys)
+        assertFalse(vm.isSelectingAll.value)
     }
 
     @Test

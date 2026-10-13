@@ -1,30 +1,39 @@
 package com.telepic.ui.screens.organization
 
 import android.app.Activity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,8 +49,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -49,18 +60,24 @@ import com.telepic.R
 import com.telepic.navigation.OrganizationKind
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.LoadingState
+import com.telepic.ui.components.SelectAllAction
+import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.TransientMessageBar
+import com.telepic.ui.screens.photos.SelectionCheck
 import com.telepic.ui.theme.TelepicTokens
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material3.CircularProgressIndicator
 
 /**
- * A Favorites / Archive / Trash collection (Phase 10). Thumbnails only (no full decode); selecting a
- * tile reveals context actions. Permanent delete is explicit, confirmed, and delegated to Android's
- * consent flow — the item is only forgotten after a consented success, and a trashed item is never
- * implied to be gone from the device while only the app-level flag is set.
+ * A Favorites / Archive / Trash collection (Phase 10). Thumbnails only (no full decode); a long press
+ * starts a multi-item selection and a tap toggles within it, exactly as the Photos timeline behaves,
+ * so a bulk restore or a bulk permanent delete is one action rather than one action per item.
+ * Permanent delete is explicit, confirmed, and delegated to Android's consent flow — items are only
+ * forgotten after a consented success, and a trashed item is never implied to be gone from the device
+ * while only the app-level flag is set.
+ *
+ * Because the whole collection is already resolved in memory (a Room id-set read in one batched
+ * lookup, not a pager), "Select all" here is exact and carries a real total.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OrganizationScreen(
     viewModel: OrganizationViewModel,
@@ -70,40 +87,46 @@ fun OrganizationScreen(
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
-    val deletingId by viewModel.deletingId.collectAsStateWithLifecycle()
+    val isDeleting by viewModel.isDeleting.collectAsStateWithLifecycle()
+    val isRestoring by viewModel.isRestoring.collectAsStateWithLifecycle()
+    val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
+    val selectionActive = selectedItems.isNotEmpty()
     val spacing = TelepicTokens.spacing
-    val deleteFailedMessage = stringResource(R.string.trash_delete_failed)
 
-    // Rotation-surviving selection: the tile id, not the whole LocalMedia. Tapping the already
-    // selected tile deselects (no sticky selection with no way to clear it but Back).
-    var selectedId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
-    val selected = items?.firstOrNull { it.id == selectedId }
 
-    // The consent launcher's result arrives across Activity recreation, so the pending item is
-    // saved as its id; success is reported by id alone. Finishing the consent always clears the
-    // ViewModel's busy state; selection is cleared only on a confirmed success so a failure
-    // leaves the item selected for a retry.
-    var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // The result is applied to the ids the ViewModel is holding for it, so the screen only has to
+    // report whether the user accepted — it never has to remember which items the prompt covered.
     val consentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
-        val id = pendingDeleteId
-        pendingDeleteId = null
-        if (id != null && viewModel.finishConsent(id, result.resultCode == Activity.RESULT_OK)) {
-            selectedId = null
-        }
+        viewModel.finishConsent(result.resultCode == Activity.RESULT_OK)
     }
+
+    // Back leaves selection mode first, before leaving the collection.
+    BackHandler(enabled = selectionActive) { viewModel.clearSelection() }
 
     Surface(modifier = modifier.fillMaxSize(), color = TelepicTokens.colors.mediaBackdrop) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = spacing.xs, top = spacing.sm)) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.albums_back))
+                if (selectionActive) {
+                    SelectionTopBar(
+                        count = selectedItems.size,
+                        onCancel = viewModel::clearSelection,
+                        // The total is real here: `items` is the whole collection, not a loaded page.
+                        selectAll = SelectAllAction(
+                            onSelectAll = { items?.let(viewModel::selectAll) },
+                            total = items?.size,
+                        ),
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = spacing.xs, top = spacing.sm)) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.albums_back))
+                        }
+                        // Unified with ScreenHeader's default so every screen's title is 22sp.
+                        Text(stringResource(titleRes(viewModel.kind)), style = MaterialTheme.typography.headlineMedium)
                     }
-                    // Unified with ScreenHeader's default so every screen's title is 22sp.
-                    Text(stringResource(titleRes(viewModel.kind)), style = MaterialTheme.typography.headlineMedium)
                 }
 
                 // null means the id-set has not resolved yet — show loading, not a false "empty".
@@ -117,6 +140,7 @@ fun OrganizationScreen(
                         modifier = Modifier.weight(1f),
                     )
                     else -> {
+                        val longPressLabel = stringResource(R.string.organization_long_press_select)
                         LazyVerticalGrid(
                             columns = GridCells.Adaptive(minSize = spacing.gridTileMinSize),
                             contentPadding = PaddingValues(spacing.gridGutter),
@@ -125,7 +149,7 @@ fun OrganizationScreen(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         ) {
                             items(list, key = { it.id }) { media ->
-                                val isSelected = selectedId == media.id
+                                val isSelected = media.id in selectedItems
                                 Box(
                                     modifier = Modifier
                                         .aspectRatio(1f)
@@ -134,7 +158,24 @@ fun OrganizationScreen(
                                             if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
                                             else MaterialTheme.colorScheme.surfaceVariant,
                                         )
-                                        .clickable { selectedId = if (isSelected) null else media.id },
+                                        .semantics {
+                                            // Only meaningful while selecting: outside selection mode the
+                                            // tile is a plain "open this" cell, and announcing "not
+                                            // selected" on every one of them would be noise.
+                                            if (selectionActive) this.selected = isSelected
+                                        }
+                                        .combinedClickable(
+                                            onClick = {
+                                                if (selectionActive) {
+                                                    viewModel.toggleSelection(media)
+                                                } else {
+                                                    onOpenMedia(media.id)
+                                                }
+                                            },
+                                            // TalkBack reachability for the gesture that starts selection.
+                                            onLongClickLabel = longPressLabel,
+                                            onLongClick = { viewModel.beginSelection(media) },
+                                        ),
                                 ) {
                                     AsyncImage(
                                         model = media.contentUri,
@@ -145,24 +186,49 @@ fun OrganizationScreen(
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.matchParentSize(),
                                     )
+                                    if (selectionActive) {
+                                        // The same check badge the media grids use, so selecting looks
+                                        // identical everywhere it can be done.
+                                        SelectionCheck(
+                                            selected = isSelected,
+                                            modifier = Modifier
+                                                .align(Alignment.TopStart)
+                                                .padding(spacing.xs),
+                                        )
+                                    }
                                 }
                             }
                         }
 
-                        selected?.let { media ->
-                            ActionRow(
+                        if (selectionActive) {
+                            // Permanent delete only exists in Trash: the other two collections hold
+                            // items that are still in the library, so the destructive action would be
+                            // reachable from a screen that never offered it. Typed explicitly rather
+                            // than inlined, so the lambda's type never depends on inference here.
+                            val onDeleteForever: (() -> Unit)? =
+                                if (viewModel.kind == OrganizationKind.TRASH) {
+                                    { showDeleteConfirm = true }
+                                } else {
+                                    null
+                                }
+                            OrganizationActionBar(
                                 kind = viewModel.kind,
-                                onOpen = { onOpenMedia(media.id) },
-                                onUndo = { viewModel.undo(media.id); selectedId = null },
-                                onDelete = { showDeleteConfirm = true },
-                                busy = deletingId != null,
+                                restoreBusy = isRestoring,
+                                deleteBusy = isDeleting,
+                                onCancel = viewModel::clearSelection,
+                                onUndo = viewModel::undoSelected,
+                                onDeleteForever = onDeleteForever,
                             )
                         }
                     }
                 }
             }
 
-            val messageText = if (message is OrgMessage.DeleteFailed) deleteFailedMessage else null
+            val messageText = (message as? OrgMessage.DeleteFailed)?.let { failed ->
+                // Numbered, because this now covers a whole selection: "the item stays in trash" was a
+                // claim about one item standing in for however many were actually refused.
+                pluralStringResource(R.plurals.trash_delete_failed_count, failed.count)
+            }
             messageText?.let {
                 TransientMessageBar(
                     message = it,
@@ -174,23 +240,20 @@ fun OrganizationScreen(
     }
 
     if (showDeleteConfirm) {
-        val media = selected
+        val count = selectedItems.size
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text(stringResource(R.string.trash_delete_title)) },
-            text = { Text(stringResource(R.string.trash_delete_body)) },
+            text = { Text(pluralStringResource(R.plurals.trash_delete_body_count, count, count)) },
             confirmButton = {
                 Button(
                     onClick = {
                         showDeleteConfirm = false
-                        if (media != null) {
-                            // Deletion is async + consent-gated and runs in the ViewModel's scope
-                            // so leaving this screen never cancels a real delete mid-flight. The
-                            // consent result returns through the launcher above.
-                            viewModel.requestDeleteForever(media) { intentSender ->
-                                pendingDeleteId = media.id
-                                consentLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
-                            }
+                        // Deletion is async + consent-gated and runs in the ViewModel's scope so
+                        // leaving this screen never cancels a real delete mid-flight. The consent
+                        // result returns through the launcher above.
+                        viewModel.requestDeleteSelected { intentSender ->
+                            consentLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
                         }
                     },
                 ) { Text(stringResource(R.string.trash_delete_confirm)) }
@@ -200,40 +263,65 @@ fun OrganizationScreen(
     }
 }
 
+/**
+ * The bulk-action bar for a collection: Cancel, the collection's own undo, and — in Trash only —
+ * Delete forever.
+ *
+ * Each action carries **its own** busy flag, and only the action that is actually running shows the
+ * spinner; a single shared flag made the restore button animate while a delete ran, naming the wrong
+ * thing. While either runs both are disabled, so a second write cannot start on top of the first.
+ */
 @Composable
-private fun ActionRow(
+private fun OrganizationActionBar(
     kind: OrganizationKind,
-    onOpen: () -> Unit,
+    restoreBusy: Boolean,
+    deleteBusy: Boolean,
+    onCancel: () -> Unit,
     onUndo: () -> Unit,
-    onDelete: () -> Unit,
-    busy: Boolean = false,
+    onDeleteForever: (() -> Unit)?,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = TelepicTokens.spacing.md, vertical = TelepicTokens.spacing.sm),
-        horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.sm, Alignment.End),
-        verticalAlignment = Alignment.CenterVertically,
+    val spacing = TelepicTokens.spacing
+    val anyBusy = restoreBusy || deleteBusy
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 3.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
-        Text(stringResource(titleRes(kind)), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = onUndo, enabled = !busy) { Text(stringResource(undoLabelRes(kind))) }
-        if (kind == OrganizationKind.TRASH) {
-            TextButton(onClick = onDelete, enabled = !busy) {
-                // "Delete forever" stays on screen while busy: replacing the label with a bare
-                // spinner left a destructive action identifiable only by its position in the row.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.xs),
-                ) {
-                    if (busy) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                        )
+        Row(
+            modifier = Modifier
+                .padding(horizontal = spacing.md, vertical = spacing.sm)
+                // Scrollable rather than clipped, for the same reason the shared selection bar is:
+                // these labels plus the gutters exceed a 320dp phone, and a 360dp one at a large
+                // display font — and a plain Row neither wraps nor scrolls, so an action became
+                // unreachable. The padding sits outside the scroll so the gutters stay put.
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.sm, Alignment.End),
+        ) {
+            // Cancel stays enabled throughout: a write in flight is not a reason to trap the user in
+            // selection mode, and the running action reports its own outcome when it returns.
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.organization_cancel))
+            }
+            TextButton(onClick = onUndo, enabled = !anyBusy) {
+                if (restoreBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(spacing.xs))
+                }
+                Text(stringResource(undoLabelRes(kind)))
+            }
+            onDeleteForever?.let { delete ->
+                TextButton(onClick = delete, enabled = !anyBusy) {
+                    // "Delete forever" stays on screen while busy: replacing the label with a bare
+                    // spinner left a destructive action identifiable only by its position in the row.
+                    if (deleteBusy) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(spacing.xs))
                     }
                     Text(stringResource(R.string.organization_delete_forever))
                 }
             }
         }
-        Button(onClick = onOpen) { Text(stringResource(R.string.map_selected_open)) }
     }
 }
 

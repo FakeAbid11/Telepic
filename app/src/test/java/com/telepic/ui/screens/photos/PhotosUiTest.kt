@@ -60,6 +60,8 @@ class PhotosUiTest {
             refreshCount++
             delegate.refresh()
         }
+
+        override suspend fun allMedia(): List<LocalMedia> = delegate.allMedia()
     }
 
     private object NoopWatcher : MediaChangeWatcher {

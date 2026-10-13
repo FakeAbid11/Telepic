@@ -45,6 +45,7 @@ import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
+import com.telepic.ui.components.SelectAllAction
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.SettingsAction
@@ -84,6 +85,7 @@ fun PhotosScreen(
     val selectionActive = selectedItems.isNotEmpty()
     val selectionReport by viewModel.selectionReport.collectAsStateWithLifecycle()
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
+    val isSelectingAll by viewModel.isSelectingAll.collectAsStateWithLifecycle()
     val customAlbums by viewModel.customAlbums.collectAsStateWithLifecycle()
     val isAddingToAlbum by viewModel.isAddingToAlbum.collectAsStateWithLifecycle()
     val albumReport by viewModel.albumReport.collectAsStateWithLifecycle()
@@ -109,6 +111,13 @@ fun PhotosScreen(
                     SelectionTopBar(
                         count = selectedItems.size,
                         onCancel = viewModel::clearSelection,
+                        // No total: this grid is paged, so the library's size is not known until the
+                        // select-all read returns. The label therefore claims no number, and the live
+                        // count in the header reports what the read actually found.
+                        selectAll = SelectAllAction(
+                            onSelectAll = viewModel::selectAll,
+                            busy = isSelectingAll,
+                        ),
                     )
                 } else {
                     Row(

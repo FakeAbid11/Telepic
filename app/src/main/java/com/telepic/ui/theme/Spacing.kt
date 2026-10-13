@@ -31,6 +31,17 @@ data class TelepicSpacing(
     val gridItemRadius: Dp = 10.dp,
     /** Uniform adaptive min-size for every media tile grid (timeline, albums, collections, cloud). */
     val gridTileMinSize: Dp = 108.dp,
+    /**
+     * Widest a column of *prose-like* content is allowed to grow on a large screen.
+     *
+     * The media grids must stay full-bleed — an album is a wall of thumbnails and widening it shows
+     * more photos, which is the point. A list of settings rows is not: on a tablet (or a phone in
+     * landscape) an unbounded row puts a label and its summary a hand's width apart, and the eye has
+     * to travel the full width to read one sentence. Capping the column keeps a readable measure and
+     * the surrounding surface fills the rest. Only the document-style screens (Settings, Backup
+     * Center) use this; see the note on `mediaBackdrop` in `TelepicExtendedColors`.
+     */
+    val contentMaxWidth: Dp = 640.dp,
 ) {
     /**
      * Height of one of the Viewer's chrome bars — the bar's own vertical padding plus its 48dp

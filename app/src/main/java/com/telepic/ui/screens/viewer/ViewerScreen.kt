@@ -81,6 +81,7 @@ import com.telepic.data.restore.RestoreFailure
 import com.telepic.domain.media.MediaDay
 import com.telepic.navigation.MediaSource
 import com.telepic.ui.components.TransientMessageBar
+import com.telepic.ui.components.rememberSharedMediaModifier
 import com.telepic.ui.theme.TelepicTokens
 import java.io.File
 
@@ -315,6 +316,11 @@ private fun ViewerContent(
         return
     }
 
+    // The *target* end of the shared-element transition, keyed on the same MediaStore id the tile the
+    // user tapped used. Null for a cloud item — it has no tile in a local grid, so there is nothing
+    // for it to grow out of and the Viewer simply appears (see rememberSharedMediaModifier).
+    val sharedImageModifier = rememberSharedMediaModifier((state.item as? ViewerItem.Local)?.media?.id)
+
     var zoom by remember(state.source) { mutableStateOf(ZoomState()) }
     var swipeOffsetX by remember(state.source) { mutableFloatStateOf(0f) }
     var dragging by remember(state.source) { mutableStateOf(false) }
@@ -349,6 +355,7 @@ private fun ViewerContent(
                 onState = { loadState = it.toImageLoadState() },
                 modifier = Modifier
                     .fillMaxSize()
+                    .then(sharedImageModifier)
                 .pointerInput(state.source) {
                     // One gesture pass: two fingers pinch/pan when zoomed, a single-finger horizontal
                     // drag swipes to the adjacent item (only while unzoomed). Taps stay on their own

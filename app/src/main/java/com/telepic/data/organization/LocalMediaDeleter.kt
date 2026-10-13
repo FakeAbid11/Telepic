@@ -24,6 +24,19 @@ sealed interface DeleteRequest {
 /** Seam so permanent deletion (a device/permission-bound operation) can be faked in tests. */
 interface LocalMediaDeleter {
     suspend fun requestDelete(media: LocalMedia): DeleteRequest
+
+    /**
+     * The batch form, for "Delete forever" over a selection.
+     *
+     * One request covers every uri, because `MediaStore.createDeleteRequest` takes a list: asking the
+     * user to confirm item by item would be N system dialogs for one action. [DeleteRequest.Deleted]
+     * means **every** requested file was removed — a partial result is reported as
+     * [DeleteRequest.Failed] rather than as a success for files that are still on the device, which
+     * would have the caller forget rows for media it did not delete.
+     *
+     * An empty list is [DeleteRequest.Failed]: there is nothing to consent to and nothing to claim.
+     */
+    suspend fun requestDeleteAll(media: List<LocalMedia>): DeleteRequest
 }
 
 /**
@@ -39,17 +52,31 @@ interface LocalMediaDeleter {
 class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
 
-    override suspend fun requestDelete(media: LocalMedia): DeleteRequest = try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val pending = MediaStore.createDeleteRequest(resolver, listOf(media.contentUri))
-            DeleteRequest.NeedsConsent(pending.intentSender)
-        } else {
-            val rows = resolver.delete(media.contentUri, null, null)
-            if (rows > 0) DeleteRequest.Deleted else DeleteRequest.Failed
+    /**
+     * The single-item form is the batch form with one element, so there is exactly one place that
+     * decides what counts as success. Behaviour is unchanged: one uri, `rows > 0` is a deletion.
+     */
+    override suspend fun requestDelete(media: LocalMedia): DeleteRequest = requestDeleteAll(listOf(media))
+
+    override suspend fun requestDeleteAll(media: List<LocalMedia>): DeleteRequest {
+        if (media.isEmpty()) return DeleteRequest.Failed
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // One consent prompt covers the whole list — the platform accepts a list of uris here.
+                val pending = MediaStore.createDeleteRequest(resolver, media.map { it.contentUri })
+                DeleteRequest.NeedsConsent(pending.intentSender)
+            } else {
+                // Pre-R has no batch consent, so the files go one at a time and all of them must go for
+                // this to be reported as a success. A partial delete is Failed, never a success: see
+                // the contract on [LocalMediaDeleter.requestDeleteAll].
+                var deleted = 0
+                media.forEach { if (resolver.delete(it.contentUri, null, null) > 0) deleted++ }
+                if (deleted == media.size) DeleteRequest.Deleted else DeleteRequest.Failed
+            }
+        } catch (_: SecurityException) {
+            DeleteRequest.Failed
+        } catch (_: Throwable) {
+            DeleteRequest.Failed
         }
-    } catch (_: SecurityException) {
-        DeleteRequest.Failed
-    } catch (_: Throwable) {
-        DeleteRequest.Failed
     }
 }

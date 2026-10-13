@@ -1,5 +1,6 @@
 package com.telepic.ui.screens.organization
 
+import android.content.IntentSender
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.media.LocalMediaLookup
@@ -8,6 +9,7 @@ import com.telepic.data.organization.LocalMediaDeleter
 import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.media.LocalMedia
 import com.telepic.navigation.OrganizationKind
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -15,12 +17,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** Transient feedback the collection screen must report; a type, never a magic string. */
+/**
+ * Transient feedback the collection screen must report; a type, never a magic string.
+ *
+ * [DeleteFailed] carries the number of items the refused delete covered, so the message can say
+ * "the items stay in trash" rather than naming a single one that may not be the whole story.
+ */
 sealed interface OrgMessage {
     /** A consented permanent delete could not be executed. */
-    data object DeleteFailed : OrgMessage
+    data class DeleteFailed(val count: Int) : OrgMessage
 }
 
 /**
@@ -28,6 +36,13 @@ sealed interface OrgMessage {
  * and resolves the media in one batched lookup, so it never loads the whole library and stays
  * independent of backup state. Undo (unfavorite / unarchive / restore) and permanent delete act
  * through the injected repository/deleter — the latter trusts only a consented result.
+ *
+ * Selection is multi-item, matching the Photos timeline: a long press starts a selection, a tap
+ * toggles, and the bulk bar acts on all of it. It is a plain [MutableStateFlow] of an
+ * insertion-ordered map keyed by the stable MediaStore id — never a grid position — so it stays
+ * consistent with the UI on the frame it changes. The whole collection is already in memory (it is a
+ * Room id-set resolved in one batched lookup, not a pager), so "select all" here is exact and needs
+ * no read of its own.
  */
 class OrganizationViewModel(
     val kind: OrganizationKind,
@@ -39,9 +54,13 @@ class OrganizationViewModel(
     private val _message = MutableStateFlow<OrgMessage?>(null)
     val message: StateFlow<OrgMessage?> = _message.asStateFlow()
 
-    /** The id of a permanent delete currently in flight, or null. Drives the action row's busy state. */
-    private val _deletingId = MutableStateFlow<Long?>(null)
-    val deletingId: StateFlow<Long?> = _deletingId.asStateFlow()
+    /** True while a permanent-delete request (one item or many) is in flight. */
+    private val _isDeleting = MutableStateFlow(false)
+    val isDeleting: StateFlow<Boolean> = _isDeleting.asStateFlow()
+
+    /** True while an undo/restore batch is in flight. */
+    private val _isRestoring = MutableStateFlow(false)
+    val isRestoring: StateFlow<Boolean> = _isRestoring.asStateFlow()
 
     private val idsFlow: Flow<Set<Long>> = when (kind) {
         OrganizationKind.FAVORITES -> organizationRepository.favoriteIds
@@ -54,60 +73,135 @@ class OrganizationViewModel(
         .map { ids -> localLookup.byIdList(ids) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** Undo the collection membership for an item (unfavorite / unarchive / restore). */
-    fun undo(id: Long) = viewModelScope.launch {
-        when (kind) {
-            OrganizationKind.FAVORITES -> organizationRepository.setFavorite(id, false)
-            OrganizationKind.ARCHIVE -> organizationRepository.setArchived(id, false)
-            OrganizationKind.TRASH -> organizationRepository.restoreFromTrash(id)
+    // --- Multi-selection ------------------------------------------------------------------------
+
+    private val _selected = MutableStateFlow<Map<Long, LocalMedia>>(emptyMap())
+    val selectedItems: StateFlow<Map<Long, LocalMedia>> = _selected.asStateFlow()
+
+    /** Long-press entry: begin a selection containing this item (idempotent if already selecting). */
+    fun beginSelection(media: LocalMedia) {
+        _selected.update { if (it.containsKey(media.id)) it else LinkedHashMap(it).also { m -> m[media.id] = media } }
+    }
+
+    /** Tap while selecting: toggle one item without disturbing the rest of the selection. */
+    fun toggleSelection(media: LocalMedia) {
+        _selected.update { current ->
+            val next = LinkedHashMap(current)
+            if (next.remove(media.id) == null) next[media.id] = media
+            next
         }
     }
 
     /**
-     * Request a permanent delete for [media] in [viewModelScope]: the delete work must never be
-     * cancelled by the screen leaving composition (a rememberCoroutineScope would do exactly that).
-     * [onNeedsConsent] hands the system intent-sender to the screen, which owns the Activity result
-     * contract and resolves it back through [finishConsent].
+     * Replaces the selection with the whole collection.
+     *
+     * [items] is what the screen is showing, which here *is* the collection: it is a fully-resolved
+     * id-set rather than a pager, so unlike the timeline there is no unloaded tail to be honest about.
      */
-    fun requestDeleteForever(media: LocalMedia, onNeedsConsent: (android.content.IntentSender) -> Unit) {
-        if (_deletingId.value != null) return
-        _deletingId.value = media.id
+    fun selectAll(items: List<LocalMedia>) {
+        if (items.isEmpty()) return
+        _selected.value = LinkedHashMap<Long, LocalMedia>(items.size).apply {
+            items.forEach { put(it.id, it) }
+        }
+    }
+
+    fun clearSelection() {
+        _selected.value = emptyMap()
+    }
+
+    /** Undo the collection membership for everything selected (unfavorite / unarchive / restore). */
+    fun undoSelected() {
+        val ids = _selected.value.keys.toList()
+        if (ids.isEmpty()) return
+        if (_isRestoring.value) return
+        _isRestoring.value = true
         viewModelScope.launch {
-            when (val outcome = deleter.requestDelete(media)) {
-                is DeleteRequest.NeedsConsent -> onNeedsConsent(outcome.intentSender)
+            try {
+                ids.forEach { id ->
+                    when (kind) {
+                        OrganizationKind.FAVORITES -> organizationRepository.setFavorite(id, false)
+                        OrganizationKind.ARCHIVE -> organizationRepository.setArchived(id, false)
+                        OrganizationKind.TRASH -> organizationRepository.restoreFromTrash(id)
+                    }
+                }
+                clearSelection()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // The selection survives and the id-set flow re-emits, so a partial undo shows as
+                // exactly what it was rather than as a success.
+            } finally {
+                _isRestoring.value = false
+            }
+        }
+    }
+
+    /**
+     * The ids a consent prompt currently covers.
+     *
+     * Held here rather than saved in the screen because the ViewModel outlives Activity recreation,
+     * and because the result is a single yes/no for the whole batch — the screen has nothing to match
+     * it back up to. If the process is killed while the system dialog is up this is empty when the
+     * result arrives, and nothing is forgotten: an unverifiable delete is never claimed.
+     */
+    private var pendingConsentIds: List<Long> = emptyList()
+
+    /**
+     * Request a permanent delete for the whole selection in [viewModelScope]: the delete work must
+     * never be cancelled by the screen leaving composition (a rememberCoroutineScope would do exactly
+     * that). [onNeedsConsent] hands the system intent-sender to the screen, which owns the Activity
+     * result contract and resolves it back through [finishConsent].
+     */
+    fun requestDeleteSelected(onNeedsConsent: (IntentSender) -> Unit) {
+        val selection = _selected.value.values.toList()
+        if (selection.isEmpty()) return
+        if (_isDeleting.value) return
+        _isDeleting.value = true
+        viewModelScope.launch {
+            when (val outcome = deleter.requestDeleteAll(selection)) {
+                is DeleteRequest.NeedsConsent -> {
+                    pendingConsentIds = selection.map { it.id }
+                    onNeedsConsent(outcome.intentSender)
+                }
                 DeleteRequest.Deleted -> {
-                    onDeleteConfirmed(media.id)
-                    _deletingId.value = null
+                    onDeleteConfirmed(selection.map { it.id })
+                    clearSelection()
+                    _isDeleting.value = false
                 }
                 DeleteRequest.Failed -> {
-                    reportDeleteFailed()
-                    _deletingId.value = null
+                    reportDeleteFailed(selection.size)
+                    _isDeleting.value = false
                 }
             }
         }
     }
 
     /**
-     * Resolve the consent contract: clears the busy state and, only on a consented success,
-     * forgets the item. Returns whether the delete succeeded so the screen can clear selection.
+     * Resolve the consent contract: clears the busy state and, only on a consented success, forgets
+     * the items the prompt covered. Returns whether the delete succeeded so the screen can react.
      */
-    fun finishConsent(id: Long, success: Boolean): Boolean {
-        _deletingId.value = null
-        if (success) onDeleteConfirmed(id)
+    fun finishConsent(success: Boolean): Boolean {
+        val ids = pendingConsentIds
+        pendingConsentIds = emptyList()
+        _isDeleting.value = false
+        if (success && ids.isNotEmpty()) {
+            onDeleteConfirmed(ids)
+            clearSelection()
+        }
         return success
     }
 
-    /** Called only after a consented delete reports success: forget the item entirely. */
-    fun onDeleteConfirmed(id: Long) = viewModelScope.launch {
+    /** Called only after a consented delete reports success: forget the items entirely. */
+    fun onDeleteConfirmed(ids: Collection<Long>) = viewModelScope.launch {
         // Deliberately does NOT call markDeletedFromStore first: `remove` deletes the whole
         // organization row, so the flag would be written and destroyed in the same coroutine and
         // could never be read. Forgetting the item is what this path means; the `deletedFromStore`
         // column is left over from when the row survived, and is unused.
-        organizationRepository.remove(id)
+        ids.forEach { organizationRepository.remove(it) }
     }
 
-    fun reportDeleteFailed() {
-        _message.value = OrgMessage.DeleteFailed
+    fun reportDeleteFailed(count: Int) {
+        _message.value = OrgMessage.DeleteFailed(count)
     }
 
     fun consumeMessage() {

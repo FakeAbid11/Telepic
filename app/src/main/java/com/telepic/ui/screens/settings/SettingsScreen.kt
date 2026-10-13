@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -179,9 +180,14 @@ fun SettingsScreen(
     // The scheme's own background rather than `mediaBackdrop` — deliberately. Nothing on this screen is
     // media, so it takes the document-style surface; the six screens that show thumbnails use
     // `mediaBackdrop` (see `TelepicExtendedColors.mediaBackdrop` and Backup Center for the rule).
-    Surface(modifier = modifier.fillMaxSize()) {
+    // `contentAlignment = TopCenter` is what caps the measure: Surface lays its content out in a
+    // full-size Box, so the Column below can ask for `contentMaxWidth` and still be centred. On a
+    // tablet an uncapped settings row leaves the label and its summary most of a screen apart, so one
+    // sentence takes a head-turn to read. The surface itself stays edge-to-edge.
+    Surface(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             modifier = Modifier
+                .widthIn(max = spacing.contentMaxWidth)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {

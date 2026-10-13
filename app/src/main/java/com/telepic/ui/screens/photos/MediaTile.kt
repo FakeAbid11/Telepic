@@ -46,6 +46,7 @@ import com.telepic.domain.media.DurationLabel
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaDay
 import com.telepic.domain.media.MediaType
+import com.telepic.ui.components.rememberSharedMediaModifier
 import com.telepic.ui.theme.TelepicTokens
 
 /**
@@ -81,6 +82,9 @@ fun MediaTile(
     // Named distinctly from the `selected` parameter: inside `semantics { }` the receiver also
     // exposes a `selected` property, and shadowing between the two reads as a bug.
     val tileSelected = selectionActive && selected
+    // This tile is the *source* end of the Viewer's shared-element transition. Null-safe: outside the
+    // navigation graph (a preview or a test) this is plain `Modifier` and the tile is unchanged.
+    val sharedImageModifier = rememberSharedMediaModifier(media.id)
 
     Box(
         modifier = modifier
@@ -101,7 +105,7 @@ fun MediaTile(
             model = media.contentUri,
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize(),
+            modifier = Modifier.matchParentSize().then(sharedImageModifier),
         )
 
         when (media.type) {
@@ -152,9 +156,13 @@ fun MediaTile(
     }
 }
 
-/** A top-left check circle shown only while selecting: filled check when selected, a hollow ring otherwise. */
+/**
+ * A top-left check circle shown only while selecting: filled check when selected, a hollow ring
+ * otherwise. Internal rather than private because the Favorites / Archive / Trash grid selects the
+ * same way and must look the same doing it.
+ */
 @Composable
-private fun SelectionCheck(selected: Boolean, modifier: Modifier = Modifier) {
+internal fun SelectionCheck(selected: Boolean, modifier: Modifier = Modifier) {
     val scrim = TelepicTokens.colors.scrim
     Box(
         modifier = modifier

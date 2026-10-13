@@ -109,6 +109,44 @@ class PhotosViewModel(
         _selected.value = emptyMap()
     }
 
+    /** True while [selectAll] is reading the rest of the library — the header shows a spinner. */
+    private val _isSelectingAll = MutableStateFlow(false)
+    val isSelectingAll: StateFlow<Boolean> = _isSelectingAll.asStateFlow()
+
+    /**
+     * Selects everything the timeline shows, not just the pages that happen to be loaded.
+     *
+     * The grid is paged, so "everything on screen" is a subset of the view. Selecting only that would
+     * make a later bulk backup report itself as the whole timeline while covering a fraction of it —
+     * the one kind of claim this app does not make. The read therefore goes back to the repository,
+     * which walks the same loader the grid does, and so honours the same exclusions (archived/trashed
+     * ids, the hide-videos / hide-GIFs preference).
+     *
+     * On failure nothing is selected and nothing is claimed: the previous selection stands, so a
+     * failed select-all is a no-op the user can simply retry rather than a partial selection that
+     * looks complete.
+     */
+    fun selectAll() {
+        if (_isSelectingAll.value) return
+        _isSelectingAll.value = true
+        viewModelScope.launch {
+            try {
+                val all = repository.allMedia()
+                if (all.isNotEmpty()) {
+                    _selected.value = LinkedHashMap<Long, LocalMedia>(all.size).apply {
+                        all.forEach { put(it.id, it) }
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // See the KDoc: the untouched selection is the honest state.
+            } finally {
+                _isSelectingAll.value = false
+            }
+        }
+    }
+
     /**
      * Back up every selected photo through the existing engine (recognition + dedup + queue + schedule).
      * Reports how many were newly enqueued — already-backed-up/pending items are recognised and skipped

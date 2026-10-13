@@ -1,7 +1,8 @@
 package com.telepic.ui.screens.albums
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -95,6 +100,12 @@ fun AlbumsScreen(
     val customAlbums by viewModel.customAlbums.collectAsStateWithLifecycle()
     val spacing = TelepicTokens.spacing
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
+    // The long-press menu's target is held as an id plus the name the dialog opens with, rather than
+    // as a CustomAlbum: both survive Activity recreation, a data class would not, and the album list
+    // is a live flow so the entry can be gone by the time the dialog is confirmed.
+    var renameAlbumId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var renameInitialName by rememberSaveable { mutableStateOf("") }
+    var deleteAlbumId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(permissionState.hasAccess) { if (permissionState.hasAccess) viewModel.refresh() }
 
@@ -141,6 +152,11 @@ fun AlbumsScreen(
                         folderAlbums = folderAlbums,
                         onOpenAlbum = onOpenAlbum,
                         onOpenCustomAlbum = onOpenCustomAlbum,
+                        onRenameAlbum = { album ->
+                            renameInitialName = album.name
+                            renameAlbumId = album.id
+                        },
+                        onDeleteAlbum = { album -> deleteAlbumId = album.id },
                     )
                 }
             }
@@ -172,6 +188,48 @@ fun AlbumsScreen(
             onDismiss = { showCreateDialog = false },
         )
     }
+
+    // Both dialogs are the same two the album's own overflow uses (AlbumContentsScreen), reached here
+    // so the user does not have to open an album just to rename or delete it. Nothing is reported
+    // back: `customAlbums` is an observed flow, so a rename or delete that did not land simply leaves
+    // the grid as it was — the same contract `createAlbum` has.
+    val pendingRename = renameAlbumId
+    if (pendingRename != null) {
+        AlbumNameDialog(
+            title = stringResource(R.string.album_rename_title),
+            confirmLabel = stringResource(R.string.album_rename_confirm),
+            initialName = renameInitialName,
+            onConfirm = { name ->
+                renameAlbumId = null
+                viewModel.renameAlbum(pendingRename, name)
+            },
+            onDismiss = { renameAlbumId = null },
+        )
+    }
+
+    val pendingDelete = deleteAlbumId
+    if (pendingDelete != null) {
+        AlertDialog(
+            onDismissRequest = { deleteAlbumId = null },
+            title = { Text(stringResource(R.string.album_delete_title)) },
+            // The body already says the photos stay on the device and in the Telegram backup — which
+            // is exactly the thing a user deleting an album needs told.
+            text = { Text(stringResource(R.string.album_delete_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteAlbumId = null
+                    viewModel.deleteAlbum(pendingDelete)
+                }) {
+                    Text(stringResource(R.string.album_delete_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteAlbumId = null }) {
+                    Text(stringResource(R.string.organization_cancel))
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -180,6 +238,8 @@ private fun AlbumGrid(
     folderAlbums: List<Album>,
     onOpenAlbum: (Album) -> Unit,
     onOpenCustomAlbum: (CustomAlbum) -> Unit,
+    onRenameAlbum: (CustomAlbum) -> Unit,
+    onDeleteAlbum: (CustomAlbum) -> Unit,
 ) {
     val spacing = TelepicTokens.spacing
     LazyVerticalGrid(
@@ -208,6 +268,13 @@ private fun AlbumGrid(
                     coverModel = album.coverUri,
                     openLabel = stringResource(R.string.albums_open_album, album.name),
                     onClick = { onOpenCustomAlbum(album) },
+                    // Only a user-created album gets the menu: its name and membership are the user's,
+                    // so rename and delete mean something. A folder album's name comes from the
+                    // filesystem and its contents *are* the filesystem, so both actions would be
+                    // offering something that cannot work — the same rule the album's own overflow
+                    // follows (see AlbumContentsScreen).
+                    onRename = { onRenameAlbum(album) },
+                    onDelete = { onDeleteAlbum(album) },
                 )
             }
         }
@@ -250,7 +317,13 @@ private fun SectionLabel(text: String) {
  * A null [coverModel] is a real case — a user-created album with nothing in it yet — and Coil draws
  * nothing for it, so the cell's own background shows through as an honest empty cover rather than a
  * stand-in image for a photo that does not exist.
+ *
+ * A long press opens Rename / Delete for a user-created album ([onRename] / [onDelete] non-null); a
+ * folder album passes neither and is tap-only. Long press is the same gesture the media grids use to
+ * enter selection, and [onLongClickLabel] is what makes it reachable by TalkBack rather than a
+ * gesture only a sighted user can discover.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AlbumTile(
     title: String,
@@ -258,43 +331,85 @@ private fun AlbumTile(
     coverModel: Any?,
     openLabel: String,
     onClick: () -> Unit,
+    onRename: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     val spacing = TelepicTokens.spacing
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(spacing.gridItemRadius))
-            .padding(bottom = spacing.sm)
-            .semantics(mergeDescendants = true) { contentDescription = openLabel }
-            .clickable(onClick = onClick),
-    ) {
-        Box(
+    var menuOpen by remember { mutableStateOf(false) }
+    val hasMenu = onRename != null || onDelete != null
+    val menuLabel = stringResource(R.string.album_more_actions)
+
+    Box {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(topStart = spacing.gridItemRadius, topEnd = spacing.gridItemRadius))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .clip(RoundedCornerShape(spacing.gridItemRadius))
+                .padding(bottom = spacing.sm)
+                .semantics(mergeDescendants = true) { contentDescription = openLabel }
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClickLabel = if (hasMenu) menuLabel else null,
+                    onLongClick = if (hasMenu) {
+                        { menuOpen = true }
+                    } else {
+                        null
+                    },
+                ),
         ) {
-            AsyncImage(
-                model = coverModel,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize(),
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(topStart = spacing.gridItemRadius, topEnd = spacing.gridItemRadius))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                AsyncImage(
+                    model = coverModel,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+            Column(modifier = Modifier.padding(top = spacing.xs)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = pluralStringResource(R.plurals.albums_item_count, count, count),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        Column(modifier = Modifier.padding(top = spacing.xs)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = pluralStringResource(R.plurals.albums_item_count, count, count),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+
+        // Anchored to the tile itself (the Box wraps the Column) rather than to the grid, so it opens
+        // over the album the user pressed. Composed inside the tile so each cell owns its own state —
+        // a single hoisted menu would have to carry which album it was opened for.
+        if (hasMenu) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                onRename?.let { rename ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.album_rename)) },
+                        onClick = {
+                            menuOpen = false
+                            rename()
+                        },
+                    )
+                }
+                onDelete?.let { delete ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.album_delete)) },
+                        onClick = {
+                            menuOpen = false
+                            delete()
+                        },
+                    )
+                }
+            }
         }
     }
 }
