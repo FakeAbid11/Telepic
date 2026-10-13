@@ -137,7 +137,7 @@ class MediaStoreLocalLookup(
         val selection = "$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} IN ($placeholders)"
         // No try/catch: a failed read must be distinguishable from an empty collection. See the
         // contract on LocalMediaLookup.byIdList.
-        contentResolver.query(
+        return contentResolver.query(
             MediaStore.Files.getContentUri("external"),
             projection,
             selection,
