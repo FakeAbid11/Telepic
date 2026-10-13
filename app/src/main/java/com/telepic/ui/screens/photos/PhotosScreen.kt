@@ -98,8 +98,11 @@ fun PhotosScreen(
     val isAddingToAlbum by viewModel.isAddingToAlbum.collectAsStateWithLifecycle()
     val albumReport by viewModel.albumReport.collectAsStateWithLifecycle()
     // Dialog visibility survives rotation, like every other dialog in the app.
-    var showAlbumPicker by rememberSaveable { mutableStateOf(false) }
-    var showNewAlbumForSelection by rememberSaveable { mutableStateOf(false) }
+    // Both dialogs act on the current selection, which lives in memory and resets on process death.
+    // Saved, they re-opened over an empty selection: the picker showed "no albums" and the create
+    // dialog would have made an album containing nothing.
+    var showAlbumPicker by remember { mutableStateOf(false) }
+    var showNewAlbumForSelection by remember { mutableStateOf(false) }
     // Whether the search field is open. Separate from the term itself, which lives in the ViewModel:
     // closing the field clears the term, but an empty field is still an open field.
     var searchOpen by rememberSaveable { mutableStateOf(false) }

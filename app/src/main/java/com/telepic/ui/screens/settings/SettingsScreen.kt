@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -111,7 +112,10 @@ fun SettingsScreen(
     var showBackupDialog by rememberSaveable { mutableStateOf(false) }
     var showNetworkDialog by rememberSaveable { mutableStateOf(false) }
     var showSignOutConfirm by rememberSaveable { mutableStateOf(false) }
-    var showFolderPicker by rememberSaveable { mutableStateOf(false) }
+    // The picker's list is loaded asynchronously, so a restored picker would open on an empty folder
+    // set that the user did not ask for. The other dialogs here stay saved: their subject is persisted
+    // state (the theme, the backup choice, the session), not a list that has to arrive first.
+    var showFolderPicker by remember { mutableStateOf(false) }
     var showLicenses by rememberSaveable { mutableStateOf(false) }
 
     val authState by viewModel.authState.collectAsStateWithLifecycle()

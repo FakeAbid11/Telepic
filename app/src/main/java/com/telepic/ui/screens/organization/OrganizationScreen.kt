@@ -47,7 +47,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,7 +103,10 @@ fun OrganizationScreen(
     val spacing = TelepicTokens.spacing
     val haptics = rememberTelepicHaptics()
 
-    var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
+    // Not saved across process death: the dialog's subject is the in-memory selection, and
+    // `selectedItems` resets to empty on its own. Restoring the dialog without the selection rendered
+    // "delete 0 items" — with a confirm button that still fired.
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     // The result is applied to the ids the ViewModel is holding for it, so the screen only has to
     // report whether the user accepted — it never has to remember which items the prompt covered.
