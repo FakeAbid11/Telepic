@@ -82,6 +82,12 @@ class MapScreenUiTest {
 
     private fun settle() = repeat(4) { shadowOf(android.os.Looper.getMainLooper()).idle() }
 
+    /**
+     * These tests deliberately stay on the branches that render *before* the osmdroid surface exists,
+     * so the scan grace is pinned far beyond anything a test can advance. The loading branch is what is
+     * under test here; letting the window lapse would build a real `MapView`, which is device-bound.
+     * The lapse itself is covered at the ViewModel level in `MapViewModelTest`.
+     */
     private fun showMap(
         repo: FakeMapRepo,
         permission: MediaPermissionState = MediaPermissionState.Granted,
@@ -90,7 +96,12 @@ class MapScreenUiTest {
         composeRule.setContent {
             TelepicTheme {
                 MapScreen(
-                    viewModel = MapViewModel(repo, hiddenIds = flowOf(emptySet()), cameraRepository = cameraRepository),
+                    viewModel = MapViewModel(
+                        repo,
+                        hiddenIds = flowOf(emptySet()),
+                        cameraRepository = cameraRepository,
+                        scanGraceMillis = 60_000L,
+                    ),
                     onOpenMedia = {},
                     focusRequest = MapFocusRequest(),
                     permissionStateOverride = permission,

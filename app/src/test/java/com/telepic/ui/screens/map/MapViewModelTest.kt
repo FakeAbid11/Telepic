@@ -252,4 +252,60 @@ class MapViewModelTest {
 
         assertEquals(1, repo.rescanCalls)
     }
+
+    // ------------------------------------------------------- settling the loading state
+
+    @Test
+    fun `the screen keeps waiting until the scan has an answer`() {
+        val repo = FakeMapRepo(MutableStateFlow(emptyList()))
+        val vm = MapViewModel(repo)
+
+        // Nothing has been read yet, so there is no answer to give — the screen must not claim the
+        // library holds no coordinates before it has looked.
+        assertFalse(vm.scanSettled.value)
+
+        vm.refresh()
+        settle()
+        assertFalse(vm.scanSettled.value)
+        assertTrue(vm.isScanning.value)
+
+        repo.gate.complete(Unit)
+        settle()
+        assertTrue(vm.scanSettled.value)
+    }
+
+    @Test
+    fun `a scan that outlives its grace window stops holding the screen`() {
+        val repo = FakeMapRepo(MutableStateFlow(emptyList()))
+        val vm = MapViewModel(repo, scanGraceMillis = 0)
+
+        vm.refresh()
+        settle()
+
+        // The grace has lapsed, so the screen renders the map with its scanning hint rather than a
+        // spinner — while the sweep itself is still running. This is the whole point of the window:
+        // a first sweep of a large library is legitimately long, and a spinner that long reads as a
+        // hang, which is exactly how the stuck map was reported.
+        assertTrue(vm.scanSettled.value)
+        assertTrue(vm.isScanning.value)
+
+        repo.gate.complete(Unit)
+        settle()
+        assertTrue(vm.scanSettled.value)
+        assertFalse(vm.isScanning.value)
+    }
+
+    @Test
+    fun `a failed scan still settles the screen so the error can be shown`() {
+        val repo = FakeMapRepo(MutableStateFlow(emptyList())).apply { failNext = true }
+        val vm = MapViewModel(repo)
+
+        vm.refresh()
+        settle()
+
+        // A scan that ended — even badly — is an answer: the screen must stop waiting and say so.
+        assertTrue(vm.scanSettled.value)
+        assertFalse(vm.isScanning.value)
+        assertTrue(vm.scanFailed.value)
+    }
 }

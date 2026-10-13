@@ -11,6 +11,7 @@ import com.telepic.data.media.db.CustomAlbumEntity
 import com.telepic.data.media.db.CustomAlbumMediaEntity
 import com.telepic.data.media.db.MediaLocationDao
 import com.telepic.data.media.db.MediaLocationEntity
+import com.telepic.data.media.db.MediaLocationScanEntity
 import com.telepic.data.organization.db.MediaOrganizationDao
 import com.telepic.data.organization.db.MediaOrganizationEntity
 
@@ -29,6 +30,8 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  * - `5 → 6` ([MIGRATION_5_6]): adds the `pendingTelegram*` columns to `backup_queue` (early remote
  *   identity persistence, so a timed-out send is confirmed rather than duplicated).
  * - `6 → 7` ([MIGRATION_6_7]): introduces `custom_album` + `custom_album_media` (user-created albums).
+ * - `7 → 8` ([MIGRATION_7_8]): introduces `media_location_scan` (which items the map has already
+ *   examined for GPS, including the ones that carry none).
  */
 @Database(
     entities = [
@@ -37,10 +40,11 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         BackupQueueEntity::class,
         MediaOrganizationEntity::class,
         MediaLocationEntity::class,
+        MediaLocationScanEntity::class,
         CustomAlbumEntity::class,
         CustomAlbumMediaEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class TelepicDatabase : RoomDatabase() {
@@ -191,6 +195,31 @@ abstract class TelepicDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_custom_album_media_localMediaId` " +
                         "ON `custom_album_media` (`localMediaId`)",
+                )
+            }
+        }
+
+        /**
+         * Map scan memory: introduces `media_location_scan`, which records every item the map has
+         * already examined for GPS — *including* items that carry no coordinate.
+         *
+         * A new table only, so every existing table and row survives verbatim, and `media_location`
+         * keeps its original shape (`latitude`/`longitude` stay NOT NULL: it remains strictly "items
+         * that have a coordinate"). Recreating that table just to make the columns nullable would
+         * have been a far riskier migration for no gain — "have we looked at this file?" is a
+         * different question from "does this file have a coordinate?", so it gets its own table.
+         *
+         * The table starts empty, which is correct: nothing has been examined yet under the new
+         * scheme, so the first sweep after upgrading re-reads EXIF once for the whole library and
+         * records the result. Every sweep after that skips the already-examined items for free.
+         */
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `media_location_scan` (" +
+                        "`localMediaId` INTEGER NOT NULL, " +
+                        "`scannedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`localMediaId`))",
                 )
             }
         }

@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
@@ -107,6 +109,7 @@ fun MapScreen(
     val scanFailed by viewModel.scanFailed.collectAsStateWithLifecycle()
     val savedCamera by viewModel.savedCamera.collectAsStateWithLifecycle()
     val cameraResolved by viewModel.cameraResolved.collectAsStateWithLifecycle()
+    val scanSettled by viewModel.scanSettled.collectAsStateWithLifecycle()
     val focus by focusRequest.pending.collectAsStateWithLifecycle()
     val spacing = TelepicTokens.spacing
 
@@ -146,10 +149,12 @@ fun MapScreen(
                             controller.openAppSettings else controller.requestPermission,
                     ),
                 )
-                // Distinguish an in-progress scan from a genuinely empty result so the empty state
-                // does not flash before the first markers land. The remembered camera is read before
-                // the surface exists, for the same reason: the map must open already framed.
-                !cameraResolved || (isScanning && locations.isEmpty()) ->
+                // Wait for the remembered camera (so the surface opens already framed) and for the
+                // first scan to have an answer. `scanSettled` is false until a scan finishes, fails,
+                // or runs past its grace window, so a library that has not been read yet never
+                // flashes "no locations yet" — while a genuinely long first sweep can no longer hold
+                // the screen on a spinner that is indistinguishable from a hang.
+                !cameraResolved || (!scanSettled && locations.isEmpty()) ->
                     LoadingState(modifier = Modifier.weight(1f))
                 // A failed scan used to fall into the branch below and read as "no locations yet" —
                 // telling the user their photos carry no GPS data when the scan had thrown. Gated on
@@ -161,7 +166,10 @@ fun MapScreen(
                     retryLabel = stringResource(R.string.common_retry),
                     modifier = Modifier.weight(1f),
                 )
-                locations.isEmpty() -> EmptyState(
+                // Only claim the library holds no coordinates once the scan has settled: a sweep
+                // still running may simply not have reached the geotagged files yet, and saying
+                // otherwise would be a lie about the user's own photos.
+                locations.isEmpty() && !isScanning -> EmptyState(
                     icon = Icons.Outlined.LocationOff,
                     title = stringResource(R.string.map_empty_title),
                     description = stringResource(R.string.map_empty_description),
@@ -173,6 +181,7 @@ fun MapScreen(
                         onOpenMedia = onOpenMedia,
                         savedCamera = savedCamera,
                         focus = focus,
+                        scanning = isScanning,
                         onFocusConsumed = focusRequest::consume,
                         onCameraChanged = viewModel::rememberCamera,
                         modifier = Modifier.weight(1f),
@@ -195,6 +204,7 @@ private fun OsmMap(
     onOpenMedia: (Long) -> Unit,
     savedCamera: SavedCamera?,
     focus: MapFocus?,
+    scanning: Boolean,
     onFocusConsumed: () -> Unit,
     onCameraChanged: (SavedCamera) -> Unit,
     modifier: Modifier = Modifier,
@@ -365,6 +375,37 @@ private fun OsmMap(
                 mapViewRef = null
             },
         )
+        // The sweep can still be running behind a map that is already on screen, so it has to say so:
+        // a partly-filled map that stays silent reads as the complete answer. Clears the moment the
+        // scan settles, and is the reason the screen no longer waits on a long first sweep at all.
+        if (scanning) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(TelepicTokens.spacing.md),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.sm),
+                    modifier = Modifier.padding(
+                        horizontal = TelepicTokens.spacing.md,
+                        vertical = TelepicTokens.spacing.sm,
+                    ),
+                ) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.map_scanning),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
         // Reframes all the photos on demand, so a stray pan is never a dead end. The regular FAB
         // (56dp) rather than the small one (40dp): Material3's FAB does not expand its own touch
         // target — `FloatingActionButtonKt` never applies `minimumInteractiveComponentSize`, and

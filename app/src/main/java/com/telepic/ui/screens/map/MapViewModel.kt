@@ -7,6 +7,7 @@ import com.telepic.data.media.SavedCamera
 import com.telepic.domain.media.GeotaggedMedia
 import com.telepic.settings.MapCameraRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,13 +28,17 @@ import kotlinx.coroutines.launch
  *
  * Archived/trashed media is hidden on the map too ([hiddenIds]), so the pins match the timeline,
  * albums and Viewer: a filed-away photo must not stay visible on the map while the Viewer refuses to
- * swipe onto it. [isScanning] lets the screen distinguish "still loading" from "genuinely no locations"
- * instead of flashing the empty state during the first scan.
+ * swipe onto it.
+ *
+ * [scanSettled] is what lets the screen tell "we have not looked yet" apart from "we looked and there
+ * is genuinely nothing" — and, crucially, it stops the screen waiting on a scan that can legitimately
+ * take a long time on a first run.
  */
 class MapViewModel(
     private val mapLocationRepository: MapLocationRepository,
     private val hiddenIds: Flow<Set<Long>> = flowOf(emptySet()),
     private val cameraRepository: MapCameraRepository? = null,
+    private val scanGraceMillis: Long = SCAN_GRACE_MILLIS,
 ) : ViewModel() {
 
     private val _isScanning = MutableStateFlow(false)
@@ -77,6 +82,24 @@ class MapViewModel(
      * Resolves immediately when no camera repository is supplied.
      */
     val cameraResolved: StateFlow<Boolean> = _cameraResolved.asStateFlow()
+
+    private val _scanSettled = MutableStateFlow(false)
+
+    /**
+     * Whether a scan has produced an answer yet — by finishing, failing, or running long enough that
+     * waiting any further would be worse than showing what we have.
+     *
+     * Starts `false` on purpose: before the first scan there is no answer, so the screen must keep
+     * its loading state rather than flash "no locations yet" at a library it has not read.
+     *
+     * The grace window is the second half of the fix for a screen that used to spin indefinitely. A
+     * first sweep reads EXIF for the whole library, which on a large one is long enough that an
+     * unbounded spinner is indistinguishable from a hang — and because the old sweep could never get
+     * past its page cap, it genuinely never ended for some libraries. Past the window the screen
+     * renders the map (with an inline scanning hint) and pins appear as they are found: slower to be
+     * complete, but never dishonest and never stuck.
+     */
+    val scanSettled: StateFlow<Boolean> = _scanSettled.asStateFlow()
 
     init {
         val repository = cameraRepository
@@ -131,6 +154,13 @@ class MapViewModel(
         if (_isScanning.value) return
         viewModelScope.launch {
             _isScanning.value = true
+            _scanSettled.value = false
+            // Stop gating the screen on the sweep once this lapses. A cancelled or failed scan also
+            // settles, so the screen is never left waiting on a coroutine that is no longer running.
+            val grace = launch {
+                delay(scanGraceMillis)
+                _scanSettled.value = true
+            }
             try {
                 mapLocationRepository.rescan()
                 _scanFailed.value = false
@@ -144,8 +174,19 @@ class MapViewModel(
                 // being indistinguishable from an empty library.
                 _scanFailed.value = true
             } finally {
+                grace.cancel()
+                _scanSettled.value = true
                 _isScanning.value = false
             }
         }
+    }
+
+    private companion object {
+        /**
+         * How long the screen may wait on a scan before it starts showing the map instead. Long
+         * enough that a small library usually settles first (so the common case is unchanged), short
+         * enough that a full-library sweep never presents as a hang.
+         */
+        const val SCAN_GRACE_MILLIS = 4_000L
     }
 }

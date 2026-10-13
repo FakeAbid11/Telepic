@@ -299,8 +299,9 @@ Room is at **version 7**, with explicit migrations and **no destructive fallback
 | `media_location` | EXIF-GPS location cache | 4 → 5 |
 | `custom_album` | User-created albums: name + cover hint | 6 → 7 |
 | `custom_album_media` | Album membership, keyed `(albumId, localMediaId)`, cascading on delete | 6 → 7 |
+| `media_location_scan` | Which items the map has already examined for GPS — including those that carry none | 7 → 8 |
 
-Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, `5 → 6`, and `6 → 7`. Each has a migration test that builds the previous version and proves existing rows survive. Note that `TelepicDatabase` is always the latest version, so each of those tests chains *every* migration from its starting version — a version bump therefore touches all of them.
+Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, `5 → 6`, `6 → 7`, and `7 → 8`. Each has a migration test that builds the previous version and proves existing rows survive. Note that `TelepicDatabase` is always the latest version, so each of those tests chains *every* migration from its starting version — a version bump therefore touches all of them.
 
 ---
 
@@ -494,6 +495,7 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 - osmdroid (Apache-2.0, no API key) rendered via a Compose `AndroidView`, with proper OSM attribution and a public MAPNIK tile source — documented as not suitable for unlimited production traffic.
 - Photo positions come **only from embedded EXIF GPS**, parsed by a pure, unit-tested `GpsCoordinates` (DMS + hemisphere → decimal, range-validated, malformed/non-finite rejected). **No coordinate is ever fabricated** — media without valid GPS simply never gets a pin, and non-geotagged photos stay in Photos. **No device-location permission is requested, and no coordinates or EXIF are uploaded.**
 - Extracted coordinates are cached in a new `media_location` Room table (explicit, non-destructive migration 4 → 5) so full-resolution EXIF is not re-read on every render; a pure `MapClusterer` groups nearby markers while preserving every item id. Selecting a marker opens the shared Viewer by that MediaStore id. `INTERNET` / `ACCESS_NETWORK_STATE` were added for tiles.
+- **The scan remembers what it has already looked at** (`media_location_scan`, additive migration 7 → 8). Previously only coordinate-bearing items were written down, so a file with no GPS could never be recognised as "already checked": its EXIF was re-read on every open, and because the sweep was capped at 40 pages that whole budget went on the same prefix — leaving a geotagged photo further back **permanently unreachable** and the screen stuck on its loading state. Every examined item is now recorded, so a sweep costs one EXIF read per file *once* and can afford to walk the entire library. The screen also stops waiting on the sweep after a short window, rendering the map with an inline "scanning" hint instead, so a long first run can never present as a hang.
 - GPS parsing, clustering, and the cache are CI-tested with fakes. **Map pan/zoom/tiles/marker rendering are device-only and NOT TESTED**, and **no offline tile caching is implemented** (tiles require connectivity).
 
 **Part C — Favorites, Archive & Trash**

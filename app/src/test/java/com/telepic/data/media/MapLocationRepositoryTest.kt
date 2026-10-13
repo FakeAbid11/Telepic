@@ -21,8 +21,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The map cache extracts GPS only for geotagged items (never fabricates a coordinate), skips already
- * cached items on rescan, and exposes the cached locations for rendering with the correct id + URI.
+ * The map cache extracts GPS only for geotagged items (never fabricates a coordinate) and exposes
+ * the cached locations for rendering with the correct id + URI.
+ *
+ * It also pins the scan's *memory*: every examined item is recorded, coordinate or not, so a later
+ * sweep never re-reads the same file. That memory is what lets the sweep get past a long
+ * coordinate-less prefix to the geotagged photos behind it — the failure that left the map stuck on
+ * its loading state for a library whose newest files were screenshots.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -79,17 +84,36 @@ class MapLocationRepositoryTest {
     }
 
     @Test
-    fun `rescan skips already-cached geotagged items`() = runBlocking {
+    fun `a coordinate-less item is examined once and never re-read`() = runBlocking {
         val extractor = FakeExtractor()
         val repository = DefaultMapLocationRepository(dao, FakeLoader(items), extractor, pageSize = 10, maxPages = 5)
         repository.rescan()
-        val afterFirst = extractor.calls.toList()
+        assertEquals(listOf("content://m/1", "content://m/2", "content://m/3"), extractor.calls)
 
         repository.rescan()
-        // ids 1 and 3 are cached, so only the never-cached (coordinate-less) id 2 is re-examined.
-        val added = extractor.calls.drop(afterFirst.size)
-        assertEquals(listOf("content://m/2"), added)
+        // Nothing is re-read — including id 2, which carries no coordinate and so is absent from
+        // `media_location`. Re-reading it on every sweep is exactly what used to spend the whole page
+        // budget on the same prefix and leave the map stuck on its loading state, because the
+        // geotagged files further back were then never reached at all.
+        assertEquals(listOf("content://m/1", "content://m/2", "content://m/3"), extractor.calls)
         assertEquals(setOf(1L, 3L), repository.locations.first().map { it.mediaId }.toSet())
+    }
+
+    @Test
+    fun `the sweep reaches a geotagged photo beyond the old page ceiling`() = runBlocking {
+        // 5,000 coordinate-less files ahead of the only geotagged one. The sweep used to stop after
+        // 40 pages (4,800 items) *and* spend that budget re-reading the same already-examined
+        // prefix, so this photo was unreachable: the map could never show it however often it was
+        // opened. Uses the production defaults on purpose — the ceiling was a default, so only a
+        // default can prove it is gone.
+        val library = (1L..5_000L).map { media(it, "content://m/$it") }
+        val extractor = object : LocationExtractor {
+            override suspend fun extract(uri: Uri): GeoLocation? =
+                if (uri.toString() == "content://m/5000") GeoLocation(48.85, 2.35) else null
+        }
+        val repository = DefaultMapLocationRepository(dao, FakeLoader(library), extractor)
+        repository.rescan()
+        assertEquals(setOf(5_000L), repository.locations.first().map { it.mediaId }.toSet())
     }
 
     @Test

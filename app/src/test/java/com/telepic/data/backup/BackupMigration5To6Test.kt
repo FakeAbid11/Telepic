@@ -93,6 +93,7 @@ class BackupMigration5To6Test {
                 // file has to walk every remaining step. MIGRATION_5_6 is the one under test.
                 TelepicDatabase.MIGRATION_5_6,
                 TelepicDatabase.MIGRATION_6_7,
+                TelepicDatabase.MIGRATION_7_8,
             )
             .allowMainThreadQueries()
             .build()
