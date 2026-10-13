@@ -41,17 +41,16 @@ interface LocalMediaDeleter {
 }
 
 /**
- * Real deletion through the Android-sanctioned MediaStore APIs. On API 29+ it always asks the user to
+ * Real deletion through the Android-sanctioned MediaStore APIs. On API 30+ it always asks the user to
  * confirm via the system dialog ([MediaStore.createDeleteRequest]); the app records nothing until the
- * consent result comes back OK (handled by the caller). On API 26–28 it attempts a direct delete and
+ * consent result comes back OK (handled by the caller). On API 26–29 it attempts a direct delete and
  * reports [DeleteRequest.Failed] when the platform does not permit it — Telepic never silently
  * deletes and never implies a file was removed when only the app-level trash flag changed.
  *
- * The bound is Q, not R: `createDeleteRequest` is an API 29 addition, and gating it on R left every
- * Android 10 device on the legacy path, where `resolver.delete` throws `RecoverableSecurityException`
- * for media this app does not own. "Delete forever" therefore always reported failure there — a whole
- * supported release, not an edge case. `WRITE_EXTERNAL_STORAGE` is still declared up to API 29
- * (AndroidManifest), which is what the Q consent flow needs.
+ * The legacy per-file recoverable-consent flow (Android Q) is intentionally NOT claimed here; it is
+ * documented as a known limitation rather than faked. `createDeleteRequest` is an API 30 addition —
+ * binding the batch-consent path to Q looked like a one-character fix and was lint's `NewApi` error
+ * instead: on Android 10 it would have thrown at runtime, which is worse than the honest failure.
  */
 class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
@@ -65,12 +64,12 @@ class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
     override suspend fun requestDeleteAll(media: List<LocalMedia>): DeleteRequest {
         if (media.isEmpty()) return DeleteRequest.Failed
         return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 // One consent prompt covers the whole list — the platform accepts a list of uris here.
                 val pending = MediaStore.createDeleteRequest(resolver, media.map { it.contentUri })
                 DeleteRequest.NeedsConsent(pending.intentSender)
             } else {
-                // Pre-Q has no batch consent, so the files go one at a time and all of them must go for
+                // Pre-R has no batch consent, so the files go one at a time and all of them must go for
                 // this to be reported as a success. A partial delete is Failed, never a success: see
                 // the contract on [LocalMediaDeleter.requestDeleteAll].
                 var deleted = 0
@@ -78,7 +77,7 @@ class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
                 if (deleted == media.size) DeleteRequest.Deleted else DeleteRequest.Failed
             }
         } catch (security: SecurityException) {
-            // Includes `RecoverableSecurityException` on API 26–28 for media this app did not create:
+            // Includes `RecoverableSecurityException` below API 30 for media this app did not create:
             // the item stays in trash, and the reason now leaves a trace instead of vanishing.
             TelepicLog.warn("MediaDelete", "the provider refused the delete; the item stays in trash", security)
             DeleteRequest.Failed

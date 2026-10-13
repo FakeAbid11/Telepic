@@ -47,7 +47,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - Folder albums built from real MediaStore buckets (newest item as cover, real counts, provider bucket names), shown in the same grid under **Device folders**.
 - Album contents reuse the exact Photos pipeline, so an album behaves identically to the timeline.
 - Favorites, Archive, and Trash per item — independent of backup state, with undo.
-- Permanent delete goes through the Android-sanctioned system consent dialog (`MediaStore.createDeleteRequest`, API 29+).
+- Permanent delete goes through the Android-sanctioned system consent dialog (`MediaStore.createDeleteRequest`, API 30+).
 
 **Map**
 - Interactive OpenStreetMap view (osmdroid, no API key) with marker clustering.
@@ -503,7 +503,7 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 - Durable per-item state in a new `media_organization` Room table (explicit migration 3 → 4), keyed by the MediaStore id — **independent of backup state** (favoriting/archiving/trashing never touches the queue, remote identity, or cloud status; unit-tested).
 - **Favorite** stays visible in the library; **Archive** is removed from the primary timeline via **DB-side** filtering (`_ID NOT IN (...)` in the MediaStore and album-bucket queries) but is stored and restorable; **Trash** is hidden from normal browsing until recovered or permanently deleted.
 - Viewer favorite/archive/trash actions, plus contextual Favorites / Archive / Trash collections reached from Albums (no new bottom-navigation destinations), with undo (unfavorite / unarchive / restore).
-- **Permanent delete** goes through the Android-sanctioned **`MediaStore.createDeleteRequest`** system consent (API 29+), is confirmation-gated, and only forgets an item after a consented success. The app-level trash flag is kept **distinct** from an actual file removal (`deletedFromStore`), and the legacy per-file consent path (API 26–28) is documented as unsupported rather than faked. Repository persistence, migration, timeline hidden-id computation, and the collection ViewModel are CI-tested; the **system delete consent is device-only and NOT TESTED**.
+- **Permanent delete** goes through the Android-sanctioned **`MediaStore.createDeleteRequest`** system consent (API 30+), is confirmation-gated, and only forgets an item after a consented success. The app-level trash flag is kept **distinct** from an actual file removal (`deletedFromStore`), and the legacy per-file consent (API 26–29) is documented as unsupported rather than faked. Repository persistence, migration, timeline hidden-id computation, and the collection ViewModel are CI-tested; the **system delete consent is device-only and NOT TESTED**.
 
 **Part D — Restore / download original to device**
 
