@@ -10,10 +10,12 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -302,5 +304,44 @@ class BackupCoordinatorTest {
         ).syncFromPreference()
         assertEquals(0, repo.enqueuedWithHash.size)
         assertEquals(0, repo.enqueued.size)
+    }
+
+    @Test
+    fun `a pass stopped mid-scan still hands its queued rows to the worker`() = runBlocking {
+        // WorkManager cancels a long pass at its run limit. The rows enqueued before that stop used to
+        // sit unattended until the next 12h tick — and the next tick does not schedule either, because
+        // re-scanning an already-queued library resolves every item to Pending, not to new work. Only
+        // opening the Backup Center and pressing Start could rescue them.
+        val repo = RecordingRepo()
+        val scheduler = FakeScheduler()
+        val stoppingLoader = object : com.telepic.data.media.MediaPageLoader {
+            private var calls = 0
+            override suspend fun load(offset: Int, limit: Int): List<LocalMedia> {
+                // A full first page (pageSize 2) keeps the scan going; the second is the stop.
+                if (calls++ == 0) return listOf(media(1), media(2))
+                throw CancellationException("work stopped")
+            }
+        }
+        val coordinator = DefaultBackupCoordinator(
+            repository = repo,
+            recognition = NeedsBackupRecognition(),
+            scheduler = scheduler,
+            onboardingRepository = FakeOnboarding(BackupPreference.BACKUP_ALL),
+            pageLoaderFactory = { stoppingLoader },
+            discoveryPageSize = 2,
+        )
+
+        val thrown = runCatching { coordinator.syncFromPreference() }.exceptionOrNull()
+        assertTrue("the stop must still propagate, got $thrown", thrown is CancellationException)
+        assertEquals(2, repo.enqueuedWithHash.size)
+        assertEquals("the pass must schedule the work it already enqueued", 1, scheduler.scheduled)
+    }
+
+    @Test
+    fun `a completed pass schedules exactly one run`() = runBlocking {
+        // The insurance above must not become a second worker run per tick on the normal path.
+        val scheduler = FakeScheduler()
+        coordinator(RecordingRepo(), scheduler, BackupPreference.BACKUP_ALL).syncFromPreference()
+        assertEquals(1, scheduler.scheduled)
     }
 }

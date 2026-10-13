@@ -2,13 +2,16 @@ package com.telepic.data.backup
 
 import com.telepic.data.backup.work.BackupWorkScheduler
 import com.telepic.data.media.MediaPageLoader
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.backup.BackupRecognitionResult
 import com.telepic.domain.media.LocalMedia
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 /**
  * Outcome of a manual backup request over one or more items, for honest UI feedback. [queued] counts
@@ -115,7 +118,7 @@ class DefaultBackupCoordinator(
             applyPreference()
         } catch (cancellation: CancellationException) {
             throw cancellation // a cancelled pass is not a failure to report
-        } catch (_: Throwable) {
+        } catch (throwable: Throwable) {
             // An automatic pass is a background concern and must never be able to kill its caller.
             // This used to be unguarded, and the onboarding backup step calls it straight from
             // `viewModelScope` — so any failure in the scan (a revoked or limited media grant, a
@@ -127,6 +130,7 @@ class DefaultBackupCoordinator(
             //
             // Nothing is claimed as backed up here: an interrupted pass leaves rows unqueued, and
             // the queue is the only thing that ever reports success.
+            TelepicLog.warn("BackupCoordinator", "automatic backup pass aborted, retrying next tick", throwable)
         }
     }
 
@@ -136,20 +140,56 @@ class DefaultBackupCoordinator(
                 // Install the recurring 12h discovery cadence while automatic backup is on; the KEEP
                 // policy makes this idempotent, and the worker re-checks the preference on every tick.
                 scheduler.schedulePeriodic()
-                if (discoverAndEnqueue(pageLoaderFactory(null))) scheduler.schedule()
+                val enqueued = try {
+                    discoverAndEnqueue(pageLoaderFactory(null))
+                } catch (cancellation: CancellationException) {
+                    scheduleInterruptedPass()
+                    throw cancellation
+                }
+                if (enqueued) scheduler.schedule()
             }
             BackupPreference.SELECT_FOLDER -> {
                 val buckets = onboardingRepository.backupBucketIds.first()
                 // Honest equivalence: "only these folders" with no folders picked backs up nothing.
                 if (buckets.isEmpty()) return
                 scheduler.schedulePeriodic()
-                var enqueuedAny = false
-                for (bucketId in buckets) {
-                    if (discoverAndEnqueue(pageLoaderFactory(bucketId))) enqueuedAny = true
+                val enqueuedAny = try {
+                    var any = false
+                    for (bucketId in buckets) {
+                        if (discoverAndEnqueue(pageLoaderFactory(bucketId))) any = true
+                    }
+                    any
+                } catch (cancellation: CancellationException) {
+                    scheduleInterruptedPass()
+                    throw cancellation
                 }
                 if (enqueuedAny) scheduler.schedule()
             }
             BackupPreference.NOT_NOW, null -> return
+        }
+    }
+
+    /**
+     * Hand the queue to the worker after a scan that was **cut short**, which the normal
+     * `if (enqueued) schedule()` never does because the exception skips past it.
+     *
+     * WorkManager stops a long-running worker on its run limit; rows enqueued before that stop then sat
+     * unattended until the next 12h tick — and the next tick does not schedule either, since
+     * re-scanning an already-queued library resolves every item to `Pending`, not to new work
+     * ([discoverAndEnqueue] returns false). Only a manual start from the Backup Center could rescue it.
+     *
+     * Runs under [NonCancellable] on purpose: the caller's job is mid-cancellation, and
+     * [BackupWorkScheduler.schedule] suspends to read the transport preferences and WorkManager state
+     * before it reaches `enqueueUniqueWork` — those reads would otherwise throw before any work was
+     * scheduled. A completed pass is unaffected, so the one-schedule-per-pass contract holds.
+     */
+    private suspend fun scheduleInterruptedPass() {
+        try {
+            withContext(NonCancellable) { scheduler.schedule() }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("BackupCoordinator", "could not schedule work after an interrupted pass", throwable)
         }
     }
 
@@ -158,12 +198,17 @@ class DefaultBackupCoordinator(
     }
 
     /**
-     * Bounded, incremental scan of one loader (the whole library, or a single chosen bucket). The
-     * cap is a safety ceiling for one pass, not the expected case: repeat scans are near-free because
-     * every visited item ends with a queue row and recognition reuses the cached hash when
-     * size+modified still match, so a pass interrupted by WorkManager's run window simply resumes
-     * cheaply on the next tick (still from the newest head). Libraries larger than the cap converge
-     * over consecutive periodic runs.
+     * Bounded, incremental scan of one loader (the whole library, or a single chosen bucket).
+     *
+     * What the cap really is: a ceiling on **one** pass, measured from the newest item. [offset] and
+     * [seen] are locals, not a persisted cursor, so a library larger than [discoveryMaxItems] is only
+     * ever scanned as deeply as a single pass can reach — the older tail does *not* converge over
+     * consecutive periodic runs, and making it do so needs a resume cursor (or age-bucketed passes),
+     * which is a separate change from this one.
+     *
+     * What a repeat pass genuinely costs little is re-visiting rows it already queued: recognition
+     * reuses the cached hash while size + modified still match, and a stop mid-way now still hands the
+     * enqueued rows to the worker — see [scheduleInterruptedPass].
      */
     private suspend fun discoverAndEnqueue(pageLoader: MediaPageLoader): Boolean {
         var offset = 0

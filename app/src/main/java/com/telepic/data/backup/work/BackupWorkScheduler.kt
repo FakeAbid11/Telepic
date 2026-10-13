@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.settings.BackupNetworkPreference
 import com.telepic.settings.SettingsRepository
 import java.util.concurrent.TimeUnit
@@ -118,7 +119,8 @@ class WorkManagerBackupScheduler(
             .any { it.state == WorkInfo.State.RUNNING }
     } catch (cancellation: CancellationException) {
         throw cancellation
-    } catch (_: Throwable) {
+    } catch (throwable: Throwable) {
+        TelepicLog.warn("BackupScheduler", "WorkManager state unreadable; keeping the existing run", throwable)
         true
     }
 
@@ -134,7 +136,10 @@ class WorkManagerBackupScheduler(
         read()
     } catch (cancellation: CancellationException) {
         throw cancellation
-    } catch (_: Throwable) {
+    } catch (throwable: Throwable) {
+        // Worth a line: the run then happens under constraints the user never chose (e.g. mobile data
+        // instead of Wi-Fi only), which is otherwise indistinguishable from the preference being ignored.
+        TelepicLog.warn("BackupScheduler", "transport preference unreadable; using the default", throwable)
         fallback
     }
 
