@@ -9,6 +9,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.compose.rememberNavController
 import com.telepic.R
 import com.telepic.di.AppContainer
 import com.telepic.onboarding.BackupPreference
@@ -60,6 +61,13 @@ fun TelepicRoot(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // Created here rather than inside the branch below. While locked, the app's content must not be
+    // composed at all (see AppLockScreen: nothing may exist behind the lock to be screenshotted or read
+    // by TalkBack), so `locked` swaps TelepicApp out of the tree — and a controller remembered *there*
+    // would go with it, dropping the back stack, the current tab and every NavBackStackEntry's own
+    // saved state on every re-lock. Hoisted, it outlives the composition it drives.
+    val navController = rememberNavController()
+
     TelepicTheme(darkTheme = themeMode.isDarkTheme(isSystemInDarkTheme())) {
         when {
             !lockResolved -> LoadingState(message = stringResource(R.string.onboarding_loading))
@@ -86,6 +94,7 @@ fun TelepicRoot(
                 themeMode = themeMode,
                 onThemeModeChange = themeViewModel::setThemeMode,
                 container = container,
+                navController = navController,
             )
         }
     }
