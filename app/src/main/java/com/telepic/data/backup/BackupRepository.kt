@@ -47,6 +47,17 @@ data class BackupProcessSummary(
     val waiting: Int = 0,
     val failed: Int = 0,
     val processed: Int = 0,
+    /** Items parked only because no Telegram session exists — a condition this worker cannot fix. */
+    val waitingForAuth: Int = 0,
 ) {
     val hasRetryableWork: Boolean get() = waiting > 0
+
+    /**
+     * The batch's only outcome was "there is no session to upload to". Nothing here improves by running
+     * again: the rows are parked in [com.telepic.domain.backup.BackupState.WAITING_FOR_AUTH], which
+     * deliberately burns no retry budget, so a worker that asked to retry would do so forever — every
+     * backoff period, each time with a foreground-service notification. The session's return is what
+     * re-triggers the queue instead (see `TelepicApplication`), plus discovery and the Backup Center.
+     */
+    val blockedOnAuth: Boolean get() = waitingForAuth > 0 && uploaded == 0 && waiting == 0
 }

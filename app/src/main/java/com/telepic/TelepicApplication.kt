@@ -11,9 +11,12 @@ import coil.decode.GifDecoder
 import com.telepic.data.backup.work.TelepicWorkerFactory
 import com.telepic.di.AppContainer
 import com.telepic.di.DefaultAppContainer
+import com.telepic.diagnostics.TelepicLog
+import com.telepic.telegram.TelegramAuthState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 /**
@@ -39,6 +42,18 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
         // Honor the persisted backup preference off the main thread: enqueue eligible media when
         // the user chose BACKUP_ALL and schedule a network-constrained run. No-op for NOT_NOW.
         appScope.launch { container.backupCoordinator.syncFromPreference() }
+        // What resumes an auth-parked queue. [BackupWorker] deliberately stops retrying when its only
+        // outcome was "there is no Telegram session", so the session coming back has to hand the parked
+        // rows over itself — otherwise signing in later would leave them waiting for the next 12h
+        // discovery tick, which never schedules a run for media it did not newly enqueue.
+        appScope.launch {
+            container.telegramAuthController.state
+                .filter { it is TelegramAuthState.Authorized }
+                .collect {
+                    runCatching { container.backupCoordinator.startPendingBackup() }
+                        .onFailure { TelepicLog.error("BackupScheduler", "could not resume the queue after sign-in", it) }
+                }
+        }
     }
 
     override val workManagerConfiguration: Configuration

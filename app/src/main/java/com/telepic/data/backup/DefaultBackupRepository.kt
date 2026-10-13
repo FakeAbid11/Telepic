@@ -114,6 +114,7 @@ class DefaultBackupRepository(
                 var waiting = 0
                 var failed = 0
                 var processed = 0
+                var waitingForAuth = 0
                 // Attempt each actionable item at most once per call. A transiently failing item is
                 // parked in WAITING_FOR_NETWORK (still "actionable"), so without this guard the same
                 // item would be re-selected in the same run and burn its whole retry budget in one
@@ -127,10 +128,17 @@ class DefaultBackupRepository(
                     when (processOne(item)) {
                         ProcessOutcome.Uploaded -> uploaded++
                         ProcessOutcome.Waiting -> waiting++
+                        ProcessOutcome.WaitingForAuth -> waitingForAuth++
                         ProcessOutcome.PermanentFailure -> failed++
                     }
                 }
-                BackupProcessSummary(uploaded = uploaded, waiting = waiting, failed = failed, processed = processed)
+                BackupProcessSummary(
+                    uploaded = uploaded,
+                    waiting = waiting,
+                    failed = failed,
+                    processed = processed,
+                    waitingForAuth = waitingForAuth,
+                )
             }
         }
 
@@ -139,7 +147,7 @@ class DefaultBackupRepository(
 
         if (authState.value !is TelegramAuthState.Authorized) {
             dao.markWaiting(item.id, BackupState.WAITING_FOR_AUTH.name, now)
-            return ProcessOutcome.Waiting
+            return ProcessOutcome.WaitingForAuth
         }
 
         // A send accepted by a previous run that never confirmed here (timeout / process death):
@@ -257,6 +265,9 @@ class DefaultBackupRepository(
     private sealed interface ProcessOutcome {
         data object Uploaded : ProcessOutcome
         data object Waiting : ProcessOutcome
+
+        /** Parked because the account is not signed in — not a network condition to retry against. */
+        data object WaitingForAuth : ProcessOutcome
         data object PermanentFailure : ProcessOutcome
     }
 

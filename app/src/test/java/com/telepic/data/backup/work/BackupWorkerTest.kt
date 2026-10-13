@@ -87,6 +87,26 @@ class BackupWorkerTest {
     }
 
     @Test
+    fun `a batch parked on a missing session ends the run instead of retrying forever`() = runBlocking {
+        val repo = FakeRepo(
+            mutableListOf(BackupProcessSummary(processed = 3, waitingForAuth = 3)),
+            // The rows stay "active" in the queue — which is precisely what made the worker ask
+            // WorkManager for another run every backoff period, indefinitely, each time raising a
+            // foreground-service notification for a condition only signing in can fix.
+            stats = BackupQueueStats(queued = 3),
+        )
+        assertEquals(ListenableWorker.Result.success(), worker(repo).doWork())
+    }
+
+    @Test
+    fun `only a purely auth-blocked batch stops the loop - a network wait still retries`() = runBlocking {
+        val repo = FakeRepo(
+            mutableListOf(BackupProcessSummary(processed = 3, waiting = 1, waitingForAuth = 2)),
+        )
+        assertEquals(ListenableWorker.Result.retry(), worker(repo).doWork())
+    }
+
+    @Test
     fun `a full batch with a longer queue asks for another run instead of reporting success`() = runBlocking {
         val repo = FakeRepo(
             mutableListOf(BackupProcessSummary(uploaded = 100, processed = 100)),

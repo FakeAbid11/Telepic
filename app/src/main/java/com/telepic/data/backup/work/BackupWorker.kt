@@ -11,6 +11,7 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.telepic.R
 import com.telepic.data.backup.BackupRepository
+import com.telepic.diagnostics.TelepicLog
 import kotlinx.coroutines.flow.first
 
 /**
@@ -60,6 +61,12 @@ class BackupWorker(
             ?: 0
         if (pending > 0) {
             runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(uploaded = 0, processed = 0))) }
+                .onFailure {
+                    // Best-effort by design, but it used to be invisible: a denied notification
+                    // permission or an Android 14 background-FGS refusal left the run with no
+                    // "backup in progress" affordance anywhere outside the app.
+                    TelepicLog.warn("BackupWorker", "foreground notification unavailable; the upload run continues", it)
+                }
         }
 
         // One pass over the queue: processPendingWork attempts each actionable item at most once, so
@@ -73,6 +80,18 @@ class BackupWorker(
             // Same notification id, so this updates the in-place foreground line with real counts
             // rather than posting a second one WorkManager does not own.
             runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(summary.uploaded, summary.processed))) }
+                .onFailure { TelepicLog.warn("BackupWorker", "could not update the backup notification", it) }
+        }
+
+        // Nothing a re-run can fix: the rows are parked because there is no Telegram session to upload
+        // to, and `markWaiting` deliberately spends no retry budget on them so they resume intact.
+        // Returning success here instead of retrying ends what was previously an unbounded loop — every
+        // backoff period, forever, each time with a foreground-service notification. What resumes the
+        // queue instead is the session actually coming back (see `TelepicApplication`), a new item being
+        // discovered, or the user pressing Start in the Backup Center.
+        if (summary.blockedOnAuth) {
+            TelepicLog.warn("BackupWorker", "${summary.waitingForAuth} item(s) parked: no Telegram session to upload to")
+            return Result.success()
         }
 
         // Retryable (waiting) work asks WorkManager to run again after backoff; a drained or purely
