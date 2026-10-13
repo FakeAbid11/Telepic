@@ -8,10 +8,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -128,7 +128,7 @@ class ViewerUiTest {
         // The state, not a control: there is nothing left to back up, so the slot reports the outcome
         // instead of offering a button that could only do nothing.
         composeRule.onNodeWithContentDescription("Backed up").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Back up").assertDoesNotExist()
+        composeRule.onAllNodesWithContentDescription("Back up").assertCountEquals(0)
     }
 
     @Test
@@ -141,7 +141,7 @@ class ViewerUiTest {
         composeRule.setContent { TelepicTheme { ViewerScreen(vm, onBack = {}) } }
 
         composeRule.onNodeWithContentDescription("Back up").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Backed up").assertDoesNotExist()
+        composeRule.onAllNodesWithContentDescription("Backed up").assertCountEquals(0)
     }
 
     @Test
