@@ -36,7 +36,7 @@ import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.BackupState
 import com.telepic.ui.components.EmptyState
-import com.telepic.ui.components.LoadingState
+import com.telepic.ui.components.ListSkeleton
 import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.theme.TelepicTokens
 
@@ -72,13 +72,14 @@ fun BackupCenterScreen(
             ) {
                 ScreenHeader(title = stringResource(R.string.backup_center_title), onBack = onBack)
 
-                // Not read yet: say so, rather than claiming the queue is empty. A local Room read is
-                // quick so this is brief, but the alternative was asserting "no backups yet" over a queue
-                // that already had rows in it.
-                if (!state.isLoaded) {
-                    LoadingState(modifier = Modifier.weight(1f))
-                    return@Column
-                }
+            // Not read yet: say so, rather than claiming the queue is empty. A local Room read is
+            // quick so this is brief, but the alternative was asserting "no backups yet" over a queue
+            // that already had rows in it. A row skeleton rather than a spinner, matching the media
+            // grids: it reserves the shape of what is coming.
+            if (!state.isLoaded) {
+                ListSkeleton(modifier = Modifier.weight(1f))
+                return@Column
+            }
 
                 if (state.isEmpty) {
                     EmptyState(

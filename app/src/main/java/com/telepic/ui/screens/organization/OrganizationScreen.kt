@@ -34,15 +34,19 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,10 +63,12 @@ import coil.compose.AsyncImage
 import com.telepic.R
 import com.telepic.navigation.OrganizationKind
 import com.telepic.ui.components.EmptyState
-import com.telepic.ui.components.LoadingState
+import com.telepic.ui.components.ErrorState
+import com.telepic.ui.components.MediaGridSkeleton
 import com.telepic.ui.components.SelectAllAction
 import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.TransientMessageBar
+import com.telepic.ui.components.rememberTelepicHaptics
 import com.telepic.ui.screens.photos.SelectionCheck
 import com.telepic.ui.theme.TelepicTokens
 
@@ -74,10 +80,13 @@ import com.telepic.ui.theme.TelepicTokens
  * forgotten after a consented success, and a trashed item is never implied to be gone from the device
  * while only the app-level flag is set.
  *
+ * A failed read is its own state, not an empty one: the collection used to render "Trash is empty"
+ * over a query that never answered, which is a claim about the user's data the app had not earned.
+ *
  * Because the whole collection is already resolved in memory (a Room id-set read in one batched
  * lookup, not a pager), "Select all" here is exact and carries a real total.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun OrganizationScreen(
     viewModel: OrganizationViewModel,
@@ -89,9 +98,11 @@ fun OrganizationScreen(
     val message by viewModel.message.collectAsStateWithLifecycle()
     val isDeleting by viewModel.isDeleting.collectAsStateWithLifecycle()
     val isRestoring by viewModel.isRestoring.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
     val selectionActive = selectedItems.isNotEmpty()
     val spacing = TelepicTokens.spacing
+    val haptics = rememberTelepicHaptics()
 
     var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
 
@@ -106,6 +117,12 @@ fun OrganizationScreen(
     // Back leaves selection mode first, before leaving the collection.
     BackHandler(enabled = selectionActive) { viewModel.clearSelection() }
 
+    // A refused delete says "no" to the hand as well as on screen: the message bar is the only other
+    // signal, and it appears exactly where the user is not looking.
+    LaunchedEffect(message) {
+        if (message is OrgMessage.DeleteFailed) haptics.reject()
+    }
+
     Surface(modifier = modifier.fillMaxSize(), color = TelepicTokens.colors.mediaBackdrop) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -113,10 +130,12 @@ fun OrganizationScreen(
                     SelectionTopBar(
                         count = selectedItems.size,
                         onCancel = viewModel::clearSelection,
-                        // The total is real here: `items` is the whole collection, not a loaded page.
+                        // The total is real here: the collection is fully resolved, not a loaded page.
                         selectAll = SelectAllAction(
-                            onSelectAll = { items?.let(viewModel::selectAll) },
-                            total = items?.size,
+                            onSelectAll = {
+                                (items as? OrgItemsState.Ready)?.let { viewModel.selectAll(it.items) }
+                            },
+                            total = (items as? OrgItemsState.Ready)?.items?.size,
                         ),
                     )
                 } else {
@@ -129,110 +148,126 @@ fun OrganizationScreen(
                     }
                 }
 
-                // null means the id-set has not resolved yet — show loading, not a false "empty".
-                val list = items
-                when {
-                    list == null -> LoadingState(modifier = Modifier.weight(1f))
-                    list.isEmpty() -> EmptyState(
-                        icon = emptyIcon(viewModel.kind),
-                        title = stringResource(emptyTitleRes(viewModel.kind)),
-                        description = stringResource(emptyDescRes(viewModel.kind)),
-                        modifier = Modifier.weight(1f),
-                    )
-                    else -> {
-                        val longPressLabel = stringResource(R.string.organization_long_press_select)
-                        LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = spacing.gridTileMinSize),
-                            contentPadding = PaddingValues(spacing.gridGutter),
-                            horizontalArrangement = Arrangement.spacedBy(spacing.gridGutter),
-                            verticalArrangement = Arrangement.spacedBy(spacing.gridGutter),
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        ) {
-                            items(list, key = { it.id }) { media ->
-                                val isSelected = media.id in selectedItems
-                                Box(
-                                    modifier = Modifier
-                                        .aspectRatio(1f)
-                                        .clip(RoundedCornerShape(spacing.gridItemRadius))
-                                        .background(
-                                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                            else MaterialTheme.colorScheme.surfaceVariant,
+                // The collection's data is a Room id-set, not a pager, so the only thing a refresh can
+                // change is a file that appeared or vanished outside the app. The gesture is here for
+                // consistency with the rest of the app; the indicator is driven by a real in-flight
+                // flag rather than by the load state, so it never spins on first open.
+                PullToRefreshBox(
+                    isRefreshing = isRefreshing,
+                    onRefresh = viewModel::refresh,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                ) {
+                    when (val state = items) {
+                        OrgItemsState.Loading -> MediaGridSkeleton(minCellSize = spacing.gridTileMinSize)
+                        OrgItemsState.Error -> ErrorState(
+                            title = stringResource(R.string.organization_error_title),
+                            explanation = stringResource(R.string.organization_error_description),
+                            onRetry = viewModel::refresh,
+                            retryLabel = stringResource(R.string.common_retry),
+                        )
+                        is OrgItemsState.Ready -> if (state.items.isEmpty()) {
+                            EmptyState(
+                                icon = emptyIcon(viewModel.kind),
+                                title = stringResource(emptyTitleRes(viewModel.kind)),
+                                description = stringResource(emptyDescRes(viewModel.kind)),
+                            )
+                        } else {
+                            val longPressLabel = stringResource(R.string.organization_long_press_select)
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = spacing.gridTileMinSize),
+                                contentPadding = PaddingValues(spacing.gridGutter),
+                                horizontalArrangement = Arrangement.spacedBy(spacing.gridGutter),
+                                verticalArrangement = Arrangement.spacedBy(spacing.gridGutter),
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                items(state.items, key = { it.id }) { media ->
+                                    val isSelected = media.id in selectedItems
+                                    Box(
+                                        modifier = Modifier
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(spacing.gridItemRadius))
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                                else MaterialTheme.colorScheme.surfaceVariant,
+                                            )
+                                            .semantics {
+                                                // Only meaningful while selecting: outside selection mode
+                                                // the tile is a plain "open this" cell, and announcing
+                                                // "not selected" on every one of them would be noise.
+                                                if (selectionActive) this.selected = isSelected
+                                            }
+                                            .combinedClickable(
+                                                onClick = {
+                                                    if (selectionActive) {
+                                                        viewModel.toggleSelection(media)
+                                                    } else {
+                                                        onOpenMedia(media.id)
+                                                    }
+                                                },
+                                                // TalkBack reachability for the gesture that starts selection.
+                                                onLongClickLabel = longPressLabel,
+                                                onLongClick = {
+                                                    haptics.selectionStart()
+                                                    viewModel.beginSelection(media)
+                                                },
+                                            ),
+                                    ) {
+                                        AsyncImage(
+                                            model = media.contentUri,
+                                            contentDescription = stringResource(
+                                                R.string.organization_item_description,
+                                                media.displayName ?: media.id.toString(),
+                                            ),
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.matchParentSize(),
                                         )
-                                        .semantics {
-                                            // Only meaningful while selecting: outside selection mode the
-                                            // tile is a plain "open this" cell, and announcing "not
-                                            // selected" on every one of them would be noise.
-                                            if (selectionActive) this.selected = isSelected
+                                        if (selectionActive) {
+                                            // The same check badge the media grids use, so selecting looks
+                                            // identical everywhere it can be done.
+                                            SelectionCheck(
+                                                selected = isSelected,
+                                                modifier = Modifier
+                                                    .align(Alignment.TopStart)
+                                                    .padding(spacing.xs),
+                                            )
                                         }
-                                        .combinedClickable(
-                                            onClick = {
-                                                if (selectionActive) {
-                                                    viewModel.toggleSelection(media)
-                                                } else {
-                                                    onOpenMedia(media.id)
-                                                }
-                                            },
-                                            // TalkBack reachability for the gesture that starts selection.
-                                            onLongClickLabel = longPressLabel,
-                                            onLongClick = { viewModel.beginSelection(media) },
-                                        ),
-                                ) {
-                                    AsyncImage(
-                                        model = media.contentUri,
-                                        contentDescription = stringResource(
-                                            R.string.organization_item_description,
-                                            media.displayName ?: media.id.toString(),
-                                        ),
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.matchParentSize(),
-                                    )
-                                    if (selectionActive) {
-                                        // The same check badge the media grids use, so selecting looks
-                                        // identical everywhere it can be done.
-                                        SelectionCheck(
-                                            selected = isSelected,
-                                            modifier = Modifier
-                                                .align(Alignment.TopStart)
-                                                .padding(spacing.xs),
-                                        )
                                     }
                                 }
                             }
                         }
-
-                        if (selectionActive) {
-                            // Permanent delete only exists in Trash: the other two collections hold
-                            // items that are still in the library, so the destructive action would be
-                            // reachable from a screen that never offered it. Typed explicitly rather
-                            // than inlined, so the lambda's type never depends on inference here.
-                            val onDeleteForever: (() -> Unit)? =
-                                if (viewModel.kind == OrganizationKind.TRASH) {
-                                    { showDeleteConfirm = true }
-                                } else {
-                                    null
-                                }
-                            OrganizationActionBar(
-                                kind = viewModel.kind,
-                                restoreBusy = isRestoring,
-                                deleteBusy = isDeleting,
-                                onCancel = viewModel::clearSelection,
-                                onUndo = viewModel::undoSelected,
-                                onDeleteForever = onDeleteForever,
-                            )
-                        }
                     }
+                }
+
+                if (selectionActive) {
+                    // Permanent delete only exists in Trash: the other two collections hold items that
+                    // are still in the library, so the destructive action would be reachable from a
+                    // screen that never offered it. Typed explicitly rather than inlined, so the
+                    // lambda's type never depends on inference here.
+                    val onDeleteForever: (() -> Unit)? =
+                        if (viewModel.kind == OrganizationKind.TRASH) {
+                            { showDeleteConfirm = true }
+                        } else {
+                            null
+                        }
+                    OrganizationActionBar(
+                        kind = viewModel.kind,
+                        restoreBusy = isRestoring,
+                        deleteBusy = isDeleting,
+                        onCancel = viewModel::clearSelection,
+                        onUndo = viewModel::undoSelected,
+                        onDeleteForever = onDeleteForever,
+                    )
                 }
             }
 
-            val messageText = (message as? OrgMessage.DeleteFailed)?.let { failed ->
-                // Numbered, because this now covers a whole selection: "the item stays in trash" was a
-                // claim about one item standing in for however many were actually refused.
-                pluralStringResource(R.plurals.trash_delete_failed_count, failed.count)
-            }
-            messageText?.let {
+            // Keyed on the message so a fresh report gets a fresh bar rather than inheriting the
+            // previous one's nearly-expired timer.
+            val messageId = remember(message) { System.nanoTime() }
+            message?.let { pending ->
                 TransientMessageBar(
-                    message = it,
+                    message = orgMessageText(pending, viewModel.kind),
                     onDismiss = viewModel::consumeMessage,
+                    messageId = messageId,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
@@ -249,6 +284,7 @@ fun OrganizationScreen(
                 Button(
                     onClick = {
                         showDeleteConfirm = false
+                        haptics.confirmDestructive()
                         // Deletion is async + consent-gated and runs in the ViewModel's scope so
                         // leaving this screen never cancels a real delete mid-flight. The consent
                         // result returns through the launcher above.
@@ -260,6 +296,26 @@ fun OrganizationScreen(
             },
             dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.organization_cancel)) } },
         )
+    }
+}
+
+/**
+ * The sentence a collection message is reported with. Stated as the outcome, never the intent, and
+ * numbered because every one of these now covers a whole selection.
+ */
+@Composable
+private fun orgMessageText(message: OrgMessage, kind: OrganizationKind): String = when (message) {
+    is OrgMessage.DeleteFailed ->
+        pluralStringResource(R.plurals.trash_delete_failed_count, message.count)
+    is OrgMessage.DeletedFromDevice ->
+        pluralStringResource(R.plurals.organization_deleted_count, message.count, message.count)
+    is OrgMessage.MembershipChanged -> when (kind) {
+        OrganizationKind.FAVORITES ->
+            pluralStringResource(R.plurals.organization_unfavorited_count, message.count, message.count)
+        OrganizationKind.ARCHIVE ->
+            pluralStringResource(R.plurals.organization_unarchived_count, message.count, message.count)
+        OrganizationKind.TRASH ->
+            pluralStringResource(R.plurals.organization_restored_count, message.count, message.count)
     }
 }
 

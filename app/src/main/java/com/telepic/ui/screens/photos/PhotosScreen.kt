@@ -4,20 +4,23 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.background
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,12 +29,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,6 +51,7 @@ import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
+import com.telepic.ui.components.MediaGridSkeleton
 import com.telepic.ui.components.SelectAllAction
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
@@ -86,12 +93,16 @@ fun PhotosScreen(
     val selectionReport by viewModel.selectionReport.collectAsStateWithLifecycle()
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
     val isSelectingAll by viewModel.isSelectingAll.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val customAlbums by viewModel.customAlbums.collectAsStateWithLifecycle()
     val isAddingToAlbum by viewModel.isAddingToAlbum.collectAsStateWithLifecycle()
     val albumReport by viewModel.albumReport.collectAsStateWithLifecycle()
     // Dialog visibility survives rotation, like every other dialog in the app.
     var showAlbumPicker by rememberSaveable { mutableStateOf(false) }
     var showNewAlbumForSelection by rememberSaveable { mutableStateOf(false) }
+    // Whether the search field is open. Separate from the term itself, which lives in the ViewModel:
+    // closing the field clears the term, but an empty field is still an open field.
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
 
     // The permission controller above is the single source of truth for permission state; the VM
     // deliberately does not mirror it.
@@ -100,6 +111,12 @@ fun PhotosScreen(
     }
     // Back exits selection first, before leaving the Photos screen.
     BackHandler(enabled = selectionActive) { viewModel.clearSelection() }
+    // Then back closes the search, before leaving the screen — and clearing the term with it, so the
+    // timeline is never left silently filtered behind a closed field.
+    BackHandler(enabled = searchOpen && !selectionActive) {
+        searchOpen = false
+        viewModel.clearSearch()
+    }
 
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -107,42 +124,68 @@ fun PhotosScreen(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
-                if (selectionActive) {
-                    SelectionTopBar(
-                        count = selectedItems.size,
-                        onCancel = viewModel::clearSelection,
-                        // No total: this grid is paged, so the library's size is not known until the
-                        // select-all read returns. The label therefore claims no number, and the live
-                        // count in the header reports what the read actually found.
-                        selectAll = SelectAllAction(
-                            onSelectAll = viewModel::selectAll,
-                            busy = isSelectingAll,
-                        ),
+                when {
+                    // Search replaces the title row rather than floating over the grid: the field is
+                    // the screen's subject while it is open, and a title competing with it for the
+                    // same band would just be a label for a list the user is no longer looking at.
+                    searchOpen -> PhotosSearchField(
+                        query = searchQuery,
+                        onQueryChange = viewModel::onSearchQueryChange,
+                        onClose = {
+                            searchOpen = false
+                            viewModel.clearSearch()
+                        },
                     )
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(
-                                start = TelepicTokens.spacing.screenMargin,
-                                end = TelepicTokens.spacing.xs,
-                                top = TelepicTokens.spacing.lg,
-                                bottom = TelepicTokens.spacing.md,
+                    selectionActive -> {
+                        SelectionTopBar(
+                            count = selectedItems.size,
+                            onCancel = viewModel::clearSelection,
+                            // No total: this grid is paged, so the library's size is not known until
+                            // the select-all read returns. The label therefore claims no number, and
+                            // the live count in the header reports what the read actually found.
+                            selectAll = SelectAllAction(
+                                onSelectAll = viewModel::selectAll,
+                                busy = isSelectingAll,
                             ),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.photos_title),
-                            // headlineMedium is the shared screen-title size (ScreenHeader's default).
-                            // displaySmall made Photos the only destination at 28sp, against 19-22sp
-                            // everywhere else — the same "title" role read as three different things.
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
                         )
-                        // The same gear every other top-level screen carries (see SettingsAction);
-                        // it is the only way into Settings, which is no longer a bottom-bar tab.
-                        SettingsAction(onClick = onOpenSettings)
+                    }
+                    else -> {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    start = TelepicTokens.spacing.screenMargin,
+                                    end = TelepicTokens.spacing.xs,
+                                    top = TelepicTokens.spacing.lg,
+                                    bottom = TelepicTokens.spacing.md,
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.photos_title),
+                                // headlineMedium is the shared screen-title size (ScreenHeader's default).
+                                // displaySmall made Photos the only destination at 28sp, against 19-22sp
+                                // everywhere else — the same "title" role read as three different things.
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Offered only with media access: searching a library you have not
+                                // granted access to can only ever return nothing.
+                                if (permissionState.hasAccess) {
+                                    IconButton(onClick = { searchOpen = true }) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Search,
+                                            contentDescription = stringResource(R.string.photos_search_open),
+                                        )
+                                    }
+                                }
+                                // The same gear every other top-level screen carries (see SettingsAction);
+                                // it is the only way into Settings, which is no longer a bottom-bar tab.
+                                SettingsAction(onClick = onOpenSettings)
+                            }
+                        }
                     }
                 }
 
@@ -163,6 +206,7 @@ fun PhotosScreen(
                         viewModel = viewModel,
                         backupStates = backupStates,
                         onMediaSelected = onMediaSelected,
+                        searchQuery = searchQuery,
                     )
                     permissionState == MediaPermissionState.PermanentlyDenied -> EmptyState(
                         icon = Icons.Outlined.Lock,
@@ -273,6 +317,7 @@ private fun MediaRegion(
     viewModel: PhotosViewModel,
     backupStates: Map<Long, MediaBackupVisualState>,
     onMediaSelected: (LocalMedia) -> Unit,
+    searchQuery: String,
 ) {
     val paging = viewModel.media.collectAsLazyPagingItems()
     val refresh = paging.loadState.refresh
@@ -286,7 +331,7 @@ private fun MediaRegion(
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
-            isInitialLoading -> PhotosSkeleton()
+            isInitialLoading -> MediaGridSkeleton(minCellSize = TelepicTokens.spacing.gridTileMinSize)
             // A failed *first* load used to fall through to the grid below: no message, no retry, and
             // a blank screen that said nothing about the library having failed to open. A refresh
             // failure *with* content keeps its own banner further down instead.
@@ -296,15 +341,25 @@ private fun MediaRegion(
                 onRetry = { paging.retry() },
                 retryLabel = stringResource(R.string.common_retry),
             )
-            refresh is LoadState.NotLoading && !hasContent -> EmptyState(
-                icon = Icons.Outlined.PhotoLibrary,
-                title = stringResource(R.string.photos_no_media_title),
-                description = stringResource(R.string.photos_no_media_description),
-                primaryAction = StateAction(
-                    label = stringResource(R.string.photos_refresh),
-                    onClick = viewModel::refresh,
-                ),
-            )
+            refresh is LoadState.NotLoading && !hasContent -> if (searchQuery.isNotBlank()) {
+                // A search that matches nothing is not an empty library, and saying so would be a
+                // claim about the user's photos rather than about their query.
+                EmptyState(
+                    icon = Icons.Outlined.SearchOff,
+                    title = stringResource(R.string.photos_search_empty_title),
+                    description = stringResource(R.string.photos_search_empty_description, searchQuery),
+                )
+            } else {
+                EmptyState(
+                    icon = Icons.Outlined.PhotoLibrary,
+                    title = stringResource(R.string.photos_no_media_title),
+                    description = stringResource(R.string.photos_no_media_description),
+                    primaryAction = StateAction(
+                        label = stringResource(R.string.photos_refresh),
+                        onClick = viewModel::refresh,
+                    ),
+                )
+            }
             else -> PullToRefreshBox(
                 isRefreshing = refresh is LoadState.Loading && hasContent && !selectionActive,
                 onRefresh = viewModel::refresh,
@@ -336,30 +391,43 @@ private fun MediaRegion(
     }
 }
 
-/** Lightweight placeholder grid for the first load — avoids a giant blocking spinner (§45). */
+/**
+ * The search field, shown in place of the title row.
+ *
+ * It opens focused: the user tapped a magnifier to get here, so making them tap again to raise the
+ * keyboard would be asking them to repeat themselves. Closing clears the term rather than just hiding
+ * the field — a timeline left silently filtered behind a closed field is how a user concludes their
+ * photos are missing.
+ */
 @Composable
-private fun PhotosSkeleton(modifier: Modifier = Modifier) {
+private fun PhotosSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+) {
     val spacing = TelepicTokens.spacing
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(spacing.gridGutter),
-        verticalArrangement = Arrangement.spacedBy(spacing.gridGutter),
-    ) {
-        repeat(4) {
-            Row(horizontalArrangement = Arrangement.spacedBy(spacing.gridGutter)) {
-                repeat(3) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .aspectRatio(1f)
-                            .clip(RoundedCornerShape(spacing.gridItemRadius))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                    )
-                }
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        placeholder = { Text(stringResource(R.string.photos_search_hint)) },
+        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+        trailingIcon = {
+            IconButton(onClick = onClose) {
+                Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = stringResource(R.string.photos_search_close),
+                )
             }
-        }
-    }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.screenMargin, vertical = spacing.sm)
+            .focusRequester(focusRequester),
+    )
 }
 
 @Composable

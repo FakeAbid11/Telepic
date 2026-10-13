@@ -482,6 +482,33 @@
          invisible, so without this the only way into selection mode is one a screen-reader user
          cannot discover. -->
     <string name="organization_long_press_select">Select</string>
+    <!-- A failed read is its own state. The wording has to say what is *not* being claimed: the items
+         are still on the device, and this is a problem reading them. -->
+    <string name="organization_error_title">Couldn\'t read this collection</string>
+    <string name="organization_error_description">Telepic couldn\'t read your media just now. Your items are still on this device — this is a problem reading them, not a sign they are gone.</string>
+    <!-- Bulk actions used to report only failures, so a successful unfavourite/unarchive/restore left
+         the grid quietly changed with nothing saying the write had landed. Numbered, because every one
+         of these now covers a whole selection. -->
+    <plurals name="organization_unfavorited_count">
+        <item quantity="one">%1$d removed from favorites</item>
+        <item quantity="other">%1$d removed from favorites</item>
+    </plurals>
+    <plurals name="organization_unarchived_count">
+        <item quantity="one">%1$d restored to the timeline</item>
+        <item quantity="other">%1$d restored to the timeline</item>
+    </plurals>
+    <plurals name="organization_restored_count">
+        <item quantity="one">%1$d restored from trash</item>
+        <item quantity="other">%1$d restored from trash</item>
+    </plurals>
+    <plurals name="organization_deleted_count">
+        <item quantity="one">%1$d deleted from your device</item>
+        <item quantity="other">%1$d deleted from your device</item>
+    </plurals>
+    <plurals name="album_removed_count">
+        <item quantity="one">%1$d removed from this album</item>
+        <item quantity="other">%1$d removed from this album</item>
+    </plurals>
     <string name="organization_deleted_message">This item is still on your device. Telepic does not have permission to delete it from media storage.</string>
 
     <string name="trash_delete_title">Delete permanently?</string>
@@ -535,6 +562,14 @@
          caller already knows the total, so the number shown is always one the app actually has. -->
     <string name="photos_selection_select_all">Select all</string>
     <string name="photos_selection_select_all_count">Select all (%1$d)</string>
+
+    <!-- ============================ Photos search ============================ -->
+    <string name="photos_search_open">Search</string>
+    <string name="photos_search_close">Close search</string>
+    <string name="photos_search_hint">Search file or folder name</string>
+    <string name="photos_search_empty_title">No matches</string>
+    <!-- Says what search actually looks at, so an empty result is not read as "your photos are gone". -->
+    <string name="photos_search_empty_description">Nothing matches \"%1$s\". Search looks at file and folder names.</string>
 
     <!-- ============================ Media Details (Feature 2) ============================ -->
     <string name="viewer_details">Details</string>

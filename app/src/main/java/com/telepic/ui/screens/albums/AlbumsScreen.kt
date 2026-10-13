@@ -3,6 +3,7 @@ package com.telepic.ui.screens.albums
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -24,12 +26,14 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,14 +62,19 @@ import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
-import com.telepic.ui.components.LoadingState
+import com.telepic.ui.components.MediaGridSkeleton
 import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
+import com.telepic.ui.components.TelepicHaptics
+import com.telepic.ui.components.rememberTelepicHaptics
 import com.telepic.ui.theme.TelepicTokens
 
 /** A Material 3 FAB's own size. Named because the grid has to reserve exactly this much room for it. */
 private const val FAB_SIZE_DP = 56
+
+/** Adaptive minimum cell size for the album grid. Shared with the first-load skeleton so the two match. */
+private val ALBUM_TILE_MIN_SIZE = 160.dp
 
 /**
  * Albums: the user's own albums first, then the device's folders, in one adaptive grid.
@@ -79,6 +88,7 @@ private const val FAB_SIZE_DP = 56
  * appears only once media access is granted, because an album you cannot put anything into is not worth
  * offering.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumsScreen(
     viewModel: AlbumsViewModel,
@@ -98,6 +108,8 @@ fun AlbumsScreen(
     val permissionState = controller.state
     val status by viewModel.status.collectAsStateWithLifecycle()
     val customAlbums by viewModel.customAlbums.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val haptics = rememberTelepicHaptics()
     val spacing = TelepicTokens.spacing
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
     // The long-press menu's target is held as an id plus the name the dialog opens with, rather than
@@ -124,8 +136,8 @@ fun AlbumsScreen(
                 // user-created album would be told it has no albums at all.
                 val folderAlbums = (currentStatus as? AlbumsStatus.Ready)?.albums.orEmpty()
                 val nothingAtAll = currentStatus is AlbumsStatus.Empty && customAlbums.isEmpty()
-                when {
-                    !permissionState.hasAccess -> EmptyState(
+                if (!permissionState.hasAccess) {
+                    EmptyState(
                         icon = Icons.Outlined.Lock,
                         title = stringResource(R.string.albums_permission_title),
                         description = stringResource(R.string.albums_permission_description),
@@ -135,29 +147,44 @@ fun AlbumsScreen(
                             StateAction(stringResource(R.string.photos_allow_access), controller.requestPermission)
                         },
                     )
-                    currentStatus is AlbumsStatus.Loading -> LoadingState()
-                    currentStatus is AlbumsStatus.Error -> ErrorState(
-                        title = stringResource(R.string.albums_error_title),
-                        explanation = stringResource(R.string.albums_error_description),
-                        onRetry = viewModel::refresh,
-                    )
-                    nothingAtAll -> EmptyState(
-                        icon = Icons.Outlined.Collections,
-                        title = stringResource(R.string.albums_empty_title),
-                        description = stringResource(R.string.albums_empty_description),
-                        primaryAction = StateAction(stringResource(R.string.photos_refresh), viewModel::refresh),
-                    )
-                    else -> AlbumGrid(
-                        customAlbums = customAlbums,
-                        folderAlbums = folderAlbums,
-                        onOpenAlbum = onOpenAlbum,
-                        onOpenCustomAlbum = onOpenCustomAlbum,
-                        onRenameAlbum = { album ->
-                            renameInitialName = album.name
-                            renameAlbumId = album.id
-                        },
-                        onDeleteAlbum = { album -> deleteAlbumId = album.id },
-                    )
+                } else {
+                    // Pull-to-refresh is outside the `when` so it also works on the empty and error
+                    // states, where a user who has just taken a photo is most likely to reach for it.
+                    // The indicator is driven by a real in-flight flag rather than by the load state,
+                    // so opening the screen does not look like a refresh.
+                    PullToRefreshBox(
+                        isRefreshing = isRefreshing,
+                        onRefresh = viewModel::refresh,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    ) {
+                        when {
+                            currentStatus is AlbumsStatus.Loading ->
+                                MediaGridSkeleton(minCellSize = ALBUM_TILE_MIN_SIZE)
+                            currentStatus is AlbumsStatus.Error -> ErrorState(
+                                title = stringResource(R.string.albums_error_title),
+                                explanation = stringResource(R.string.albums_error_description),
+                                onRetry = viewModel::refresh,
+                            )
+                            nothingAtAll -> EmptyState(
+                                icon = Icons.Outlined.Collections,
+                                title = stringResource(R.string.albums_empty_title),
+                                description = stringResource(R.string.albums_empty_description),
+                                primaryAction = StateAction(stringResource(R.string.photos_refresh), viewModel::refresh),
+                            )
+                            else -> AlbumGrid(
+                                customAlbums = customAlbums,
+                                folderAlbums = folderAlbums,
+                                onOpenAlbum = onOpenAlbum,
+                                onOpenCustomAlbum = onOpenCustomAlbum,
+                                onRenameAlbum = { album ->
+                                    renameInitialName = album.name
+                                    renameAlbumId = album.id
+                                },
+                                onDeleteAlbum = { album -> deleteAlbumId = album.id },
+                                haptics = haptics,
+                            )
+                        }
+                    }
                 }
             }
 
@@ -240,10 +267,11 @@ private fun AlbumGrid(
     onOpenCustomAlbum: (CustomAlbum) -> Unit,
     onRenameAlbum: (CustomAlbum) -> Unit,
     onDeleteAlbum: (CustomAlbum) -> Unit,
+    haptics: TelepicHaptics,
 ) {
     val spacing = TelepicTokens.spacing
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 160.dp),
+        columns = GridCells.Adaptive(minSize = ALBUM_TILE_MIN_SIZE),
         contentPadding = PaddingValues(
             start = spacing.gridGutter,
             end = spacing.gridGutter,
@@ -275,6 +303,7 @@ private fun AlbumGrid(
                     // follows (see AlbumContentsScreen).
                     onRename = { onRenameAlbum(album) },
                     onDelete = { onDeleteAlbum(album) },
+                    haptics = haptics,
                 )
             }
         }
@@ -333,6 +362,7 @@ private fun AlbumTile(
     onClick: () -> Unit,
     onRename: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    haptics: TelepicHaptics? = null,
 ) {
     val spacing = TelepicTokens.spacing
     var menuOpen by remember { mutableStateOf(false) }
@@ -350,7 +380,10 @@ private fun AlbumTile(
                     onClick = onClick,
                     onLongClickLabel = if (hasMenu) menuLabel else null,
                     onLongClick = if (hasMenu) {
-                        { menuOpen = true }
+                        {
+                            haptics?.selectionStart()
+                            menuOpen = true
+                        }
                     } else {
                         null
                     },
@@ -422,7 +455,14 @@ private fun AlbumTile(
 private fun LibraryShortcuts(onOpenOrganization: (OrganizationKind) -> Unit) {
     val spacing = TelepicTokens.spacing
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.md, vertical = spacing.xs),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.md, vertical = spacing.xs)
+            // Scrollable rather than clipped. Three text buttons come to roughly 300dp, which fits a
+            // 360dp phone but not a 320dp one, and not a 360dp one at a large display font — and a
+            // plain Row neither wraps nor scrolls, so Trash simply became unreachable. The selection
+            // bars already scroll for exactly this reason.
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         TextButton(onClick = { onOpenOrganization(OrganizationKind.FAVORITES) }) {

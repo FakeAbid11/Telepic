@@ -82,6 +82,7 @@ import com.telepic.domain.media.MediaDay
 import com.telepic.navigation.MediaSource
 import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.components.rememberSharedMediaModifier
+import com.telepic.ui.components.rememberTelepicHaptics
 import com.telepic.ui.theme.TelepicTokens
 import java.io.File
 
@@ -120,6 +121,7 @@ fun ViewerScreen(
     var showTrashConfirm by rememberSaveable { mutableStateOf(false) }
     val backDesc = stringResource(R.string.viewer_back)
     val isCloudReady = state.source is MediaSource.Cloud && state.status == ViewerStatus.READY
+    val haptics = rememberTelepicHaptics()
 
     // Warm Coil's cache for the swipe targets so a committed drag lands on a ready image.
     val context = LocalContext.current
@@ -262,6 +264,7 @@ fun ViewerScreen(
                     confirmButton = {
                         Button(onClick = {
                             showTrashConfirm = false
+                            haptics.confirmDestructive()
                             // Stay put: the write is the VM's, and the flag flow reflects it. Popping
                             // before the async Room write used to hide failures and yank the user back.
                             viewModel.moveToTrash()

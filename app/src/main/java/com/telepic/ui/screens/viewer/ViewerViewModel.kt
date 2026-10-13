@@ -572,7 +572,11 @@ class ViewerViewModel(
      * missing. An id that no longer resolves at all yields (null, null): no neighbour, never a wrong one.
      */
     private suspend fun neighborsWithin(id: Long, ids: Collection<Long>): Pair<Long?, Long?> {
-        val ordered = localLookup.byIdList(ids).map { it.id } // newest-first, existing items only
+        // Best-effort on purpose: `byIdList` propagates a failed read (so a curated screen can tell
+        // "the query failed" from "the collection is empty"), but a swipe neighbour is not worth
+        // failing the Viewer over. An unreadable provider degrades to "no neighbour", never to a
+        // wrong one.
+        val ordered = runCatching { localLookup.byIdList(ids) }.getOrElse { emptyList() }.map { it.id }
         val index = ordered.indexOf(id)
         if (index < 0) return null to null
         return ordered.getOrNull(index - 1) to ordered.getOrNull(index + 1)

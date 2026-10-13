@@ -39,24 +39,42 @@ class AlbumsViewModel(
     private val _status = MutableStateFlow<AlbumsStatus>(AlbumsStatus.Loading)
     val status: StateFlow<AlbumsStatus> = _status.asStateFlow()
 
+    /** True while a user-initiated re-read is in flight, so the pull-to-refresh indicator shows. */
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     /** The user's own albums, most recently touched first. Empty when the feature is not wired. */
     val customAlbums: StateFlow<List<CustomAlbum>> =
         (customAlbumRepository?.albums ?: flowOf(emptyList()))
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * Re-read the folder albums.
+     *
+     * [isRefreshing] is what keeps a pull-to-refresh from replacing the grid with a full-screen
+     * loader: setting [status] to [AlbumsStatus.Loading] unconditionally would swap the albums the
+     * user is looking at for a spinner, which is the opposite of what pulling down is for. Only a
+     * read with nothing on screen shows the loading state.
+     */
     fun refresh() {
-        _status.value = AlbumsStatus.Loading
+        val hadContent = _status.value is AlbumsStatus.Ready
+        if (!hadContent) _status.value = AlbumsStatus.Loading
+        _isRefreshing.value = hadContent
         viewModelScope.launch {
-            _status.value = try {
+            try {
                 val albums = repository.albums()
-                if (albums.isEmpty()) AlbumsStatus.Empty else AlbumsStatus.Ready(albums)
+                _status.value = if (albums.isEmpty()) AlbumsStatus.Empty else AlbumsStatus.Ready(albums)
             } catch (c: CancellationException) {
                 // A cancelled load is not an error; propagate so the scope honors cancellation
                 // rather than showing a spurious Error state.
                 throw c
             } catch (_: Exception) {
-                // A genuine query/permission failure is distinct from an empty library.
-                AlbumsStatus.Error
+                // A genuine query/permission failure is distinct from an empty library. On a refresh
+                // the previous list is not kept either: showing stale albums as if they were current
+                // would be the same class of claim this app refuses to make elsewhere.
+                _status.value = AlbumsStatus.Error
+            } finally {
+                _isRefreshing.value = false
             }
         }
     }

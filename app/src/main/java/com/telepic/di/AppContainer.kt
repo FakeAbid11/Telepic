@@ -221,7 +221,20 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val localMediaRepository: LocalMediaRepository by lazy {
-        LocalMediaRepositoryImpl(mediaLoader)
+        LocalMediaRepositoryImpl(
+            loader = mediaLoader,
+            // Search is the timeline plus one WHERE clause, so it gets the same wiring as [mediaLoader]
+            // — the same display scope, the same kind filter. Built per query because the term lives
+            // in the loader.
+            searchLoaderFactory = { query ->
+                MediaStoreMediaLoader(
+                    context = appContext,
+                    hiddenIdsProvider = { mediaOrganizationRepository.hiddenIds() },
+                    typeFilterProvider = timelineFilterProvider,
+                    searchQueryProvider = { query },
+                )
+            },
+        )
     }
 
     override val localMediaLookup: LocalMediaLookup by lazy {

@@ -125,6 +125,26 @@ class AlbumContentsViewModel(
     private val _isRemoving = MutableStateFlow(false)
     val isRemoving: StateFlow<Boolean> = _isRemoving.asStateFlow()
 
+    /**
+     * A transient confirmation for a bulk removal. [id] is the event's identity, so two identical
+     * outcomes still re-announce rather than inheriting the previous bar's timer.
+     */
+    data class RemovalReport(val removed: Int, val id: Long)
+
+    /**
+     * The last removal to report, or null.
+     *
+     * Taking photos out of an album leaves no trace on screen — the grid simply has fewer tiles —
+     * so without this the user cannot tell a successful removal from a tap that did nothing. The
+     * bulk *backup* action already reported; this was the one write on the screen that did not.
+     */
+    private val _removalReport = MutableStateFlow<RemovalReport?>(null)
+    val removalReport: StateFlow<RemovalReport?> = _removalReport.asStateFlow()
+
+    fun consumeRemovalMessage() {
+        _removalReport.value = null
+    }
+
     /** Long-press entry: begin a selection containing this item (idempotent if already selecting). */
     fun beginSelection(media: LocalMedia) {
         _selected.update { if (it.containsKey(media.id)) it else LinkedHashMap(it).also { m -> m[media.id] = media } }
@@ -188,6 +208,10 @@ class AlbumContentsViewModel(
             try {
                 ids.forEach { repository.removeMedia(albumId, it) }
                 clearSelection()
+                // Reported only after every write returned. `removeMedia` has no per-item result, so
+                // the count is the batch that completed without throwing — which is exactly what
+                // "these are no longer in the album" means here.
+                _removalReport.value = RemovalReport(ids.size, System.nanoTime())
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {

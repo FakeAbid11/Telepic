@@ -24,12 +24,14 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,7 +44,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -61,9 +62,9 @@ import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.theme.TelepicTokens
 import java.io.File
-import java.util.Locale
 
 /** Real Telegram cloud screen (Phase 5). Browsing is preview-only; tapping opens the shared Viewer. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CloudScreen(
     viewModel: CloudViewModel,
@@ -102,7 +103,16 @@ fun CloudScreen(
 
             DestinationStatusBar(uiState)
 
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            // The header keeps its explicit refresh control — on a screen whose data is remote, an
+            // action that names itself is worth having — and the gesture is added on top so the
+            // "this looks stale, pull it" reflex works here exactly as it does on the timeline.
+            // A pull on a destination that is not resolved yet is still meaningful: it retries the
+            // connection, which is what `refresh()` does.
+            PullToRefreshBox(
+                isRefreshing = uiState.status is CloudStatus.Refreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
                 CloudContent(
                     uiState = uiState,
                     previews = previews,

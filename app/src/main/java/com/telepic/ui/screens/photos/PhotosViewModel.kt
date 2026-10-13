@@ -16,6 +16,8 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
 import com.telepic.ui.components.BulkBackupReport
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -24,7 +26,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -42,6 +47,7 @@ import kotlinx.coroutines.launch
  * the MediaStore query itself, and the favorite set is surfaced as one batched snapshot for tile
  * badges — so favorites are independent of, and never alter, backup state.
  */
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class PhotosViewModel(
     private val repository: LocalMediaRepository,
     private val changeWatcher: MediaChangeWatcher,
@@ -51,8 +57,32 @@ class PhotosViewModel(
     private val customAlbumRepository: CustomAlbumRepository? = null,
 ) : ViewModel() {
 
-    /** Paged day-headers + media cells. Cached so rotation/recomposition don't re-query. */
-    val media: Flow<PagingData<PhotosItem>> = repository.media.cachedIn(viewModelScope)
+    // --- Search --------------------------------------------------------------------------------
+    //
+    // The term is part of the timeline, not a separate screen: the grid, the day headers, the date
+    // rail and "select all" all narrow together. It is debounced so a fast typist issues one query
+    // rather than one per keystroke, and a *blank* term skips the debounce entirely — otherwise
+    // opening Photos would sit on an empty screen for the debounce window before the first page
+    // arrived.
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun onSearchQueryChange(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun clearSearch() {
+        _searchQuery.value = ""
+    }
+
+    /**
+     * Paged day-headers + media cells for the current search term. Cached so rotation/recomposition
+     * don't re-query, and `flatMapLatest` drops the previous term's pager as soon as a new one starts.
+     */
+    val media: Flow<PagingData<PhotosItem>> = _searchQuery
+        .debounce { query -> if (query.isBlank()) 0L else SEARCH_DEBOUNCE_MILLIS }
+        .distinctUntilChanged()
+        .flatMapLatest { query -> repository.media(query).cachedIn(viewModelScope) }
 
     /**
      * Backup status keyed by the local MediaStore id — the UI navigation identity (never filename
@@ -129,9 +159,12 @@ class PhotosViewModel(
     fun selectAll() {
         if (_isSelectingAll.value) return
         _isSelectingAll.value = true
+        val query = _searchQuery.value
         viewModelScope.launch {
             try {
-                val all = repository.allMedia()
+                // The *current* term, so "select all" means the results on screen rather than the
+                // library behind them.
+                val all = repository.allMedia(query)
                 if (all.isNotEmpty()) {
                     _selected.value = LinkedHashMap<Long, LocalMedia>(all.size).apply {
                         all.forEach { put(it.id, it) }
@@ -336,5 +369,8 @@ class PhotosViewModel(
     private companion object {
         /** Trailing-debounce window for MediaStore change bursts (~10s of quiet). */
         const val MEDIA_CHANGE_SYNC_DEBOUNCE_MS = 10_000L
+
+        /** Trailing-debounce window for the search term, so a fast typist issues one query. */
+        const val SEARCH_DEBOUNCE_MILLIS = 250L
     }
 }

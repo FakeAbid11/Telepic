@@ -45,12 +45,26 @@ class PhotosViewModelTest {
 
     private class FakeRepository(private val all: List<LocalMedia> = emptyList()) : LocalMediaRepository {
         var refreshCount = 0
-        override val media: Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+
+        /** Every search term the ViewModel asked for, in order. */
+        val queries = mutableListOf<String>()
+
+        /** The term the last whole-view walk (select all) used. */
+        var allQuery: String? = null
+
+        override fun media(query: String): Flow<PagingData<PhotosItem>> {
+            queries += query
+            return flowOf(PagingData.empty())
+        }
+
         override fun refresh() {
             refreshCount++
         }
 
-        override suspend fun allMedia(): List<LocalMedia> = all
+        override suspend fun allMedia(query: String): List<LocalMedia> {
+            allQuery = query
+            return all
+        }
     }
 
     private class FakeWatcher : MediaChangeWatcher {
@@ -219,9 +233,9 @@ class PhotosViewModelTest {
 
     /** A library that cannot be read at all — select-all must claim nothing rather than part of it. */
     private class ThrowingRepository : LocalMediaRepository {
-        override val media: Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun media(query: String): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
         override fun refresh() = Unit
-        override suspend fun allMedia(): List<LocalMedia> =
+        override suspend fun allMedia(query: String): List<LocalMedia> =
             throw IllegalStateException("library unreadable")
     }
 
@@ -250,10 +264,57 @@ class PhotosViewModelTest {
         assertFalse(vm.isSelectingAll.value)
     }
 
+    // --- Search ---------------------------------------------------------------------------------
+
     @Test
-    fun `media change bursts collapse into one debounced auto-backup sync`() = runTest {
+    fun `a search term is debounced and then handed to the repository`() = runTest {
         // Share the test scheduler so the debounce delay runs on virtual time.
         kotlinx.coroutines.Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repository = FakeRepository()
+        val vm = PhotosViewModel(repository, FakeWatcher())
+        val job = launch { vm.media.collect { } }
+        runCurrent()
+        // A blank term is deliberately not debounced: opening Photos must not sit on nothing for the
+        // debounce window before the first page arrives.
+        assertEquals(listOf(""), repository.queries)
+
+        vm.onSearchQueryChange("beach")
+        runCurrent()
+        // Inside the debounce window, so the repository has not been asked again yet.
+        assertEquals(listOf(""), repository.queries)
+
+        advanceTimeBy(300)
+        runCurrent()
+        assertEquals(listOf("", "beach"), repository.queries)
+        job.cancel()
+    }
+
+    @Test
+    fun `select all uses the current search term, not the whole library`() = runTest {
+        val repository = FakeRepository(listOf(photo(1), photo(2)))
+        val vm = PhotosViewModel(repository, FakeWatcher())
+        vm.onSearchQueryChange("beach")
+        vm.selectAll()
+        runCurrent()
+
+        // The view is the *results*, so "select all" must not quietly reach past them into the whole
+        // library — a bulk backup of that would claim far more than the user asked for.
+        assertEquals("beach", repository.allQuery)
+        assertEquals(setOf(1L, 2L), vm.selectedItems.value.keys)
+    }
+
+    @Test
+    fun `clearing the search returns to the unfiltered timeline`() = runTest {
+        val vm = PhotosViewModel(FakeRepository(), FakeWatcher())
+        vm.onSearchQueryChange("beach")
+        assertEquals("beach", vm.searchQuery.value)
+        vm.clearSearch()
+        assertEquals("", vm.searchQuery.value)
+    }
+
+    @Test
+    fun `media change bursts collapse into one debounced auto-backup sync`() = runTest {
+        // Share the test scheduler so the debounce delay runs on virtual time.        kotlinx.coroutines.Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val repository = FakeRepository()
         val watcher = FakeWatcher()
         val coordinator = RecordingCoordinator()

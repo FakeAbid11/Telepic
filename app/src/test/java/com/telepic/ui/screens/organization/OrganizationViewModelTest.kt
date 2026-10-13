@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -27,7 +28,6 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -104,6 +104,18 @@ class OrganizationViewModelTest {
             ids.toList().mapNotNull { store[it] }
     }
 
+    /** A provider that refuses to answer, so "the read failed" can be told from "nothing is here". */
+    private class FlakyLookup : LocalMediaLookup {
+        var fail = true
+        val store = mutableMapOf<Long, LocalMedia>()
+        override suspend fun byId(id: Long): LocalMedia? = store[id]
+        override suspend fun neighborId(id: Long, direction: NeighborDirection, bucketId: Long?): Long? = null
+        override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> {
+            if (fail) throw IllegalStateException("provider refused")
+            return ids.toList().mapNotNull { store[it] }
+        }
+    }
+
     /** Records the batch it was handed, so a bulk delete can be checked to be one request, not N. */
     private class FakeDeleter(private val outcome: DeleteRequest) : LocalMediaDeleter {
         var requested: List<LocalMedia> = emptyList()
@@ -116,6 +128,9 @@ class OrganizationViewModelTest {
         }
     }
 
+    private fun readyIds(vm: OrganizationViewModel): Set<Long> =
+        (vm.items.value as OrgItemsState.Ready).items.map { it.id }.toSet()
+
     @Test
     fun `favorites collection resolves the favorited ids to media`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
@@ -125,19 +140,50 @@ class OrganizationViewModelTest {
             store[2L] = media(2L)
         }
         val vm = OrganizationViewModel(OrganizationKind.FAVORITES, repo, lookup, FakeDeleter(DeleteRequest.Failed))
-        val items = vm.items.first { it != null && it.isNotEmpty() }
-        assertEquals(setOf(1L, 2L), items!!.map { it.id }.toSet())
+        val state = vm.items.first { it is OrgItemsState.Ready }
+        assertEquals(setOf(1L, 2L), (state as OrgItemsState.Ready).items.map { it.id }.toSet())
     }
 
     @Test
-    fun `items start as null (loading) until the collection is observed`() = runTest {
+    fun `a failed read is the error state, never an empty collection`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val repo = FakeRepo().apply { trash.value = setOf(1L) }
+        val vm = OrganizationViewModel(OrganizationKind.TRASH, repo, FlakyLookup(), FakeDeleter(DeleteRequest.Failed))
+        // The bug this replaces: `byIdList` swallowed the throwable, so this rendered as "Trash is
+        // empty" — a statement about the user's data, over a query that never answered.
+        val state = vm.items.first { it !is OrgItemsState.Loading }
+        assertEquals(OrgItemsState.Error, state)
+    }
+
+    @Test
+    fun `refresh recovers from a failed read`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val lookup = FlakyLookup().apply { store[1L] = media(1L) }
+        val repo = FakeRepo().apply { favs.value = setOf(1L) }
+        val vm = OrganizationViewModel(OrganizationKind.FAVORITES, repo, lookup, FakeDeleter(DeleteRequest.Failed))
+        val job = launch { vm.items.collect { } }
+        runCurrent()
+        assertEquals(OrgItemsState.Error, vm.items.value)
+
+        // The retry the error state offers. Nothing about the id-set changed, so only a real re-read
+        // can produce a Ready state here.
+        lookup.fail = false
+        vm.refresh()
+        runCurrent()
+        assertEquals(setOf(1L), readyIds(vm))
+        assertFalse(vm.isRefreshing.value)
+        job.cancel()
+    }
+
+    @Test
+    fun `items start as loading until the collection is observed`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val repo = FakeRepo().apply { favs.value = setOf(1L) }
         val lookup = FakeLookup().apply { store[1L] = media(1L) }
         val vm = OrganizationViewModel(OrganizationKind.FAVORITES, repo, lookup, FakeDeleter(DeleteRequest.Failed))
-        // WhileSubscribed with no observer keeps the initial value = null, so a slow load is never
-        // mistaken for an empty collection on screen.
-        assertNull(vm.items.value)
+        // WhileSubscribed with no observer keeps the initial value, so a slow load is never mistaken
+        // for an empty collection on screen.
+        assertEquals(OrgItemsState.Loading, vm.items.value)
     }
 
     // --- Selection ------------------------------------------------------------------------------
@@ -188,6 +234,9 @@ class OrganizationViewModelTest {
         // The selection is consumed by the action, so the bar does not linger over a done job.
         assertTrue(vm.selectedItems.value.isEmpty())
         assertFalse(vm.isRestoring.value)
+        // And the write is reported. Silence used to be the only outcome here: the grid changed and
+        // nothing said the two items had actually left the collection.
+        assertEquals(OrgMessage.MembershipChanged(2), vm.message.value)
     }
 
     @Test
@@ -230,6 +279,9 @@ class OrganizationViewModelTest {
         assertEquals(setOf(8L, 9L), repo.removed.toSet())
         assertFalse(vm.isDeleting.value)
         assertTrue(vm.selectedItems.value.isEmpty())
+        // Reported as a permanent deletion, not as a membership change: the two mean different things
+        // to the user and only one of them can be undone.
+        assertEquals(OrgMessage.DeletedFromDevice(2), vm.message.value)
     }
 
     @Test

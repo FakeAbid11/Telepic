@@ -36,6 +36,12 @@ interface LocalMediaLookup {
      * Resolve many items in a single bounded `_ID IN (...)` query (used by Favorites / Archive /
      * Trash, whose id-sets come from Room). Missing/inaccessible ids are simply absent from the
      * result, so an item deleted outside the app never crashes a screen. Order is newest-first.
+     *
+     * **A failed query propagates.** It used to swallow the throwable, which made a provider that
+     * refused to answer indistinguishable from a collection with nothing in it — and a curated screen
+     * then reported "Trash is empty" over a read that never happened. Callers that genuinely want a
+     * best-effort answer (an album cover, a swipe neighbour) wrap this themselves and say so; the
+     * album pager lets it reach `LoadResult.Error`, which is what turns it into a retryable state.
      */
     suspend fun byIdList(ids: Collection<Long>): List<LocalMedia>
 }
@@ -114,28 +120,26 @@ class MediaStoreLocalLookup(
         val bounded = ids.take(MAX_LOOKUP_IDS)
         val placeholders = bounded.joinToString(",") { "?" }
         val selection = "$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} IN ($placeholders)"
-        try {
-            contentResolver.query(
-                MediaStore.Files.getContentUri("external"),
-                projection,
-                selection,
-                bounded.map { it.toString() }.toTypedArray(),
-                // Same coalesced newest-first order the timeline displays, so a curated collection
-                // (favorites/archive/trash) steps in exactly the order the user sees.
-                MediaSortOrder.TIMELINE_DESC,
-            )?.use { cursor ->
-                val out = ArrayList<LocalMedia>(bounded.size)
-                while (cursor.moveToNext()) {
-                    val row = CursorMediaRow(cursor)
-                    val id = row.long(MediaStore.MediaColumns._ID) ?: continue
-                    val mime = row.string(MediaStore.MediaColumns.MIME_TYPE)
-                    out += MediaStoreMediaMapper.map(row, MediaStoreMediaMapper.contentUriFor(id, mime))
-                }
-                out
-            } ?: emptyList()
-        } catch (_: Throwable) {
-            emptyList()
-        }
+        // No try/catch: a failed read must be distinguishable from an empty collection. See the
+        // contract on LocalMediaLookup.byIdList.
+        contentResolver.query(
+            MediaStore.Files.getContentUri("external"),
+            projection,
+            selection,
+            bounded.map { it.toString() }.toTypedArray(),
+            // Same coalesced newest-first order the timeline displays, so a curated collection
+            // (favorites/archive/trash) steps in exactly the order the user sees.
+            MediaSortOrder.TIMELINE_DESC,
+        )?.use { cursor ->
+            val out = ArrayList<LocalMedia>(bounded.size)
+            while (cursor.moveToNext()) {
+                val row = CursorMediaRow(cursor)
+                val id = row.long(MediaStore.MediaColumns._ID) ?: continue
+                val mime = row.string(MediaStore.MediaColumns.MIME_TYPE)
+                out += MediaStoreMediaMapper.map(row, MediaStoreMediaMapper.contentUriFor(id, mime))
+            }
+            out
+        } ?: emptyList()
     }
 
     private fun queryOne(selection: String, args: Array<String>, sortOrder: String?): LocalMedia? =

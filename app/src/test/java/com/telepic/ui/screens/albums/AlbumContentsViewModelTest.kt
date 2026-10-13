@@ -7,11 +7,13 @@ import com.telepic.data.backup.BackupRepository
 import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.backup.BulkBackupSummary
 import com.telepic.data.media.AlbumRepository
+import com.telepic.data.media.CustomAlbumRepository
 import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.Album
+import com.telepic.domain.media.CustomAlbum
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import com.telepic.domain.media.PhotosItem
@@ -55,6 +57,25 @@ class AlbumContentsViewModelTest {
 
     private class EmptyStatusRepository : BackupStatusRepository {
         override val visualStates: Flow<Map<String, MediaBackupVisualState>> = flowOf(emptyMap())
+    }
+
+    /** Only membership removal matters here; the rest of a user-created album is inert. */
+    private class FakeCustomAlbums : CustomAlbumRepository {
+        val removed = mutableListOf<Long>()
+        override val albums: Flow<List<CustomAlbum>> = flowOf(emptyList())
+        override suspend fun create(name: String): Long? = null
+        override suspend fun rename(albumId: Long, name: String) = Unit
+        override suspend fun delete(albumId: Long) = Unit
+        override suspend fun addMedia(albumId: Long, mediaIds: List<Long>): Int = 0
+        override suspend fun removeMedia(albumId: Long, localMediaId: Long) {
+            removed += localMediaId
+        }
+
+        override fun observeName(albumId: Long): Flow<String?> = flowOf("Trip")
+        override fun observeMediaIds(albumId: Long): Flow<List<Long>> = flowOf(emptyList())
+        override suspend fun mediaIds(albumId: Long): List<Long> = emptyList()
+        override fun mediaInAlbum(albumId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() = Unit
     }
 
     /** Only the two hidden-state flows the album watches matter here; the rest are inert. */
@@ -134,10 +155,34 @@ class AlbumContentsViewModelTest {
         organizationRepository = organizationRepository,
     )
 
+    /** A user-created album — the only kind whose membership the user can change. */
+    private fun customViewModel(customAlbums: CustomAlbumRepository) = AlbumContentsViewModel(
+        source = AlbumSource.Custom(7L, title = "Trip"),
+        albumRepository = FakeAlbumRepository(),
+        customAlbumRepository = customAlbums,
+        backupStatusRepository = EmptyStatusRepository(),
+    )
+
+    @Test
+    fun `removing from an album reports how many were removed`() = runTest {
+        val customAlbums = FakeCustomAlbums()
+        val vm = customViewModel(customAlbums)
+        vm.beginSelection(photo(1))
+        vm.toggleSelection(photo(2))
+        vm.toggleSelection(photo(3))
+        vm.removeSelectedFromAlbum()
+        runCurrent()
+
+        assertEquals(setOf(1L, 2L, 3L), customAlbums.removed.toSet())
+        // A removal leaves no trace on screen — the grid simply has fewer tiles — so without this the
+        // user cannot tell a successful removal from a tap that did nothing.
+        assertEquals(3, vm.removalReport.value?.removed)
+        assertTrue(vm.selectedItems.value.isEmpty())
+    }
+
     @Test
     fun `long-press begins selection and selects that item`() = runTest {
-        val vm = viewModel(RecordingCoordinator())
-        assertTrue(vm.selectedItems.value.isEmpty())
+        val vm = viewModel(RecordingCoordinator())        assertTrue(vm.selectedItems.value.isEmpty())
         vm.beginSelection(photo(1))
         assertEquals(setOf(1L), vm.selectedItems.value.keys)
     }

@@ -15,20 +15,41 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Transient feedback the collection screen must report; a type, never a magic string.
+ * What a collection screen can show.
  *
- * [DeleteFailed] carries the number of items the refused delete covered, so the message can say
- * "the items stay in trash" rather than naming a single one that may not be the whole story.
+ * [Error] exists because the alternative was a lie: the media lookup used to collapse every failure
+ * into an empty list, so a provider that refused to answer was rendered as "Trash is empty" — a
+ * statement about the user's data, made without having read it. `null`-means-loading could not
+ * express this, because a failed read is not a read in progress.
+ */
+sealed interface OrgItemsState {
+    data object Loading : OrgItemsState
+    data class Ready(val items: List<LocalMedia>) : OrgItemsState
+    data object Error : OrgItemsState
+}
+
+/**
+ * Transient feedback the collection screen must report; types, never magic strings.
+ *
+ * The success cases are here because the collection used to report **only** failures: un-favouriting
+ * forty items produced a grid that simply changed, with nothing saying the write had landed.
  */
 sealed interface OrgMessage {
     /** A consented permanent delete could not be executed. */
     data class DeleteFailed(val count: Int) : OrgMessage
+
+    /** [count] items left this collection (unfavourited / unarchived / restored). */
+    data class MembershipChanged(val count: Int) : OrgMessage
+
+    /** [count] items were permanently deleted from the device. */
+    data class DeletedFromDevice(val count: Int) : OrgMessage
 }
 
 /**
@@ -62,16 +83,47 @@ class OrganizationViewModel(
     private val _isRestoring = MutableStateFlow(false)
     val isRestoring: StateFlow<Boolean> = _isRestoring.asStateFlow()
 
+    /** True while a user-initiated re-read is in flight, so the pull-to-refresh indicator shows. */
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val idsFlow: Flow<Set<Long>> = when (kind) {
         OrganizationKind.FAVORITES -> organizationRepository.favoriteIds
         OrganizationKind.ARCHIVE -> organizationRepository.archivedIds
         OrganizationKind.TRASH -> organizationRepository.trashedIds
     }
 
-    // null = the id-set has not resolved yet (loading); an empty list is a genuinely empty collection.
-    val items: StateFlow<List<LocalMedia>?> = idsFlow
-        .map { ids -> localLookup.byIdList(ids) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    /** Bumped by [refresh] to force a re-read of an id-set that has not itself changed. */
+    private val reloadTrigger = MutableStateFlow(0)
+
+    val items: StateFlow<OrgItemsState> = combine(idsFlow, reloadTrigger) { ids, _ -> ids }
+        .map { ids -> readItems(ids) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrgItemsState.Loading)
+
+    /**
+     * Resolve the collection, keeping a failed read distinct from an empty one.
+     *
+     * `byIdList` propagates failures precisely so this can tell the two apart; the screen then offers
+     * a retry instead of asserting that the user's items are gone. The in-flight refresh flag is
+     * cleared here because this is the one place that knows the read has finished.
+     */
+    private suspend fun readItems(ids: Set<Long>): OrgItemsState {
+        val state = try {
+            OrgItemsState.Ready(localLookup.byIdList(ids))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            OrgItemsState.Error
+        }
+        _isRefreshing.value = false
+        return state
+    }
+
+    /** Re-read the collection. Also the retry offered on [OrgItemsState.Error]. */
+    fun refresh() {
+        _isRefreshing.value = true
+        reloadTrigger.update { it + 1 }
+    }
 
     // --- Multi-selection ------------------------------------------------------------------------
 
@@ -125,6 +177,10 @@ class OrganizationViewModel(
                     }
                 }
                 clearSelection()
+                // Reported only after the writes returned: the grid changing on its own is not a
+                // confirmation, and a count posted optimistically would be a claim about work that
+                // had not happened yet.
+                _message.value = OrgMessage.MembershipChanged(ids.size)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -166,6 +222,7 @@ class OrganizationViewModel(
                 DeleteRequest.Deleted -> {
                     onDeleteConfirmed(selection.map { it.id })
                     clearSelection()
+                    _message.value = OrgMessage.DeletedFromDevice(selection.size)
                     _isDeleting.value = false
                 }
                 DeleteRequest.Failed -> {
@@ -187,6 +244,7 @@ class OrganizationViewModel(
         if (success && ids.isNotEmpty()) {
             onDeleteConfirmed(ids)
             clearSelection()
+            _message.value = OrgMessage.DeletedFromDevice(ids.size)
         }
         return success
     }

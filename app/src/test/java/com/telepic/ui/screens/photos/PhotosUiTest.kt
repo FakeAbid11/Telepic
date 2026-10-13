@@ -17,8 +17,10 @@ import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaDay
 import com.telepic.domain.media.MediaType
+import com.telepic.domain.media.PhotosItem
 import com.telepic.permissions.MediaPermissionState
 import com.telepic.ui.theme.TelepicTheme
+import androidx.paging.PagingData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertTrue
@@ -55,13 +57,13 @@ class PhotosUiTest {
 
     private class CountingRepository(private val delegate: LocalMediaRepository) : LocalMediaRepository {
         var refreshCount = 0
-        override val media get() = delegate.media
+        override fun media(query: String): Flow<PagingData<PhotosItem>> = delegate.media(query)
         override fun refresh() {
             refreshCount++
             delegate.refresh()
         }
 
-        override suspend fun allMedia(): List<LocalMedia> = delegate.allMedia()
+        override suspend fun allMedia(query: String): List<LocalMedia> = delegate.allMedia(query)
     }
 
     private object NoopWatcher : MediaChangeWatcher {

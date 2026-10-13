@@ -14,12 +14,14 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,10 +40,11 @@ import com.telepic.R
 import com.telepic.domain.media.LocalMedia
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
-import com.telepic.ui.components.LoadingState
+import com.telepic.ui.components.MediaGridSkeleton
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.TransientMessageBar
+import com.telepic.ui.components.rememberTelepicHaptics
 import com.telepic.ui.screens.photos.MediaGrid
 import com.telepic.ui.theme.TelepicTokens
 
@@ -54,6 +58,7 @@ import com.telepic.ui.theme.TelepicTokens
  * the device's. A folder album shows neither: its name comes from the filesystem and its membership
  * *is* the filesystem, so offering those actions would be offering something that cannot work.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumContentsScreen(
     viewModel: AlbumContentsViewModel,
@@ -67,11 +72,13 @@ fun AlbumContentsScreen(
     val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
     val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
     val selectionReport by viewModel.selectionReport.collectAsStateWithLifecycle()
+    val removalReport by viewModel.removalReport.collectAsStateWithLifecycle()
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
     val isRemoving by viewModel.isRemoving.collectAsStateWithLifecycle()
     val selectionActive = selectedItems.isNotEmpty()
     val customAlbumId = viewModel.customAlbumId
     val spacing = TelepicTokens.spacing
+    val haptics = rememberTelepicHaptics()
     val refresh = paging.loadState.refresh
     val hasContent = paging.itemCount > 0
 
@@ -149,9 +156,19 @@ fun AlbumContentsScreen(
                 // Mirror the Photos timeline: an in-flight load, a genuine failure, and an empty album are
                 // three distinct states. Because archived/trashed items are hidden here too, a blank grid
                 // must never be the only signal.
-                Box(modifier = Modifier.fillMaxSize().padding(top = spacing.xs)) {
+                //
+                // Pull-to-refresh as well as the pager's own retry: the timeline has had the gesture since
+                // it was built and an album — which is the same grid over a narrower query — did not, so
+                // the same "this looks stale" reflex worked on one screen and not the other. The indicator
+                // is driven by the pager's own refresh state, so it never spins on first open.
+                PullToRefreshBox(
+                    isRefreshing = refresh is LoadState.Loading && hasContent,
+                    onRefresh = { paging.refresh() },
+                    modifier = Modifier.fillMaxSize().padding(top = spacing.xs),
+                ) {
                     when {
-                        refresh is LoadState.Loading && !hasContent -> LoadingState()
+                        refresh is LoadState.Loading && !hasContent ->
+                            MediaGridSkeleton(minCellSize = spacing.gridTileMinSize)
                         refresh is LoadState.Error -> ErrorState(
                             title = stringResource(R.string.album_contents_error_title),
                             explanation = stringResource(R.string.album_contents_error_description),
@@ -202,6 +219,17 @@ fun AlbumContentsScreen(
                         messageId = report.id,
                     )
                 }
+                removalReport?.let { report ->
+                    TransientMessageBar(
+                        message = pluralStringResource(
+                            R.plurals.album_removed_count,
+                            report.removed,
+                            report.removed,
+                        ),
+                        onDismiss = viewModel::consumeRemovalMessage,
+                        messageId = report.id,
+                    )
+                }
                 if (selectionActive) {
                     SelectionActionBar(
                         canBackup = selectedItems.isNotEmpty(),
@@ -244,6 +272,7 @@ fun AlbumContentsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
+                    haptics.confirmDestructive()
                     // Navigating away is the ViewModel's decision, taken only once the delete landed.
                     viewModel.delete(onDeleted = onBack)
                 }) {

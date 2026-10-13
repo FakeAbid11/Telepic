@@ -47,6 +47,7 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaDay
 import com.telepic.domain.media.MediaType
 import com.telepic.ui.components.rememberSharedMediaModifier
+import com.telepic.ui.components.rememberTelepicHaptics
 import com.telepic.ui.theme.TelepicTokens
 
 /**
@@ -73,6 +74,7 @@ fun MediaTile(
 ) {
     val spacing = TelepicTokens.spacing
     val context = LocalContext.current
+    val haptics = rememberTelepicHaptics()
     // Remembered, not recomputed: building this label resolves several localized strings and formats
     // a full date, and it used to run on every recomposition of every visible cell. Keyed on the
     // context too, because the strings follow the locale/configuration.
@@ -99,7 +101,15 @@ fun MediaTile(
                 // ambiguous with the composable's `selected` parameter.
                 if (selectionActive) this.selected = tileSelected
             }
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            // The press committed to a selection; the tick is what tells the hand that before it lifts,
+            // since the check badge only appears afterwards.
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptics.selectionStart()
+                    onLongClick()
+                },
+            ),
     ) {
         AsyncImage(
             model = media.contentUri,
