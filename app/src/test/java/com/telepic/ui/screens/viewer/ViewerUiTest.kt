@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -17,10 +18,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.NeighborDirection
 import com.telepic.data.organization.MediaOrganizationRepository
+import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudPreview
 import com.telepic.domain.cloud.CloudStatus
@@ -105,6 +108,40 @@ class ViewerUiTest {
         override suspend fun restoreFromTrash(id: Long) = Unit
         override suspend fun markDeletedFromStore(id: Long) = Unit
         override suspend fun remove(id: Long) = Unit
+    }
+
+    /** A fixed backup snapshot, so the control's state can be pinned without a queue behind it. */
+    private class Statuses(private val states: Map<String, MediaBackupVisualState>) : BackupStatusRepository {
+        override val visualStates: Flow<Map<String, MediaBackupVisualState>> = flowOf(states)
+    }
+
+    @Test
+    fun `a backed-up item shows the backed-up state rather than a backup button`() {
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = Lookup(mapOf(5L to localPhoto(5))),
+            cloudRepository = NoCloud,
+            backupStatusRepository = Statuses(mapOf("5" to MediaBackupVisualState.BACKED_UP)),
+        )
+        composeRule.setContent { TelepicTheme { ViewerScreen(vm, onBack = {}) } }
+
+        // The state, not a control: there is nothing left to back up, so the slot reports the outcome
+        // instead of offering a button that could only do nothing.
+        composeRule.onNodeWithContentDescription("Backed up").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Back up").assertDoesNotExist()
+    }
+
+    @Test
+    fun `an item that is not backed up offers the backup control`() {
+        val vm = ViewerViewModel(
+            MediaSource.Local(5),
+            Lookup(mapOf(5L to localPhoto(5))),
+            NoCloud,
+        )
+        composeRule.setContent { TelepicTheme { ViewerScreen(vm, onBack = {}) } }
+
+        composeRule.onNodeWithContentDescription("Back up").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Backed up").assertDoesNotExist()
     }
 
     @Test

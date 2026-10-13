@@ -43,6 +43,12 @@ data class TelepicExtendedColors(
      * and the viewer backdrop is black in *both* schemes, so the on-media error tone has to be a
      * light red that is scheme-independent (like [favoriteAmber]). Measures 9.20:1 on black. */
     val mediaErrorText: Color,
+    /** Success text drawn directly on the viewer's black backdrop — the same constraint as
+     * [mediaErrorText], and the reason this is not `colorScheme.primary` or a Material green: the
+     * backdrop is black in both schemes, so the tone has to be light and scheme-independent.
+     * Measures 13.1:1 on black, comfortably clear of the AA floor even over the 70% chrome scrim.
+     * Used for "Backed up", which must read as *done* rather than as another thing to tap. */
+    val mediaSuccessText: Color,
 )
 
 private val DarkExtended = TelepicExtendedColors(
@@ -52,6 +58,7 @@ private val DarkExtended = TelepicExtendedColors(
     chromeScrim = Color(0xB3000000),
     favoriteAmber = Color(0xFFFFC53D),
     mediaErrorText = Color(0xFFFF8A80),
+    mediaSuccessText = Color(0xFF7FE0A6),
 )
 
 private val LightExtended = TelepicExtendedColors(
@@ -61,6 +68,7 @@ private val LightExtended = TelepicExtendedColors(
     chromeScrim = Color(0xB3000000),
     favoriteAmber = Color(0xFFFFC53D),
     mediaErrorText = Color(0xFFFF8A80),
+    mediaSuccessText = Color(0xFF7FE0A6),
 )
 
 val LocalTelepicColors = staticCompositionLocalOf { DarkExtended }

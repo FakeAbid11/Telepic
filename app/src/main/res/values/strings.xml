@@ -454,6 +454,12 @@
     <string name="viewer_trash_confirm">Move to trash</string>
     <string name="viewer_trashed_message">Moved to trash</string>
     <string name="viewer_trashed_undo">Undo</string>
+    <!-- The viewer's per-item backup control reuses the backup_state_* strings and the grid badge's
+         glyphs, so "is this backed up?" reads the same in both places. These two are only the
+         transient outcomes, plus the retry label for a backup that already failed once. -->
+    <string name="viewer_backup_retry">Back up again</string>
+    <string name="viewer_backup_queued_message">Queued for backup</string>
+    <string name="viewer_backup_already_message">Already backed up</string>
 
     <string name="library_title">Library</string>
     <string name="library_favorites">Favorites</string>

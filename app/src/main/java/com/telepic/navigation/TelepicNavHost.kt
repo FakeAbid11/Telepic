@@ -363,6 +363,9 @@ private fun TelepicNavGraph(
                             backupStatusRepository = container.backupStatusRepository,
                             settingsRepository = container.settingsRepository,
                             customAlbumRepository = container.customAlbumRepository,
+                            // Only the local route gets a coordinator: a cloud item *is* the backup, so
+                            // the cloud viewer has nothing to back up.
+                            backupCoordinator = container.backupCoordinator,
                         )
                     }
                 }

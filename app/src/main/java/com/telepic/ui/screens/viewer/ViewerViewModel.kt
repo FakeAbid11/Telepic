@@ -2,6 +2,7 @@ package com.telepic.ui.screens.viewer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.CustomAlbumRepository
@@ -28,8 +29,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -75,6 +78,17 @@ data class ViewerFlags(
 sealed interface ViewerMessage {
     /** The item was written to Trash. Posted only after the write returned — never optimistically. */
     data object MovedToTrash : ViewerMessage
+
+    /** The engine enqueued genuine new work for the current item. */
+    data object QueuedForBackup : ViewerMessage
+
+    /**
+     * The engine recognised the current item as already covered, so nothing was enqueued.
+     *
+     * A real outcome rather than a failure: reporting it as "queued" would claim work that will
+     * never happen, and reporting nothing would leave the user unsure whether the tap registered.
+     */
+    data object AlreadyBackedUp : ViewerMessage
 }
 
 data class ViewerUiState(
@@ -173,6 +187,7 @@ class ViewerViewModel(
     private val backupStatusRepository: BackupStatusRepository? = null,
     private val settingsRepository: SettingsRepository? = null,
     private val customAlbumRepository: CustomAlbumRepository? = null,
+    private val backupCoordinator: BackupCoordinator? = null,
 ) : ViewModel() {
 
     /**
@@ -202,6 +217,67 @@ class ViewerViewModel(
     /** Restore-to-device state for the current cloud item (idle unless a restore is requested). */
     private val _restore = MutableStateFlow<RestoreState>(RestoreState.Idle)
     val restore: StateFlow<RestoreState> = _restore.asStateFlow()
+
+    /**
+     * The current local item's backup state, **observed** rather than read once.
+     *
+     * Live on purpose: an upload that finishes while the photo is open has to turn the control green
+     * where the user is standing, not on the next visit. [MediaBackupVisualState.NONE] for a cloud
+     * item — there is no local id, and a cloud item *is* the backup — and when the repository is
+     * unwired.
+     */
+    val backupState: StateFlow<MediaBackupVisualState> = combine(
+        backupStatusRepository?.visualStates ?: flowOf(emptyMap()),
+        _uiState.map { (it.item as? ViewerItem.Local)?.media?.id },
+    ) { states, id ->
+        id?.let { states[it.toString()] } ?: MediaBackupVisualState.NONE
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MediaBackupVisualState.NONE)
+
+    /** True while a single-item backup request is in flight, so the control cannot double-fire. */
+    private val _backupBusy = MutableStateFlow(false)
+    val backupBusy: StateFlow<Boolean> = _backupBusy.asStateFlow()
+
+    /**
+     * Back up just the item on screen.
+     *
+     * Exists because the only way to back up a single item used to be a one-item selection in the
+     * grid — `BackupCoordinator.backup(media)` had no caller in the app at all — while the Viewer was
+     * already the screen that told you whether the item was backed up.
+     *
+     * The outcome is the engine's own count, reported only after it returned: a photo that was
+     * already covered says so rather than being announced as new work, and a failure says nothing at
+     * all (the control stays as it was, so the user can tap again). An escaping exception here would
+     * be an uncaught main-thread exception — the app closing on a tap.
+     */
+    fun backupCurrent() {
+        val coordinator = backupCoordinator ?: return
+        val media = (_uiState.value.item as? ViewerItem.Local)?.media ?: return
+        if (_backupBusy.value) return
+        _backupBusy.value = true
+        // Identity-guarded like the details load: a slow hash must not report an outcome onto an item
+        // the user has already swiped past.
+        val requestedSource = _uiState.value.source
+        viewModelScope.launch {
+            try {
+                val summary = coordinator.backup(media)
+                if (_uiState.value.source != requestedSource) return@launch
+                val outcome = when {
+                    summary.queued > 0 -> ViewerMessage.QueuedForBackup
+                    summary.alreadyCovered > 0 -> ViewerMessage.AlreadyBackedUp
+                    // The engine reported neither. Claim nothing rather than pick a story.
+                    else -> null
+                }
+                if (outcome != null) _message.value = outcome
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // Deliberately silent: no message and the control is unchanged, so the tap can simply
+                // be repeated. See the KDoc.
+            } finally {
+                _backupBusy.value = false
+            }
+        }
+    }
 
     /** The in-flight item load; cancelled on every navigation so a slow resolve never lands stale. */
     private var loadJob: Job? = null

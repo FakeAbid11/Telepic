@@ -27,7 +27,9 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.BrokenImage
+import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
@@ -66,6 +68,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -78,6 +81,7 @@ import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.telepic.R
 import com.telepic.data.restore.RestoreFailure
+import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.MediaDay
 import com.telepic.navigation.MediaSource
 import com.telepic.ui.components.TransientMessageBar
@@ -114,6 +118,8 @@ fun ViewerScreen(
     val details by viewModel.details.collectAsStateWithLifecycle()
     val startVideosMuted by viewModel.startVideosMuted.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val backupState by viewModel.backupState.collectAsStateWithLifecycle()
+    val backupBusy by viewModel.backupBusy.collectAsStateWithLifecycle()
     // Rotation-surviving chrome state: controls, sheets and the pending confirm dialog should not
     // reset just because the Activity was recreated.
     var controlsVisible by rememberSaveable { mutableStateOf(true) }
@@ -181,6 +187,9 @@ fun ViewerScreen(
                     // Viewer. Grids behind react on their own when the Room flag flow re-emits.
                     onToggleArchive = viewModel::toggleArchive,
                     onMoveToTrash = { showTrashConfirm = true },
+                    backupState = backupState,
+                    backupBusy = backupBusy,
+                    onBackup = viewModel::backupCurrent,
                     // Offered for cloud items as well as local ones: a cloud item's details come from
                     // its manifest entry, so there is real information to show rather than a spinner.
                     onShowDetails = if (state.status == ViewerStatus.READY) {
@@ -239,14 +248,18 @@ fun ViewerScreen(
             // and it keeps rendering unchanged — so this bar is the only thing that makes the action
             // observable. It offers Undo because Trash is not reachable from the Viewer.
             message?.let { pending ->
+                // Only the trash outcome is reversible. A backup report has nothing to undo, and
+                // offering "Undo" beside it would wire that button to `restoreFromTrash` — un-trashing
+                // an item that was never trashed.
+                val undoable = pending is ViewerMessage.MovedToTrash
                 TransientMessageBar(
                     message = stringResource(pending.messageRes),
                     onDismiss = viewModel::consumeMessage,
                     // Keyed on the item, so the countdown belongs to this item's event and does not
                     // inherit a nearly-expired one from a previous action.
                     messageId = state.source,
-                    actionLabel = stringResource(R.string.viewer_trashed_undo),
-                    onAction = viewModel::restoreFromTrash,
+                    actionLabel = if (undoable) stringResource(R.string.viewer_trashed_undo) else null,
+                    onAction = if (undoable) viewModel::restoreFromTrash else null,
                     // Clear of the bottom chrome rather than on top of it: this bar is composed
                     // after the bars, so it would otherwise cover the navigation row.
                     modifier = Modifier
@@ -548,6 +561,9 @@ private fun ViewerTopBar(
     onToggleFavorite: () -> Unit,
     onToggleArchive: () -> Unit,
     onMoveToTrash: () -> Unit,
+    backupState: MediaBackupVisualState = MediaBackupVisualState.NONE,
+    backupBusy: Boolean = false,
+    onBackup: () -> Unit = {},
     onShowDetails: (() -> Unit)? = null,
 ) {
     val spacing = TelepicTokens.spacing
@@ -617,6 +633,11 @@ private fun ViewerTopBar(
                     tint = if (flags.isFavorite) TelepicTokens.colors.favoriteAmber else Color.White,
                 )
             }
+            // The per-item backup control sits beside the favourite star, in the band that carries
+            // this item's own state, rather than behind the overflow: "is this one backed up?" is a
+            // question the user asks while looking at the photo, and a menu that has to be opened to
+            // answer it is not an answer.
+            BackupControl(state = backupState, busy = backupBusy, onBackup = onBackup)
             // Archive, trash and details sit behind one overflow control. As four separate 48dp
             // buttons they left the date column only 108dp — less than a long month name needs, so
             // the title wrapped. Favourite stays inline: it is a toggle the user reads at a glance.
@@ -665,6 +686,91 @@ private fun ViewerTopBar(
                 }
             }
         }
+    }
+}
+
+@Composable
+/**
+ * The single-item backup control, in the viewer's action band beside the favourite star.
+ *
+ * It deliberately uses the *same* glyphs and the *same* strings the grid's tile badge uses — a
+ * cloud-upload when there is work to do, a cloud-check once it is done, the `backup_state_*` wording —
+ * so "is this one backed up?" is answered identically in the viewer and in the grid instead of growing
+ * a second vocabulary. The one new thing is the success tint: green is reserved for the state the user
+ * is waiting for.
+ *
+ * Nothing here is inferred. `BACKED_UP` arrives from the queue row the worker writes only after
+ * Telegram confirmed a real remote identity, so the green check cannot appear for a photo that was
+ * merely hashed or queued. The states with nothing to do render as plain 48dp glyphs rather than
+ * disabled buttons: a control that cannot do anything is not a button, and should not be announced as
+ * one.
+ */
+@Composable
+private fun BackupControl(
+    state: MediaBackupVisualState,
+    busy: Boolean,
+    onBackup: () -> Unit,
+) {
+    val success = TelepicTokens.colors.mediaSuccessText
+    when {
+        busy || state == MediaBackupVisualState.UPLOADING -> BackupGlyph(
+            description = stringResource(R.string.backup_state_uploading),
+        ) {
+            CircularProgressIndicator(
+                color = Color.White,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        state == MediaBackupVisualState.BACKED_UP -> BackupGlyph(
+            description = stringResource(R.string.backup_state_backed_up),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.CloudDone,
+                contentDescription = null,
+                tint = success,
+            )
+        }
+        state == MediaBackupVisualState.QUEUED -> BackupGlyph(
+            description = stringResource(R.string.backup_state_queued),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.CloudUpload,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.7f),
+            )
+        }
+        else -> {
+            val failed = state == MediaBackupVisualState.FAILED || state == MediaBackupVisualState.STALLED
+            IconButton(onClick = onBackup) {
+                Icon(
+                    imageVector = Icons.Outlined.CloudUpload,
+                    // The *action*, not the state: this is the one tappable case, and after a failure
+                    // "Back up again" is what a tap does.
+                    contentDescription = stringResource(
+                        if (failed) R.string.viewer_backup_retry else R.string.photos_selection_backup,
+                    ),
+                    tint = when (state) {
+                        MediaBackupVisualState.FAILED -> TelepicTokens.colors.mediaErrorText
+                        MediaBackupVisualState.STALLED -> MaterialTheme.colorScheme.tertiary
+                        else -> Color.White
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** A 48dp slot holding a non-actionable state glyph, so the bar's rhythm does not shift with state. */
+@Composable
+private fun BackupGlyph(description: String, glyph: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        glyph()
     }
 }
 
@@ -750,6 +856,8 @@ internal val RestoreFailure.messageRes: Int
 private val ViewerMessage.messageRes: Int
     get() = when (this) {
         ViewerMessage.MovedToTrash -> R.string.viewer_trashed_message
+        ViewerMessage.QueuedForBackup -> R.string.viewer_backup_queued_message
+        ViewerMessage.AlreadyBackedUp -> R.string.viewer_backup_already_message
     }
 
 @Composable

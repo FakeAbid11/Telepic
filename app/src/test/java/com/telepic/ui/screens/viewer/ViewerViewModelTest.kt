@@ -4,10 +4,16 @@ import android.content.Context
 import android.net.Uri
 import androidx.paging.PagingData
 import androidx.test.core.app.ApplicationProvider
+import com.telepic.data.backup.BackupCoordinator
+import com.telepic.data.backup.BackupProcessSummary
+import com.telepic.data.backup.BackupRepository
+import com.telepic.data.backup.BulkBackupSummary
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.CustomAlbumRepository
 import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.media.NeighborDirection
+import com.telepic.domain.backup.BackupItem
+import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
@@ -29,6 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -572,6 +579,92 @@ class ViewerViewModelTest {
 
         // "Moved to trash" describes item 5; leaving it up over item 9 would report an outcome for
         // something the user is no longer looking at.
+        assertNull(vm.message.value)
+    }
+
+    // --- Single-item backup ----------------------------------------------------------------------
+
+    private class FakeBackupRepository : BackupRepository {
+        override fun observeQueue(): Flow<List<BackupItem>> = flowOf(emptyList())
+        override fun observeStats(): Flow<BackupQueueStats> = flowOf(BackupQueueStats())
+        override suspend fun enqueue(media: LocalMedia) = true
+        override suspend fun enqueue(media: LocalMedia, contentHash: String, contentSizeBytes: Long) = true
+        override suspend fun enqueueAll(media: List<LocalMedia>) = media.size
+        override suspend fun retry(itemId: Long) = Unit
+        override suspend fun cancel(itemId: Long) = Unit
+        override suspend fun recoverInterruptedWork() = Unit
+        override suspend fun processPendingWork(maxItems: Int) = BackupProcessSummary()
+    }
+
+    /** Returns whatever the real engine would for this item: new work, or "already covered". */
+    private class FakeCoordinator(private val summary: BulkBackupSummary) : BackupCoordinator {
+        override val repository: BackupRepository = FakeBackupRepository()
+        var requested: LocalMedia? = null
+        override suspend fun backup(media: LocalMedia): BulkBackupSummary {
+            requested = media
+            return summary
+        }
+
+        override suspend fun backupAll(media: List<LocalMedia>): BulkBackupSummary =
+            BulkBackupSummary(media.size, 0)
+
+        override suspend fun retry(itemId: Long) = Unit
+        override suspend fun cancel(itemId: Long) = Unit
+        override suspend fun syncFromPreference() = Unit
+        override suspend fun startPendingBackup() = Unit
+    }
+
+    @Test
+    fun `backing up the current item hands it to the engine and reports new work`() = runBlocking {
+        val coordinator = FakeCoordinator(BulkBackupSummary(queued = 1, alreadyCovered = 0))
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5))),
+            cloudRepository = FakeCloud(emptyList()),
+            backupCoordinator = coordinator,
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        vm.backupCurrent()
+        val message = withTimeout(5_000) { vm.message.first { it != null } }
+        assertEquals(5L, coordinator.requested?.id)
+        assertEquals(ViewerMessage.QueuedForBackup, message)
+    }
+
+    @Test
+    fun `backing up an item the engine already covers says so rather than claiming new work`() = runBlocking {
+        // `alreadyCovered` is a real outcome, not a failure: reporting it as "queued" would announce
+        // work that will never happen.
+        val coordinator = FakeCoordinator(BulkBackupSummary(queued = 0, alreadyCovered = 1))
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = FakeLookup(mapOf(5L to local(5))),
+            cloudRepository = FakeCloud(emptyList()),
+            backupCoordinator = coordinator,
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        vm.backupCurrent()
+        assertEquals(
+            ViewerMessage.AlreadyBackedUp,
+            withTimeout(5_000) { vm.message.first { it != null } },
+        )
+    }
+
+    @Test
+    fun `a cloud item has no single-item backup to offer`() = runBlocking {
+        val coordinator = FakeCoordinator(BulkBackupSummary(queued = 1, alreadyCovered = 0))
+        val vm = ViewerViewModel(
+            initialSource = MediaSource.Cloud(100, 999),
+            localLookup = FakeLookup(emptyMap()),
+            cloudRepository = FakeCloud(listOf(cloudItem(7))),
+            backupCoordinator = coordinator,
+        )
+        vm.uiState.first { it.status != ViewerStatus.LOADING }
+
+        vm.backupCurrent()
+        // A cloud item *is* the backup. Nothing is requested, so nothing is claimed either.
+        assertNull(coordinator.requested)
         assertNull(vm.message.value)
     }
 }
