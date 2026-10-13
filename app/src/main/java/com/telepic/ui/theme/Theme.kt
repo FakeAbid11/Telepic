@@ -1,12 +1,18 @@
 package com.telepic.ui.theme
 
+import android.provider.Settings
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * Extended Telepic color tokens that sit on top of the Material 3 [ColorScheme].
@@ -74,6 +80,23 @@ private val LightExtended = TelepicExtendedColors(
 val LocalTelepicColors = staticCompositionLocalOf { DarkExtended }
 
 /**
+ * Whether the device has been told to reduce motion (`Settings > Accessibility > Remove animations`,
+ * i.e. `ANIMATOR_DURATION_SCALE == 0`). Compose does not consult it on its own, so every decorative
+ * transition in the app keeps running for those users.
+ *
+ * Adopted where the motion is purely cosmetic (the date rail's fade and thumb glide) rather than
+ * everywhere at once: a transition that carries information — the scrubber following the finger, the
+ * backup badge changing — should still transition, and each site has to be judged. [telepicMotionSpec]
+ * is the seam for that judgement.
+ */
+val LocalReduceMotion = staticCompositionLocalOf { false }
+
+/** The spec a decorative animation should use: none at all when the user asked for less motion. */
+@Composable
+fun <T : Any> telepicMotionSpec(): AnimationSpec<T> =
+    if (LocalReduceMotion.current) snap() else spring()
+
+/**
  * Root of the Telepic design system.
  *
  * Wraps [MaterialTheme] and additionally provides the centralized spacing and extended
@@ -87,10 +110,23 @@ fun TelepicTheme(
 ) {
     val colorScheme = if (darkTheme) TelepicDarkColorScheme else TelepicLightColorScheme
     val extended = if (darkTheme) DarkExtended else LightExtended
+    // Read once per theme pass, not per animated value. `null` on a ROM that will not answer simply
+    // means "animate normally", which is the safe direction for a cosmetic switch.
+    val context = LocalContext.current
+    val reduceMotion = remember {
+        runCatching {
+            Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) == 0f
+        }.getOrDefault(false)
+    }
 
     CompositionLocalProvider(
         LocalSpacing provides TelepicSpacing(),
         LocalTelepicColors provides extended,
+        LocalReduceMotion provides reduceMotion,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

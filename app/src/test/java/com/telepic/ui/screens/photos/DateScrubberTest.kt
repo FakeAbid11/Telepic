@@ -81,6 +81,36 @@ class DateScrubberTest {
         assertEquals(0f, trackFraction(0, 0), 1e-6f)
     }
 
+    // ---- The pill's own geometry, which must read the track the same way the labels do. ----
+
+    @Test
+    fun `the pill reaches the bottom of the rail at the end of the library`() {
+        // It used to be clamped to `1f - heightFraction` of the *travel*, so on a 101-item library
+        // showing 20 tiles the pill stopped at 0.802 and never arrived at the last day's label.
+        assertEquals(1f, thumbGeometry(topIndex = 100, totalItems = 101, visibleItems = 20).first, 1e-6f)
+    }
+
+    @Test
+    fun `the pill's fraction is the fraction its own label is drawn at`() {
+        listOf(0, 1, 25, 100).forEach { index ->
+            assertEquals(
+                "item $index: the pill and the section label must sit at one position",
+                trackFraction(index, 101),
+                thumbGeometry(index, 101, 20).first,
+                1e-6f,
+            )
+        }
+    }
+
+    @Test
+    fun `the pill's height tracks how much of the library is on screen`() {
+        assertEquals(20f / 101f, thumbGeometry(0, 101, 20).second, 1e-6f)
+        // A whole-library view is a pill that fills the rail; a near-empty grid falls back to a stub.
+        assertEquals(1f, thumbGeometry(0, 10, 40).second, 1e-6f)
+        assertEquals(0.06f, thumbGeometry(0, 10_000, 5).second, 1e-6f)
+        assertEquals(0f to 0.1f, thumbGeometry(0, 0, 0))
+    }
+
     @Test
     fun `the pill spans the travel and never runs past it`() {
         assertEquals(0f, thumbTopPx(0f, trackHeightPx = 1000f, thumbHeightPx = 200f), 1e-6f)

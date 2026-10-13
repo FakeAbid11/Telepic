@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.telepic.R
 import com.telepic.ui.theme.TelepicTokens
+import com.telepic.ui.theme.telepicMotionSpec
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -93,6 +94,23 @@ internal fun chooseSections(
     if (months.size <= maxSections) return months to SectionGranularity.Month
     val years = yearSections(anchors)
     return if (years.isEmpty()) null else years to SectionGranularity.Year
+}
+
+/**
+ * The pill's `topFraction to heightFraction` for a grid whose first visible item is [topIndex] of
+ * [totalItems], with [visibleItems] cells on screen.
+ *
+ * Both halves come out of the *one* mapping the labels and the bubble use ([trackFraction]). The
+ * derived state used to divide the top index by `totalItemsCount` while labels divided by
+ * `count - 1`, and then clamped the result to `1f - heightFraction` — a fraction of the *track*
+ * applied where the pill is positioned by a fraction of the *travel*. Two consequences: the pill
+ * drifted away from its own label as a timeline got long, and at the very end of a deep library it
+ * stopped roughly a pill-height short of the bottom of the rail, however far the user scrolled.
+ */
+internal fun thumbGeometry(topIndex: Int, totalItems: Int, visibleItems: Int): Pair<Float, Float> {
+    if (totalItems <= 0 || visibleItems <= 0) return 0f to 0.1f
+    val heightFraction = (visibleItems.toFloat() / totalItems).coerceIn(0.06f, 1f)
+    return trackFraction(topIndex, totalItems) to heightFraction
 }
 
 /** Map a 0..1 track fraction (newest at the top) to a grid item index to scrub to. */
@@ -212,6 +230,7 @@ internal fun DateScrubber(
     }
     val overlayAlpha by animateFloatAsState(
         targetValue = if (resting) 1f else 0f,
+        animationSpec = telepicMotionSpec(),
         label = "scrubberAlpha",
     )
 
@@ -219,14 +238,12 @@ internal fun DateScrubber(
     var trackHeightPx by remember { mutableStateOf(1f) }
     val thumb by remember {
         derivedStateOf {
-            val info = gridState.layoutInfo
-            val total = info.totalItemsCount
-            val visible = info.visibleItemsInfo
-            if (total <= 0 || visible.isEmpty()) return@derivedStateOf 0f to 0.1f
-            val heightFraction = (visible.size.toFloat() / total).coerceIn(0.06f, 1f)
-            val topIndex = visible.first().index
-            val topFraction = (topIndex.toFloat() / total).coerceIn(0f, 1f - heightFraction)
-            topFraction to heightFraction
+            val visible = gridState.layoutInfo.visibleItemsInfo
+            thumbGeometry(
+                topIndex = visible.firstOrNull()?.index ?: 0,
+                totalItems = gridState.layoutInfo.totalItemsCount,
+                visibleItems = visible.size,
+            )
         }
     }
 
@@ -260,6 +277,7 @@ internal fun DateScrubber(
 
     val thumbWidth by animateDpAsState(
         targetValue = if (dragging) THUMB_WIDTH_DRAGGING else THUMB_WIDTH,
+        animationSpec = telepicMotionSpec(),
         label = "scrubThumbWidth",
     )
     val thumbColor by animateColorAsState(
@@ -375,6 +393,7 @@ internal fun DateScrubber(
         // ---- The date bubble: only while dragging, riding the thumb. ----
         val bubbleAlpha by animateFloatAsState(
             targetValue = if (dragging) 1f else 0f,
+            animationSpec = telepicMotionSpec(),
             label = "scrubBubbleAlpha",
         )
         if (bubbleAlpha > 0.01f) {
