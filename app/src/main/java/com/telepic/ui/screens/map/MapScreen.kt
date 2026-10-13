@@ -233,18 +233,31 @@ private fun OsmMap(
     var pendingCamera by remember { mutableStateOf<MapCameraResolver.Decision?>(null) }
     var selected by remember { mutableStateOf<MapClusterer.MapPin.Single?>(null) }
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+    // Created once per surface and detached with the surface: osmdroid keeps every listener added to a
+    // MapView, and the anonymous one the factory used to add survived the screen — still writing
+    // Compose state from a map that had already left the composition.
+    val zoomListener = remember {
+        object : MapListener {
+            override fun onScroll(event: ScrollEvent): Boolean = false
+            override fun onZoom(event: ZoomEvent): Boolean {
+                val next = MapZoomPrecision.forZoom(event.zoomLevel)
+                if (next != precision) precision = next
+                return false
+            }
+        }
+    }
     // The badge draws its count onto a `primary` fill, so the count must use `onPrimary`: in the
     // dark scheme `primary` is a light blue, and white on it measured 2.33:1 (unreadable).
     val clusterFill = MaterialTheme.colorScheme.primary.toArgb()
     val clusterCountColor = MaterialTheme.colorScheme.onPrimary.toArgb()
 
     // Persist where the map was left. Written on pause *and* on teardown: leaving the map for another
-    // tab disposes it without a pause, and that final position is the one worth remembering.
-    val captureCamera: () -> Unit = {
-        mapViewRef?.let { view ->
-            view.mapCenter?.let { center ->
-                onCameraChanged(SavedCamera(center.latitude, center.longitude, view.zoomLevelDouble))
-            }
+    // tab disposes it without a pause, and that final position is the one worth remembering. Takes the
+    // view rather than reading `mapViewRef`, because `onRelease` clears that reference — a capture that
+    // raced it used to be a silent no-op, losing exactly the position this exists to save.
+    val captureCamera: (MapView) -> Unit = { view ->
+        view.mapCenter?.let { center ->
+            onCameraChanged(SavedCamera(center.latitude, center.longitude, view.zoomLevelDouble))
         }
     }
 
@@ -255,19 +268,15 @@ private fun OsmMap(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> mapViewRef?.onResume()
-                Lifecycle.Event.ON_PAUSE -> {
-                    captureCamera()
-                    mapViewRef?.onPause()
+                Lifecycle.Event.ON_PAUSE -> mapViewRef?.let { view ->
+                    captureCamera(view)
+                    view.onPause()
                 }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            captureCamera()
-            mapViewRef?.onPause()
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Box(modifier = modifier.fillMaxWidth()) {
@@ -286,15 +295,7 @@ private fun OsmMap(
                     setMultiTouchControls(true)
                     controller.setZoom(2.0)
                     setExpectedCenter(GeoPoint(20.0, 0.0))
-                    addMapListener(object : MapListener {
-                        // osmdroid 6.1's listener is callback-per-event-type; only zoom changes the grid.
-                        override fun onScroll(event: ScrollEvent): Boolean = false
-                        override fun onZoom(event: ZoomEvent): Boolean {
-                            val next = MapZoomPrecision.forZoom(event.zoomLevel)
-                            if (next != precision) precision = next
-                            return false
-                        }
-                    })
+                    addMapListener(zoomListener)
                     mapViewRef = this
                 }
             },
@@ -371,6 +372,11 @@ private fun OsmMap(
                 mapView.invalidate()
             },
             onRelease = { mapView ->
+                // The last real chance to save where the user left the map — and the only place the view
+                // is guaranteed still to be in hand, which is why this does not read `mapViewRef`.
+                captureCamera(mapView)
+                mapView.removeMapListener(zoomListener)
+                mapView.onPause()
                 mapView.onDetach()
                 mapViewRef = null
             },
