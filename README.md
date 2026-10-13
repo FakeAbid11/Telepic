@@ -47,7 +47,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - Folder albums built from real MediaStore buckets (newest item as cover, real counts, provider bucket names), shown in the same grid under **Device folders**.
 - Album contents reuse the exact Photos pipeline, so an album behaves identically to the timeline.
 - Favorites, Archive, and Trash per item — independent of backup state, with undo.
-- Permanent delete goes through the Android-sanctioned system consent dialog (`MediaStore.createDeleteRequest`, API 30+).
+- Permanent delete goes through the Android-sanctioned system consent dialog (`MediaStore.createDeleteRequest`, API 29+).
 
 **Map**
 - Interactive OpenStreetMap view (osmdroid, no API key) with marker clustering.
@@ -412,7 +412,7 @@ A chronological log of what each phase built. Two status labels are used:
 - **Email sign-in is a real path, not a dead end.** `WaitEmailAddress` renders an email field and `WaitEmailCode` a code field with a resend action, so an email-registered account can finish signing in. Both previously fell through to the `Initializing` spinner — a screen with no input and no button, and therefore no way forward. A rejected address or code keeps its field and shows the reason inline, and a **late or duplicated reply is dropped rather than re-opening the input**, so a session that has already signed in cannot be dragged back.
 - **`WaitPremiumPurchase` says so honestly.** TDLib can gate a login behind a Telegram Premium purchase; Telepic has no store front, so instead of spinning forever it states that the purchase must be completed in the official Telegram app and offers the support contact TDLib supplied.
 - **Non-blocking startup**: TDLib initializes without ever delaying or crashing the local Photos flow
-- **No sensitive data in logs**: the API hash, phone number, authentication code, 2FA password, and the encryption key cannot leak through logs. (The app performs no logging at all today — a structured logging layer is planned.)
+- **No sensitive data in logs**: the API hash, phone number, authentication code, 2FA password, and the encryption key cannot leak through logs. Everything the app logs goes through one seam (`diagnostics/TelepicLog`), which documents those values as forbidden and names only the subsystem that degraded.
 
 ### Phase 5 — Telegram Cloud *(code complete; live cloud calls pending device validation)*
 
@@ -503,7 +503,7 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 - Durable per-item state in a new `media_organization` Room table (explicit migration 3 → 4), keyed by the MediaStore id — **independent of backup state** (favoriting/archiving/trashing never touches the queue, remote identity, or cloud status; unit-tested).
 - **Favorite** stays visible in the library; **Archive** is removed from the primary timeline via **DB-side** filtering (`_ID NOT IN (...)` in the MediaStore and album-bucket queries) but is stored and restorable; **Trash** is hidden from normal browsing until recovered or permanently deleted.
 - Viewer favorite/archive/trash actions, plus contextual Favorites / Archive / Trash collections reached from Albums (no new bottom-navigation destinations), with undo (unfavorite / unarchive / restore).
-- **Permanent delete** goes through the Android-sanctioned **`MediaStore.createDeleteRequest`** system consent (API 30+), is confirmation-gated, and only forgets an item after a consented success. The app-level trash flag is kept **distinct** from an actual file removal (`deletedFromStore`), and the legacy per-file consent (API 26–29) is documented as unsupported rather than faked. Repository persistence, migration, timeline hidden-id computation, and the collection ViewModel are CI-tested; the **system delete consent is device-only and NOT TESTED**.
+- **Permanent delete** goes through the Android-sanctioned **`MediaStore.createDeleteRequest`** system consent (API 29+), is confirmation-gated, and only forgets an item after a consented success. The app-level trash flag is kept **distinct** from an actual file removal (`deletedFromStore`), and the legacy per-file consent path (API 26–28) is documented as unsupported rather than faked. Repository persistence, migration, timeline hidden-id computation, and the collection ViewModel are CI-tested; the **system delete consent is device-only and NOT TESTED**.
 
 **Part D — Restore / download original to device**
 
@@ -523,7 +523,7 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 - **App lock re-locks on a grace window, not instantly.** Returning to the foreground within 30 seconds does not re-prompt, because launching a system activity (the photo picker, the delete-consent dialog, the Telegram link) stops this activity and an instant re-lock would interrupt the user's own flow. It locks on cold start and after longer background trips; see `AppLockTimer` for the exact rule.
 - **Hiding videos or GIFs does not change what gets backed up.** The Media preferences filter the library *views* only; backup eligibility stays governed by the backup preference. The folder picker therefore lists folders by what a backup would take, not by what the timeline happens to show.
 - **No instrumented tests.** All tests are JVM/Robolectric; there is no `app/src/androidTest` source set, so nothing device-bound is covered by automated tests.
-- **No logging.** The app performs no logging at all today, which makes field diagnosis of a device-gated failure difficult. Structured logging is planned.
+- **Logging is minimal.** One seam exists (`diagnostics/TelepicLog`), and it is wired only at the fallbacks that used to be invisible — an aborted backup pass, a denied foreground notification, a swallowed TDLib request failure, a refused MediaStore delete. There is no analytics, no crash reporting, and no log of the happy path, so a device-gated failure is still easier to reproduce than to diagnose from the outside.
 - **No offline map tiles.** The map requires connectivity.
 - **`SELECT_FOLDER` is keyed to MediaStore buckets.** A folder *is* a bucket, and the bucket id is derived from the folder's path — so a folder renamed or moved outside the app drops out of the selection and has to be picked again. Only folders that currently hold photos or videos are offered (an empty folder produces no bucket), and on Android 9 and below there is no `RELATIVE_PATH`, so two folders sharing a name cannot be told apart in the picker there.
 - **Restored images are not byte-for-byte identical** to the source, because Telegram may recompress photos; only the *restored* bytes are hashed.
