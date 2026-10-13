@@ -182,7 +182,8 @@ class AlbumContentsViewModelTest {
 
     @Test
     fun `long-press begins selection and selects that item`() = runTest {
-        val vm = viewModel(RecordingCoordinator())        assertTrue(vm.selectedItems.value.isEmpty())
+        val vm = viewModel(RecordingCoordinator())
+        assertTrue(vm.selectedItems.value.isEmpty())
         vm.beginSelection(photo(1))
         assertEquals(setOf(1L), vm.selectedItems.value.keys)
     }
