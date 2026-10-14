@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -71,6 +72,7 @@ fun CloudScreen(
     onOpenMedia: (CloudMedia) -> Unit,
     modifier: Modifier = Modifier,
     onOpenSettings: () -> Unit = {},
+    onConnectTelegram: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val previews by viewModel.previews.collectAsStateWithLifecycle()
@@ -122,6 +124,7 @@ fun CloudScreen(
                     onRetry = viewModel::refresh,
                     onConfirmDestination = viewModel::confirmDestination,
                     onDeclineDestination = viewModel::createNewDestination,
+                    onConnectTelegram = onConnectTelegram,
                 )
             }
         }
@@ -159,6 +162,7 @@ private fun CloudContent(
     onRetry: () -> Unit,
     onConfirmDestination: () -> Unit = {},
     onDeclineDestination: () -> Unit = {},
+    onConnectTelegram: () -> Unit = {},
 ) {
     // Read the status once: the branches below smart-cast this local instead of re-reading
     // `uiState.status` and casting (a re-read could observe a different value than the check did).
@@ -169,6 +173,10 @@ private fun CloudContent(
             icon = Icons.Outlined.Lock,
             title = stringResource(R.string.cloud_notconnected_title),
             description = stringResource(R.string.cloud_notconnected_body),
+            // The one status branch that used to offer nothing. Being told you are disconnected with
+            // no way to connect is a dead end; this is the only screen where the user is *looking*
+            // at the cloud, so it is the natural place to offer the fix.
+            primaryAction = StateAction(stringResource(R.string.cloud_connect_action), onConnectTelegram),
         )
         CloudStatus.Offline -> EmptyState(
             icon = Icons.Outlined.CloudOff,
@@ -283,7 +291,7 @@ private fun CloudTile(
                 contentDescription = tileLabel
                 statusLabel?.let { stateDescription = it }
             }
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
     ) {
         when (previewState) {
             is CloudPreviewState.Loaded -> AsyncImage(

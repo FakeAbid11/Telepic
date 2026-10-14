@@ -4,8 +4,10 @@ import android.text.format.Formatter
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -41,6 +43,7 @@ import com.telepic.settings.BackupNetworkPreference
 import com.telepic.settings.ThemeMode
 import com.telepic.telegram.TelegramAuthState
 import com.telepic.ui.components.ScreenHeader
+import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.onboarding.components.FolderPickerDialog
 import com.telepic.ui.theme.TelepicTokens
 
@@ -102,6 +105,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     onOpenBackupCenter: () -> Unit = {},
     onOpenTrash: () -> Unit = {},
+    onOpenTelegramLogin: () -> Unit = {},
     onBack: (() -> Unit)? = null,
 ) {
     val spacing = TelepicTokens.spacing
@@ -124,6 +128,7 @@ fun SettingsScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val foldersLoaded by viewModel.foldersLoaded.collectAsStateWithLifecycle()
     val storage by viewModel.storageSummary.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
     val cloudStatus by viewModel.cloudStatus.collectAsStateWithLifecycle()
     val channelTitle by viewModel.backupChannelTitle.collectAsStateWithLifecycle()
     val networkPreference by viewModel.backupNetworkPreference.collectAsStateWithLifecycle()
@@ -205,10 +210,15 @@ fun SettingsScreen(
                 )
 
                 SettingsSection(title = stringResource(R.string.settings_section_account)) {
-                    // Info row: enabled (not dimmed) with no onClick — a real state read, not a stub.
+                    // Disconnected, this row is the app's only way to sign in: Telegram is optional in
+                    // onboarding, so a user who tapped "Set up later" had no path back to it — Settings
+                    // offered sign-out and nothing else. Connected, it is a plain state read.
+                    val telegramAuthorized = authState is TelegramAuthState.Authorized
                     SettingsRow(
                         title = stringResource(R.string.settings_account_telegram),
                         summary = accountSummary,
+                        enabled = !telegramAuthorized,
+                        onClick = if (telegramAuthorized) null else onOpenTelegramLogin,
                     )
                     SettingsRow(
                         title = stringResource(R.string.settings_account_connection),
@@ -394,7 +404,17 @@ fun SettingsScreen(
                 }
 
                 // Bottom breathing room so the last row clears the navigation bar.
-                Column(modifier = Modifier.padding(bottom = spacing.xl)) {}
+                Spacer(modifier = Modifier.height(spacing.xl))
+            }
+
+            // Transient feedback for the cache actions — their only other visible trace is a size
+            // that may not have changed, so a silent outcome looked identical to a successful no-op.
+            message?.let {
+                TransientMessageBar(
+                    message = stringResource(it.textRes()),
+                    onDismiss = viewModel::consumeMessage,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         }
     }
@@ -480,13 +500,18 @@ fun SettingsScreen(
     }
 }
 
+/** Wording lives with the screen, not the ViewModel. */
+private fun SettingsMessage.textRes(): Int = when (this) {
+    SettingsMessage.CacheCleared -> R.string.settings_cache_cleared
+    SettingsMessage.ActionFailed -> R.string.settings_action_failed
+}
+
 @Composable
 private fun BackupPreferenceDialog(
     current: BackupPreference?,
     onSelect: (BackupPreference) -> Unit,
     onDismiss: () -> Unit,
-) {
-    AlertDialog(
+) {    AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_backup_preferences_dialog_title)) },
         text = {

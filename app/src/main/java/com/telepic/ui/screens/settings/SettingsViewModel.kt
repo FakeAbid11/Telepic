@@ -8,6 +8,7 @@ import coil.imageLoader
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.AlbumRepository
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.media.Album
@@ -37,6 +38,20 @@ data class StorageSummary(
     val loaded: Boolean = false,
 ) {
     val totalBytes: Long get() = tdlibBytes + stagingBytes
+}
+
+/**
+ * A transient outcome Settings must report. Types, never magic strings — the screen owns the wording.
+ *
+ * It exists for the cache actions: their only other visible trace is a size that may not have
+ * changed, so a tap that failed (or did nothing) was indistinguishable from one that worked.
+ */
+sealed interface SettingsMessage {
+    /** A cache was cleared successfully. */
+    data object CacheCleared : SettingsMessage
+
+    /** An action did not complete. */
+    data object ActionFailed : SettingsMessage
 }
 
 /**
@@ -279,6 +294,14 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val _storageSummary = MutableStateFlow(StorageSummary())
     val storageSummary: StateFlow<StorageSummary> = _storageSummary.asStateFlow()
 
+    /** Transient feedback for the actions whose only other trace is an unchanged size. */
+    private val _message = MutableStateFlow<SettingsMessage?>(null)
+    val message: StateFlow<SettingsMessage?> = _message.asStateFlow()
+
+    fun consumeMessage() {
+        _message.value = null
+    }
+
     // Deliberately declared *after* [tdlibDir], [stagingDir] and [_storageSummary]: an `init` block
     // runs in declaration order, so calling refreshStorage() from above them read uninitialized
     // properties. The resulting NPE was then swallowed by [persist], leaving the storage rows stuck at
@@ -305,9 +328,12 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
      * Empties only the staging cache — transient upload copies that the engine recreates on demand.
      * The TDLib session/cache is never touched from here: deleting it could orphan the encrypted
      * database, and that is sign-out's (not this button's) semantic.
+     *
+     * Reported, not silent: clearing the image cache in particular has no other visible effect, so a
+     * tap that failed (or simply did nothing) was indistinguishable from one that worked.
      */
     fun clearBackupCache() {
-        persist {
+        persistReported(SettingsMessage.CacheCleared) {
             withContext(ioDispatcher) {
                 stagingDir.listFiles()?.forEach { child -> child.deleteRecursively() }
             }
@@ -321,7 +347,7 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
      * TDLib session and the backup staging copies are owned elsewhere and are not this row's business.
      */
     fun clearImageCache() {
-        persist {
+        persistReported(SettingsMessage.CacheCleared) {
             withContext(ioDispatcher) {
                 val loader = appContext.imageLoader
                 loader.memoryCache?.clear()
@@ -367,6 +393,25 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
                 throw cancellation
             } catch (_: Throwable) {
                 // Deliberately silent: the observed preference flow is the honest report.
+            }
+        }
+    }
+
+    /**
+     * Like [persist], but the outcome is reported to the user. Used by the cache actions, whose only
+     * other trace is a size that may not have changed — so a silent failure looked identical to a
+     * successful no-op.
+     */
+    private fun persistReported(success: SettingsMessage, action: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                action()
+                _message.value = success
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("SettingsViewModel", "cache action failed", throwable)
+                _message.value = SettingsMessage.ActionFailed
             }
         }
     }

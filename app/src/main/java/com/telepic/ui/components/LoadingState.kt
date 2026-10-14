@@ -39,17 +39,16 @@ fun LoadingState(
         ) {
             CircularProgressIndicator(
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.semantics {
-                    contentDescription = message ?: fallbackDescription
-                },
+                // Decorative. It used to carry the message as its own contentDescription *and* have a
+                // sibling Text rendering the same words, so a screen reader read the loading state
+                // twice. The label below is the single announcement.
+                modifier = Modifier.semantics { contentDescription = null },
             )
-            if (message != null) {
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                text = message ?: fallbackDescription,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

@@ -40,6 +40,7 @@ fun ReadyStep(
     telegramState: TelegramAuthState,
     backupPreference: BackupPreference?,
     modifier: Modifier = Modifier,
+    setupFailed: Boolean = false,
 ) {
     val spacing = TelepicTokens.spacing
     Column(
@@ -92,6 +93,17 @@ fun ReadyStep(
             else -> R.string.onboarding_ready_value_backup_none
         }
         SummaryRow(R.string.onboarding_ready_backup, backupValueRes, backupConfigured)
+
+        // A failed persist used to be invisible on this last step: tapping "Start using Telepic" did
+        // nothing, the flow never advanced, and there was no explanation — the exact case step 4
+        // already reports. Same copy, same rule: never leave a dead button unexplained.
+        if (setupFailed) {
+            Text(
+                text = stringResource(R.string.onboarding_backup_setup_failed),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 }
 

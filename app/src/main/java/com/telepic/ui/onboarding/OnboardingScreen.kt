@@ -193,7 +193,13 @@ fun OnboardingScreen(
                         onNeedFolders = onNeedFolders,
                         onPickFolders = onPickFolders,
                     )
-                    5 -> ReadyStep(permission.state, telegramState, backupPreference)
+                    5 -> ReadyStep(
+                        permissionState = permission.state,
+                        telegramState = telegramState,
+                        backupPreference = backupPreference,
+                        // The completion write can fail too, and this is the screen whose button it is.
+                        setupFailed = backupSetupFailed,
+                    )
                 }
             }
         },

@@ -9,14 +9,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -29,6 +32,8 @@ import com.telepic.R
 import com.telepic.di.AppContainer
 import com.telepic.settings.ThemeMode
 import com.telepic.ui.components.ProvideSharedElementScopes
+import com.telepic.ui.components.ScreenHeader
+import com.telepic.ui.onboarding.steps.TelegramStep
 import com.telepic.ui.screens.albums.AlbumContentsScreen
 import com.telepic.ui.screens.albums.AlbumContentsViewModel
 import com.telepic.ui.screens.albums.AlbumsScreen
@@ -137,6 +142,7 @@ private fun TelepicNavGraph(
                 viewModel = cloudViewModel,
                 onOpenMedia = { media -> navController.navigate(ViewerRoute.cloud(media.chatId, media.messageId)) },
                 onOpenSettings = { navController.navigateToSettings() },
+                onConnectTelegram = { navController.navigate(TelegramLoginRoute.ROUTE) },
             )
         }
         composable(TelepicDestination.Albums.route) {
@@ -317,9 +323,30 @@ private fun TelepicNavGraph(
                 onThemeModeChange = onThemeModeChange,
                 onOpenBackupCenter = { navController.navigate(BackupCenterRoute.ROUTE) },
                 onOpenTrash = { navController.navigate(OrganizationRoute.create(OrganizationKind.TRASH)) },
+                onOpenTelegramLogin = { navController.navigate(TelegramLoginRoute.ROUTE) },
                 // Settings is not a tab, so it needs its own way out; system Back still works too.
                 onBack = { navController.popBackStack() },
             )
+        }
+        composable(TelegramLoginRoute.ROUTE) {
+            // Telegram is optional in onboarding, so this is the only way to connect afterwards.
+            // It hosts the same TelegramStep the onboarding flow uses — one implementation, one
+            // state machine, so the two paths cannot disagree about what "connected" means.
+            val authState by container.telegramAuthController.state.collectAsStateWithLifecycle()
+            Surface(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    ScreenHeader(
+                        title = stringResource(R.string.onboarding_telegram_title),
+                        onBack = { navController.popBackStack() },
+                    )
+                    TelegramStep(
+                        controller = container.telegramAuthController,
+                        state = authState,
+                        onContinue = { navController.popBackStack() },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
         composable(BackupCenterRoute.ROUTE) {
             val backupFactory = remember(container) {

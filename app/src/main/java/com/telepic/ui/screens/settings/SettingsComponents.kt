@@ -78,7 +78,9 @@ fun SettingsRow(
     } else {
         modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = action)
+            // Role.Button: without it a screen reader announces the row as plain text and gives no
+            // hint that it is actionable (the toggle row below correctly passes Role.Switch).
+            .clickable(enabled = enabled, role = Role.Button, onClick = action)
     }
     ListItem(
         headlineContent = { Text(title, color = contentColor) },

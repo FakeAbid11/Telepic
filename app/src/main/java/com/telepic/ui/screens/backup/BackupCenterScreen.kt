@@ -36,8 +36,10 @@ import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.BackupState
 import com.telepic.ui.components.EmptyState
+import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.ListSkeleton
 import com.telepic.ui.components.ScreenHeader
+import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.theme.TelepicTokens
 
 /**
@@ -52,6 +54,7 @@ fun BackupCenterScreen(
     onBack: (() -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
     val spacing = TelepicTokens.spacing
 
     // The scheme's own background rather than `mediaBackdrop` — deliberately. `mediaBackdrop` is the
@@ -72,14 +75,25 @@ fun BackupCenterScreen(
             ) {
                 ScreenHeader(title = stringResource(R.string.backup_center_title), onBack = onBack)
 
-            // Not read yet: say so, rather than claiming the queue is empty. A local Room read is
-            // quick so this is brief, but the alternative was asserting "no backups yet" over a queue
-            // that already had rows in it. A row skeleton rather than a spinner, matching the media
-            // grids: it reserves the shape of what is coming.
-            if (!state.isLoaded) {
-                ListSkeleton(modifier = Modifier.weight(1f))
-                return@Column
-            }
+                // Not read yet: say so, rather than claiming the queue is empty. A local Room read is
+                // quick so this is brief, but the alternative was asserting "no backups yet" over a
+                // queue that already had rows in it. A row skeleton rather than a spinner, matching
+                // the media grids: it reserves the shape of what is coming.
+                if (!state.isLoaded) {
+                    ListSkeleton(modifier = Modifier.weight(1f))
+                    return@Column
+                }
+
+                // A read that *failed* is not a read in progress: without this the screen sat on the
+                // skeleton forever, indistinguishable from a hang, with no message and no way out.
+                if (state.loadFailed) {
+                    ErrorState(
+                        title = stringResource(R.string.backup_center_error_title),
+                        explanation = stringResource(R.string.backup_center_error_body),
+                        onRetry = viewModel::retryLoad,
+                    )
+                    return@Column
+                }
 
                 if (state.isEmpty) {
                     EmptyState(
@@ -134,8 +148,23 @@ fun BackupCenterScreen(
                     }
                 }
             }
+
+            // A failed action is reported rather than left to look like a missed tap. It overlays the
+            // list at the bottom, matching every other screen's transient feedback.
+            message?.let {
+                TransientMessageBar(
+                    message = stringResource(it.textRes()),
+                    onDismiss = viewModel::consumeMessage,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
         }
     }
+}
+
+/** Wording lives with the screen, not the ViewModel. */
+private fun BackupMessage.textRes(): Int = when (this) {
+    BackupMessage.ActionFailed -> R.string.backup_action_failed
 }
 
 private fun statusLineRes(state: BackupUiState): Int = when {
