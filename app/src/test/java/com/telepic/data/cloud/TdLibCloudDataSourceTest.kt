@@ -20,12 +20,23 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Drives the real [TdLibCloudDataSource] through a fake [TdLibClientGateway]: it verifies that the
  * correct TDLib requests are issued and their responses mapped. This is a JVM unit test with a fake
  * transport — NOT a live Telegram integration test (that is device-gated).
+ *
+ * Robolectric rather than a bare JVM test, and for one specific reason: the download path logs a
+ * swallowed failure through `TelepicLog`, which reaches `android.util.Log`. Without a runner that
+ * shadows the framework, that stub throws, so a test asserting an honest `null` would fail on the
+ * logging line rather than on the behaviour it is checking. `TelegramSessionManagerTest` and
+ * `TelegramCloudRepositoryTest` carry the runner for the same reason.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class TdLibCloudDataSourceTest {
 
     private val authorized = MutableStateFlow<TelegramAuthState>(
