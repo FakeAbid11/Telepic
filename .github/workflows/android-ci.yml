@@ -125,10 +125,13 @@ jobs:
   # rather than assumed.
   #
   # Manual only, deliberately. The project is in its testing phase: the debug APK is what gets
-  # installed, so compiling R8 plus a full AAB on every push spends minutes on an artifact nobody
-  # consumes — and it was the slower half of the run. Nothing is lost by deferring it, because the
-  # check is one click away (Actions -> Android CI -> Run workflow), and it should be run before any
-  # release attempt. Re-enable it on push (`on: push` above) once a shippable build is the goal again.
+  # installed, so this job spent 76-289 seconds of runner time on every push building an AAB nobody
+  # consumes. It ran in parallel with the build job, so it did not always extend the wall clock — the
+  # cost was runner minutes, not latency — but it was pure waste either way while testing.
+  #
+  # Nothing is lost by deferring it: the check is one click away (Actions -> Android CI -> Run
+  # workflow, or `gh workflow run "Android CI"`), and it should be run before any release attempt.
+  # Re-enable it on push by deleting the `if:` below once a shippable build is the goal again.
   release-smoke:
     name: Release build (R8 & resource shrinking)
     if: github.event_name == 'workflow_dispatch'
