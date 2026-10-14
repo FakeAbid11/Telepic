@@ -42,6 +42,13 @@ data class TelepicSpacing(
      * Center) use this; see the note on `mediaBackdrop` in `TelepicExtendedColors`.
      */
     val contentMaxWidth: Dp = 640.dp,
+    /**
+     * Tallest a scrollable dialog body may grow before it starts scrolling.
+     *
+     * Shared by the album picker and the licence list, which had the same `heightIn(max = 400.dp)`
+     * written out separately — the kind of duplication that drifts the moment one of them is tuned.
+     */
+    val dialogMaxHeight: Dp = 400.dp,
 ) {
     /**
      * Height of one of the Viewer's chrome bars — the bar's own vertical padding plus its 48dp

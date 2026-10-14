@@ -57,6 +57,7 @@ fun PermissionsStep(
     notificationState: NotificationPermissionState,
     onRequestNotifications: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenNotificationSettings: () -> Unit = {},
 ) {
     val spacing = TelepicTokens.spacing
     Column(
@@ -124,6 +125,7 @@ fun PermissionsStep(
             NotificationSection(
                 state = notificationState,
                 onRequest = onRequestNotifications,
+                onOpenSettings = onOpenNotificationSettings,
             )
         }
     }
@@ -137,6 +139,7 @@ fun PermissionsStep(
 private fun NotificationSection(
     state: NotificationPermissionState,
     onRequest: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val spacing = TelepicTokens.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -152,21 +155,34 @@ private fun NotificationSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         val granted = state == NotificationPermissionState.Granted
+        val blocked = state == NotificationPermissionState.PermanentlyDenied
         StateCard(
             icon = if (granted) Icons.Filled.CheckCircle else Icons.Filled.Info,
-            titleRes = if (granted) {
-                R.string.onboarding_notifications_granted
-            } else {
-                R.string.onboarding_notifications_denied
+            titleRes = when {
+                granted -> R.string.onboarding_notifications_granted
+                blocked -> R.string.onboarding_notifications_blocked
+                else -> R.string.onboarding_notifications_denied
             },
-            bodyRes = if (granted) {
-                R.string.onboarding_notifications_granted_body
-            } else {
-                R.string.onboarding_notifications_denied_body
+            bodyRes = when {
+                granted -> R.string.onboarding_notifications_granted_body
+                blocked -> R.string.onboarding_notifications_blocked_body
+                else -> R.string.onboarding_notifications_denied_body
             },
-            // Only Denied can still produce a dialog. Once granted there is nothing to ask for, so
-            // the action disappears rather than sitting there as a no-op.
-            action = if (granted) null else onRequest,
+            isError = blocked,
+            // Once the platform will no longer show the dialog, "Allow notifications" is a button
+            // that can never do anything — the only remaining path is system Settings.
+            actionLabelRes = if (blocked) {
+                R.string.onboarding_permissions_open_settings
+            } else {
+                R.string.onboarding_notifications_allow
+            },
+            action = when (state) {
+                NotificationPermissionState.NotRequired,
+                NotificationPermissionState.Granted,
+                -> null
+                NotificationPermissionState.PermanentlyDenied -> onOpenSettings
+                NotificationPermissionState.Denied -> onRequest
+            },
         )
     }
 }
@@ -182,6 +198,7 @@ private fun StateCard(
     titleRes: Int,
     bodyRes: Int,
     isError: Boolean = false,
+    actionLabelRes: Int = R.string.onboarding_notifications_allow,
     action: (() -> Unit)? = null,
 ) {
     val spacing = TelepicTokens.spacing
@@ -232,7 +249,7 @@ private fun StateCard(
                     onClick = action,
                     modifier = Modifier.testTag(TAG_PERMISSIONS_ALLOW_NOTIFICATIONS),
                 ) {
-                    Text(stringResource(R.string.onboarding_notifications_allow))
+                    Text(stringResource(actionLabelRes))
                 }
             }
         }

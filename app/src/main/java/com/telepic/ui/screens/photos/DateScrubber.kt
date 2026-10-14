@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.telepic.R
+import com.telepic.domain.media.localizedDateFormatter
 import com.telepic.ui.theme.TelepicTokens
 import com.telepic.ui.theme.telepicMotionSpec
 import java.time.LocalDate
@@ -212,10 +213,10 @@ internal fun DateScrubber(
     val density = LocalDensity.current
     val locale = Locale.getDefault()
     // Locale-bound but pattern-constant formatters, built once per locale.
-    val sectionMonth = remember(locale) { DateTimeFormatter.ofPattern("MMM yyyy", locale) }
+    val sectionMonth = remember(locale) { localizedDateFormatter(locale, "MMMyyyy", "MMM yyyy") }
     val sectionYear = remember(locale) { DateTimeFormatter.ofPattern("yyyy", locale) }
-    val bubbleMonthDay = remember(locale) { DateTimeFormatter.ofPattern("MMMM d", locale) }
-    val bubbleMonthYear = remember(locale) { DateTimeFormatter.ofPattern("MMMM yyyy", locale) }
+    val bubbleMonthDay = remember(locale) { localizedDateFormatter(locale, "MMMMd", "MMMM d") }
+    val bubbleMonthYear = remember(locale) { localizedDateFormatter(locale, "MMMMyyyy", "MMMM yyyy") }
     val railDescription = stringResource(R.string.photos_date_rail)
     val today = LocalDate.now()
 

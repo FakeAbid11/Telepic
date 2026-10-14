@@ -173,6 +173,8 @@ fun OnboardingScreen(
                         permissionState = permission.state,
                         notificationState = notifications.state,
                         onRequestNotifications = notifications.request,
+                        // Once the platform stops showing the dialog, Settings is the only path.
+                        onOpenNotificationSettings = notifications.openSettings,
                     )
                     3 -> TelegramStep(
                         controller = telegramController,

@@ -344,6 +344,8 @@
          that, which is the same lie the seek bar refuses to tell. -->
     <string name="viewer_duration_unknown" translatable="false">--:--</string>
     <string name="albums_untitled">Album</string>
+    <string name="onboarding_notifications_blocked">Notifications are off</string>
+    <string name="onboarding_notifications_blocked_body">Notifications are turned off for Telepic. Turn them back on in system settings to follow backup progress.</string>
     <string name="backup_queue_state_queued">Queued</string>
     <string name="backup_queue_state_preparing">Preparing</string>
     <string name="backup_queue_state_uploading">Uploading</string>

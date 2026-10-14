@@ -23,6 +23,9 @@ object NotificationPermissionPolicy {
     /** The single permission Telepic requests for notifications. */
     fun permissionToRequest(): String = PERM_POST_NOTIFICATIONS
 
+    /** How many times Telepic asks before treating a denial as final. */
+    const val MAX_ATTEMPTS = 2
+
     /**
      * Resolves the effective [NotificationPermissionState].
      *
@@ -30,10 +33,19 @@ object NotificationPermissionPolicy {
      * @param areNotificationsEnabled the real platform lookup
      *   (`NotificationManagerCompat.areNotificationsEnabled()`), which also reflects a user who
      *   turned notifications off for the app wholesale.
+     * @param priorAttempts how many times the app has already launched the request dialog. The
+     *   platform stops showing it after [MAX_ATTEMPTS] denials, so past that the state becomes
+     *   [NotificationPermissionState.PermanentlyDenied] and the UI routes to system Settings instead
+     *   of offering an ask that can no longer produce a dialog.
      */
-    fun resolve(sdkInt: Int, areNotificationsEnabled: Boolean): NotificationPermissionState = when {
+    fun resolve(
+        sdkInt: Int,
+        areNotificationsEnabled: Boolean,
+        priorAttempts: Int = 0,
+    ): NotificationPermissionState = when {
         !isRequired(sdkInt) -> NotificationPermissionState.NotRequired
         areNotificationsEnabled -> NotificationPermissionState.Granted
+        priorAttempts >= MAX_ATTEMPTS -> NotificationPermissionState.PermanentlyDenied
         else -> NotificationPermissionState.Denied
     }
 }

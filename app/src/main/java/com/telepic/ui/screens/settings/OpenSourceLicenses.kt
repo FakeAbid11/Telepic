@@ -12,7 +12,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.telepic.R
 import com.telepic.ui.theme.TelepicTokens
 
@@ -68,7 +67,7 @@ fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
                 // Bounded so `verticalScroll` has a finite viewport to scroll within; without it an
                 // over-tall child in the dialog's text slot simply overflows past the buttons.
                 modifier = Modifier
-                    .heightIn(max = 400.dp)
+                    .heightIn(max = TelepicTokens.spacing.dialogMaxHeight)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(spacing.md),
             ) {

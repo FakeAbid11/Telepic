@@ -15,9 +15,17 @@ enum class NotificationPermissionState {
 
     /** Android 13+ and the channel-level toggle is off. */
     Denied,
+
+    /**
+     * Off, and asking again cannot help: the system stops showing the dialog after two denials, and
+     * turning notifications off for the app in Settings has the same effect. Distinguished from
+     * [Denied] because the only remaining recovery is system Settings — offering "Allow
+     * notifications" here was a button that could never do anything.
+     */
+    PermanentlyDenied,
     ;
 
     /** Whether a progress notification can actually be shown to the user right now. */
     val canNotify: Boolean
-        get() = this != Denied
+        get() = this == NotRequired || this == Granted
 }

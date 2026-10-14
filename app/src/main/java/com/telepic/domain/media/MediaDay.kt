@@ -43,7 +43,7 @@ object MediaDay {
         }
 
     private fun monthDayFormatter(locale: Locale): DateTimeFormatter =
-        monthDays.getOrPut(locale) { DateTimeFormatter.ofPattern("MMMM d", locale) }
+        monthDays.getOrPut(locale) { localizedDateFormatter(locale, skeleton = "MMMMd", fallback = "MMMM d") }
 
     private fun weekdayFormatter(locale: Locale): DateTimeFormatter =
         weekdays.getOrPut(locale) { DateTimeFormatter.ofPattern("EEEE", locale) }
@@ -106,4 +106,25 @@ object MediaDay {
     }
 
     enum class DayKind { TODAY, YESTERDAY, THIS_WEEK, OLDER }
+}
+
+/**
+ * A formatter for a month/day-style [skeleton] in the **locale's own field order**.
+ *
+ * `ofPattern("MMMM d")` prints "October 8" for *every* locale, which is simply wrong wherever the day
+ * comes first (de: "8. Oktober", en-GB: "8 October"). `getBestDateTimePattern` asks the platform for
+ * the order that locale actually uses.
+ *
+ * Both steps are guarded, and that matters: a pattern the platform returns is ICU's, and
+ * `DateTimeFormatter.ofPattern` rejects some letters — an unguarded construction would throw while a
+ * grid header was being built. A locale the platform cannot answer for, or a pattern it rejects,
+ * degrades to [fallback] instead of crashing a render.
+ */
+internal fun localizedDateFormatter(locale: Locale, skeleton: String, fallback: String): DateTimeFormatter {
+    val pattern = runCatching { android.text.format.DateFormat.getBestDateTimePattern(locale, skeleton) }
+        .getOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?: fallback
+    return runCatching { DateTimeFormatter.ofPattern(pattern, locale) }
+        .getOrElse { DateTimeFormatter.ofPattern(fallback, locale) }
 }

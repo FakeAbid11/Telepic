@@ -2,6 +2,7 @@ package com.telepic.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +14,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -36,6 +40,14 @@ import com.telepic.ui.theme.TelepicTokens
 
 private const val NAV_PILL_RADIUS_DP = 28
 private const val NAV_PILL_ELEVATION_DP = 10
+
+/**
+ * Width at or above which the tabs move to a leading `NavigationRail`.
+ *
+ * Material's "expanded" breakpoint. Read from `LocalConfiguration` rather than pulling in
+ * `material3-window-size-class` for a single threshold — the app needs one number, not a size class.
+ */
+private const val EXPANDED_WIDTH_DP = 600
 
 /**
  * The Telepic application shell: a Material 3 [Scaffold] with a bottom navigation bar for
@@ -59,11 +71,15 @@ fun TelepicApp(
     // organization, backup) and Settings resolve to null so the bar neither mis-highlights Photos nor
     // overlays them.
     val currentTab = TelepicDestination.topLevelOf(route)
+    // A tablet or an unfolded foldable gets a leading rail instead of a phone bar stretched across
+    // the full width — the previous behaviour, where four tabs sat a hand's width apart at the
+    // bottom of a 1280dp screen.
+    val expanded = LocalConfiguration.current.screenWidthDp >= EXPANDED_WIDTH_DP
 
     Scaffold(
         modifier = modifier,
         bottomBar = {
-            if (currentTab != null) {
+            if (currentTab != null && !expanded) {
                 // Google Photos-style floating bar: a rounded, elevated pill that sits above the
                 // system navigation bar with side/bottom margins. Selection stays a tonal pill.
                 Box(
@@ -106,14 +122,37 @@ fun TelepicApp(
         // above the full-screen media. Every other route keeps the inset padding.
         val navPadding =
             if (route?.startsWith("viewer/") == true) PaddingValues(0.dp) else innerPadding
-        TelepicNavHost(
-            navController = navController,
-            container = container,
-            themeMode = themeMode,
-            onThemeModeChange = onThemeModeChange,
-            modifier = Modifier
-                .padding(navPadding)
-                .fillMaxSize(),
-        )
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (currentTab != null && expanded) {
+                // The rail takes its own system-bar insets (the default `NavigationRail` behaviour),
+                // and `navPadding` still carries them to the content, so neither hides under a bar.
+                NavigationRail {
+                    TelepicDestination.tabs.forEach { destination ->
+                        val selected = destination == currentTab
+                        NavigationRailItem(
+                            selected = selected,
+                            onClick = { navController.navigateToTopLevel(destination) },
+                            icon = {
+                                Icon(
+                                    imageVector = if (selected) destination.selectedIcon else destination.icon,
+                                    contentDescription = null,
+                                )
+                            },
+                            label = { Text(stringResource(destination.labelRes)) },
+                        )
+                    }
+                }
+            }
+            TelepicNavHost(
+                navController = navController,
+                container = container,
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(navPadding)
+                    .fillMaxSize(),
+            )
+        }
     }
 }

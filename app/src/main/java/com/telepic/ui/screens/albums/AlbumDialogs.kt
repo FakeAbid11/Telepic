@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.telepic.R
 import com.telepic.domain.media.CustomAlbum
 import com.telepic.ui.theme.TelepicTokens
@@ -107,7 +106,7 @@ fun AlbumPickerDialog(
                     // Bounded so `verticalScroll` has a finite viewport to scroll within. Without it an
                     // over-tall child in the dialog's text slot has nothing to scroll against, so a
                     // user with many albums would see a list that simply stops.
-                    .heightIn(max = 400.dp)
+                    .heightIn(max = TelepicTokens.spacing.dialogMaxHeight)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(spacing.xs),
             ) {

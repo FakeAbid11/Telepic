@@ -73,7 +73,13 @@ import com.telepic.ui.theme.TelepicTokens
 /** A Material 3 FAB's own size. Named because the grid has to reserve exactly this much room for it. */
 private const val FAB_SIZE_DP = 56
 
-/** Adaptive minimum cell size for the album grid. Shared with the first-load skeleton so the two match. */
+/**
+ * Adaptive minimum cell size for the album grid. Shared with the first-load skeleton so the two match.
+ *
+ * Deliberately larger than `TelepicSpacing.gridTileMinSize` (108dp), which the photo grids use: an
+ * album cell carries a cover *plus* a title and a count underneath it, so it needs room the bare
+ * thumbnails do not. Not an oversight — the two grids are describing different things.
+ */
 private val ALBUM_TILE_MIN_SIZE = 160.dp
 
 /**

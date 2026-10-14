@@ -37,6 +37,7 @@ import com.telepic.R
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
+import com.telepic.domain.media.localizedDateFormatter
 import com.telepic.ui.theme.TelepicTokens
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -247,7 +248,7 @@ fun DayHeader(epochDay: Long, absoluteLabel: String, today: LocalDate, modifier:
     // Formatters are locale-bound but pattern-constant: build once per locale instead of per
     // header recomposition (DateTimeFormatter.ofPattern is not cheap).
     val weekdayFormatter = remember(locale) { DateTimeFormatter.ofPattern("EEEE", locale) }
-    val monthDayFormatter = remember(locale) { DateTimeFormatter.ofPattern("MMMM d", locale) }
+    val monthDayFormatter = remember(locale) { localizedDateFormatter(locale, "MMMMd", "MMMM d") }
     val label = when {
         diff == 0L -> stringResource(R.string.date_today)
         diff == 1L -> stringResource(R.string.date_yesterday)
