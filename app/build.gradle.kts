@@ -1,4 +1,5 @@
 import java.util.Base64
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
@@ -40,15 +41,16 @@ val releaseKeystoreB64 = System.getenv("RELEASE_KEYSTORE_BASE64").orEmpty()
 
 android {
     namespace = "com.telepic"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.telepic"
         // Phase 4: the TDLib Android artifact requires minSdk 26 (Android 8.0+).
         minSdk = 26
-        // Google Play requires targetSdk 35+ for new submissions; edge-to-edge is enforced there
-        // and handled via enableEdgeToEdge + inset-aware scaffolds.
-        targetSdk = 35
+        // Google Play requires targetSdk 36+ for new submissions (API 36 became mandatory on
+        // 2026-08-31); edge-to-edge is enforced there and handled via enableEdgeToEdge +
+        // inset-aware scaffolds.
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
         vectorDrawables {
@@ -104,10 +106,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -129,6 +127,15 @@ android {
             // Robolectric needs merged Android resources to run Compose UI tests on the JVM.
             isIncludeAndroidResources = true
         }
+    }
+}
+
+// Kotlin 2.2 removed the deprecated `android { kotlinOptions { } }` DSL in favour of the Kotlin
+// plugin's own `compilerOptions`. The JVM target must be set here so the Kotlin compiler and the
+// `compileOptions` block above agree; a mismatch fails the build.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
