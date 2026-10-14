@@ -11,16 +11,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import com.telepic.R
 import com.telepic.ui.theme.TelepicTokens
 
 /**
  * Reusable Material 3 loading state so individual screens don't invent their own spinners.
  *
- * [message] is optional; when present it is announced to screen readers alongside the
- * indeterminate progress indicator.
+ * The label is the single announcement. The indicator used to carry [message] as its own
+ * `contentDescription` *and* have a sibling `Text` rendering the same words, so a screen reader read
+ * the loading state twice; it is decorative now, and the label below always renders (falling back to
+ * a generic "loading" when no message is given) so there is still something to announce.
  */
 @Composable
 fun LoadingState(
@@ -37,13 +37,7 @@ fun LoadingState(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(spacing.lg),
         ) {
-            CircularProgressIndicator(
-                color = MaterialTheme.colorScheme.primary,
-                // Decorative. It used to carry the message as its own contentDescription *and* have a
-                // sibling Text rendering the same words, so a screen reader read the loading state
-                // twice. The label below is the single announcement.
-                modifier = Modifier.semantics { contentDescription = null },
-            )
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             Text(
                 text = message ?: fallbackDescription,
                 style = MaterialTheme.typography.bodyMedium,

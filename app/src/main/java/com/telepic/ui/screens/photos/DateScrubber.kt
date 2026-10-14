@@ -35,8 +35,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -351,9 +354,29 @@ internal fun DateScrubber(
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .width(RAIL_WIDTH)
+                // The *touch* area is a full 48dp even though the rail draws at 28dp: at 28dp it was
+                // below the minimum target, and this is the only way to jump across the timeline.
+                // Everything inside is right-aligned, so widening the box does not move the visuals.
+                .width(spacing.touchTarget)
                 .fillMaxHeight()
-                .semantics { contentDescription = railDescription }
+                .semantics {
+                    contentDescription = railDescription
+                    // Without a range and an action the rail was inert under a screen reader — a
+                    // description with nothing to operate. `setProgress` is what makes it scrubable.
+                    progressBarRangeInfo = ProgressBarRangeInfo(
+                        current = scrubFraction ?: thumb.first,
+                        range = 0f..1f,
+                    )
+                    setProgress { target ->
+                        val clamped = target.coerceIn(0f, 1f)
+                        scrubFraction = clamped
+                        scrubJob?.cancel()
+                        scrubJob = scope.launch {
+                            gridState.scrollToItem(scrubIndex(clamped, gridState.layoutInfo.totalItemsCount))
+                        }
+                        true
+                    }
+                }
                 .draggable(
                     state = rememberDraggableState { delta ->
                         val next = (scrubFraction ?: thumb.first) +
@@ -446,8 +469,7 @@ private fun activeSection(sections: List<DateAnchor>, gridState: LazyGridState):
     return sections.indices.lastOrNull { sections[it].index <= firstVisible } ?: 0
 }
 
-/** Width of the touch/rail strip on the right edge. */
-private val RAIL_WIDTH = 28.dp
+/** Rail geometry. The touch strip is a full `TelepicSpacing.touchTarget`; only the drawn rail is this. */
 private val THUMB_WIDTH = 6.dp
 private val THUMB_WIDTH_DRAGGING = 10.dp
 private val MIN_THUMB_HEIGHT = 40.dp
