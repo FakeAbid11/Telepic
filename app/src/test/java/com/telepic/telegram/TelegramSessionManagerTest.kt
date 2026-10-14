@@ -45,6 +45,8 @@ class TelegramSessionManagerTest {
 
         // When true, SetTdlibParameters is rejected (simulating bad credentials/parameters) until flipped.
         @Volatile var failParameters: Boolean = false
+        // When true, SetTdlibParameters never answers — the gateway's timeout exception is raised.
+        @Volatile var timeoutParameters: Boolean = false
         // When true, CheckAuthenticationCode is rejected (a wrong code) with a recoverable 400.
         @Volatile var failCode: Boolean = false
         // When true, the email-address / email-code requests are rejected with a recoverable 400.
@@ -69,7 +71,11 @@ class TelegramSessionManagerTest {
             requests += request
             return when (request) {
                 is TdApi.GetAuthorizationState -> authorizationState
-                is TdApi.SetTdlibParameters -> if (failParameters) TdApi.Error(400, "invalid api_id") else TdApi.Ok()
+                is TdApi.SetTdlibParameters -> when {
+                    timeoutParameters -> throw TdLibRequestTimeoutException(30_000L)
+                    failParameters -> TdApi.Error(400, "invalid api_id")
+                    else -> TdApi.Ok()
+                }
                 is TdApi.CheckAuthenticationCode -> if (failCode) TdApi.Error(400, "code invalid") else TdApi.Ok()
                 is TdApi.SetAuthenticationEmailAddress ->
                     if (failEmailAddress) TdApi.Error(400, "email invalid") else TdApi.Ok()
@@ -156,6 +162,26 @@ class TelegramSessionManagerTest {
         // Once the resend succeeds, the flow is no longer Failed.
         withTimeout(3_000) { while (m.state.value is TelegramAuthState.Failed) delay(20) }
         assertTrue(m.state.value !is TelegramAuthState.Failed)
+        m.close()
+    }
+
+    @Test
+    fun `a timed-out request surfaces as Failed instead of parking on Initializing`() = runBlocking {
+        // Before the gateway had a timeout, a request whose response never arrived suspended its caller
+        // forever: the auth screen sat on Initializing with no error and no way forward. The timeout is
+        // reported as a TDLib-shaped error (499, which classify maps to Network) so the failure becomes
+        // visible instead of being dropped as control flow.
+        val gateway = FakeGateway().apply { timeoutParameters = true }
+        val m = manager(gateway)
+        m.initialize()
+
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
+        val state = m.state.value
+        assertTrue(state is TelegramAuthState.Failed)
+        assertTrue(
+            "a timeout should read to the user as a connection problem",
+            (state as TelegramAuthState.Failed).error is TelegramError.Network,
+        )
         m.close()
     }
 

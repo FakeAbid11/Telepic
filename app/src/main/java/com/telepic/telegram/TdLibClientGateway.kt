@@ -1,10 +1,12 @@
 package com.telepic.telegram
 
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
@@ -32,10 +34,34 @@ interface TdLibClientGateway {
 }
 
 /**
+ * A TDLib request produced no response within [TdLibClientGatewayImpl]'s timeout.
+ *
+ * Extends [RuntimeException], **not** `CancellationException`, deliberately. Every layer above treats
+ * `CancellationException` as control flow and rethrows it untouched (`TelegramSessionManager.safeRequest`,
+ * `DefaultBackupRepository`, the ViewModels), so a timeout modelled as a cancellation would be silently
+ * dropped rather than reported. As an ordinary failure it reaches each caller's normal error path:
+ * `safeRequest` turns it into a `TdApi.Error`, and the backup engine records a transient, retryable
+ * failure.
+ */
+class TdLibRequestTimeoutException(timeoutMillis: Long) :
+    RuntimeException("Telegram did not respond within ${timeoutMillis / 1000} seconds.")
+
+/**
  * Production [TdLibClientGateway] using the official Java TDLib bindings
  * (`org.drinkless.tdlib.Client` / `TdApi`). No JSON or hand-written JNI layer.
  */
-class TdLibClientGatewayImpl : TdLibClientGateway {
+class TdLibClientGatewayImpl(
+    /**
+     * How long a single request may take before it is abandoned.
+     *
+     * TDLib's `send()` is fire-and-forget with a callback, so a request whose response never arrives
+     * (a dropped connection, a native thread that never wakes) used to suspend its caller **forever**:
+     * the auth screen and the cloud tab would both hang with no error and no way out. TDLib returns
+     * promptly for long-running operations — downloads and sends report progress through updates — so
+     * this bounds the *response*, not the operation.
+     */
+    private val requestTimeoutMillis: Long = DEFAULT_REQUEST_TIMEOUT_MILLIS,
+) : TdLibClientGateway {
 
     // replay = 1 keeps the most recent update for a subscriber that attaches microseconds late
     // (TDLib can emit the first UpdateAuthorizationState during/right after open()), so the initial
@@ -78,10 +104,20 @@ class TdLibClientGatewayImpl : TdLibClientGateway {
 
     override suspend fun request(request: TdApi.Function<*>): TdApi.Object {
         val active = client ?: throw IllegalStateException("TDLib client is not open")
-        return suspendCancellableCoroutine { continuation ->
-            active.send(request) { result ->
-                if (continuation.isActive) continuation.resume(result)
+        return try {
+            withTimeout(requestTimeoutMillis) {
+                suspendCancellableCoroutine { continuation ->
+                    active.send(request) { result ->
+                        if (continuation.isActive) continuation.resume(result)
+                    }
+                }
             }
+        } catch (timeout: TimeoutCancellationException) {
+            // `withTimeout` signals with a CancellationException subclass, which every caller rethrows
+            // as control flow — so it is translated here into an ordinary failure that can actually be
+            // reported. A response that arrives after the timeout finds an inactive continuation and
+            // is ignored.
+            throw TdLibRequestTimeoutException(requestTimeoutMillis)
         }
     }
 
@@ -89,5 +125,9 @@ class TdLibClientGatewayImpl : TdLibClientGateway {
         // The bundled org.drinkless.tdlib.Client exposes no instance close(); the native client's
         // lifecycle is tied to the process/session. Drop the reference so no new requests are sent.
         client = null
+    }
+
+    private companion object {
+        const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 30_000L
     }
 }

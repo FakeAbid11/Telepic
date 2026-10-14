@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.telepic.data.backup.BackupCoordinator
+import com.telepic.diagnostics.TelepicLog
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -36,8 +37,11 @@ class BackupDiscoveryWorker(
             Result.success()
         } catch (cancellation: CancellationException) {
             throw cancellation // cooperative stop (constraints/stop) is not a failure to retry-blame
-        } catch (_: Exception) {
-            // Transient by doctrine: a failed discovery pass simply re-runs on the next period.
+        } catch (throwable: Exception) {
+            // Transient by doctrine: a failed discovery pass simply re-runs on the next period. It used
+            // to do so *silently*, which made a permanently failing pass indistinguishable from a pass
+            // with nothing to do — no log line, no persisted state, nothing to find in the field.
+            TelepicLog.error("BackupDiscovery", "discovery pass failed; asking WorkManager to retry", throwable)
             Result.retry()
         }
 }

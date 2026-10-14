@@ -56,6 +56,15 @@ class BackupWorker(
             // letting the exception turn the run into a permanent FAILED one. Nothing is claimed as
             // backed up on this path: the queue rows keep whatever state they already had.
             TelepicLog.error("BackupWorker", "backup run failed unexpectedly; asking WorkManager to retry", throwable)
+            // Make the failure durable. A row this pass had already advanced to PREPARING/UPLOADING
+            // would otherwise stay mid-flight, so the Backup Center would keep showing it as
+            // "Uploading" until the *next* run's own recovery sweep — which may be a whole backoff
+            // period away. Returning those rows to QUEUED now keeps the persisted state honest about
+            // what actually happened. Best-effort: a failure here must not replace the retry.
+            runCatching { repository.recoverInterruptedWork() }
+                .onFailure {
+                    TelepicLog.warn("BackupWorker", "could not recover interrupted rows after a failed run", it)
+                }
             Result.retry()
         }
 

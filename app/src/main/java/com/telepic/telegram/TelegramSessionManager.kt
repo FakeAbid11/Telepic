@@ -345,14 +345,21 @@ class TelegramSessionManager(
      * `else -> Unit` branch, published nothing, and left the UI parked on
      * [TelegramAuthState.Initializing] with neither an error nor a timeout to explain it. Cancellation
      * is control flow, not a Telegram outcome, and has to propagate.
+     *
+     * A [TdLibRequestTimeoutException] is the opposite case: a real outcome that must *not* propagate as
+     * control flow. It is converted into a [TdApi.Error] so each caller's existing `is TdApi.Error`
+     * branch fires and the failure becomes visible, instead of the silent no-op a `null` would produce.
      */
     private suspend fun safeRequest(request: TdApi.Function<*>): TdApi.Object? =
         try {
             gateway.request(request)
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (throwable: Throwable) {
+        } catch (timeout: TdLibRequestTimeoutException) {
             // The request's class name only: a request can carry a phone number or a code.
+            TelepicLog.warn("TelegramAuth", "${request.javaClass.simpleName} timed out", timeout)
+            TdApi.Error(TIMEOUT_ERROR_CODE, timeout.message ?: "Telegram did not respond in time.")
+        } catch (throwable: Throwable) {
             TelepicLog.warn("TelegramAuth", "${request.javaClass.simpleName} failed", throwable)
             null
         }
@@ -370,5 +377,15 @@ class TelegramSessionManager(
         scope.cancel()
         collectorJob = null
         parametersSent = false
+    }
+
+    private companion object {
+        /**
+         * Reported in place of a real TDLib code when a request times out. 499 is TDLib's own
+         * "connection closed" code and is already mapped to [TelegramError.Network] by
+         * [TelegramError.classify], so a timeout reads to the user as a connection problem rather
+         * than an unexplained failure.
+         */
+        const val TIMEOUT_ERROR_CODE = 499
     }
 }
