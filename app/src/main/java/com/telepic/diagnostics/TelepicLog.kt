@@ -26,6 +26,21 @@ object TelepicLog {
     }
 
     /**
+     * As [debug], with the throwable attached — still gated on [BuildConfig.DEBUG].
+     *
+     * For failures that are *expected per item* rather than exceptional: a corrupt file with no
+     * readable EXIF, a volume whose free space cannot be measured. A stack trace is worth having when
+     * diagnosing, but a `warn` per item would let a library full of them bury the real problems in a
+     * release log. Kept as a separate overload rather than a defaulted parameter so a two-argument
+     * call cannot become ambiguous.
+     */
+    fun debug(where: String, message: String, throwable: Throwable?) {
+        if (BuildConfig.DEBUG) {
+            if (throwable == null) Log.d(tag(where), message) else Log.d(tag(where), message, throwable)
+        }
+    }
+
+    /**
      * A swallowed failure that a caller degraded to a fallback. This is the log line that makes the
      * difference between "the queue is empty" and "the queue is empty because staging failed".
      */
