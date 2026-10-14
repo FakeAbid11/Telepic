@@ -142,10 +142,13 @@ composeCompiler {
     reportsDestination = layout.buildDirectory.dir("compose-reports")
 }
 
-// Room writes a schema JSON per version here during compilation, and those files are committed. That
-// is what turns migrations from "hand-written SQL we hope is right" into something the build can
-// check: with a schema on disk, Room's migration validation and `MigrationTestHelper` both work, and
-// a migration that does not reproduce the entity schema fails rather than shipping.
+// Room writes a schema JSON per version here during compilation, and those files belong in the repo:
+// the committed baseline is what a hand-written future migration is checked against. CI uploads
+// `app/schemas/` as the `telepic-room-schemas` artifact so they can be committed without a local
+// build. Note what they do *not* do — the migration tests do not read them. Those tests build the
+// previous version with raw SQL and then open the real database, so Room's runtime migration
+// validation compares the result against the compiled entity definitions. `MigrationTestHelper` is
+// not used anywhere in this project.
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }

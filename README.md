@@ -58,7 +58,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - Explicit state machine: nothing reaches `BACKED_UP` without a confirmed remote identity from Telegram, enforced in the queue's SQL state guards.
 - Crash recovery, bounded retry, cooperative cancellation, and safe app-private staging (originals are never modified or deleted).
 - WorkManager-driven with a foreground notification and a network constraint; uploads resume on reconnect.
-- **Content-based deduplication** — streaming SHA-256 identity, so the same bytes are never uploaded twice, even after a reinstall.
+- **Content-based deduplication** — streaming SHA-256 identity, so the same bytes are never uploaded twice. The hash rides in the message caption, so the manifest rebuilt after a reinstall recognises the channel's contents rather than re-uploading them.
 
 **Cloud (Telegram)**
 - Browse your backed-up media by preview without downloading originals.
@@ -288,7 +288,7 @@ app/src/main/java/com/telepic/
 
 ### Database
 
-Room is at **version 8**, with explicit migrations and **no destructive fallback**:
+Room is at **version 10**, with explicit migrations and **no destructive fallback**:
 
 | Table | Purpose | Introduced |
 |---|---|---|
@@ -301,7 +301,13 @@ Room is at **version 8**, with explicit migrations and **no destructive fallback
 | `custom_album_media` | Album membership, keyed `(albumId, localMediaId)`, cascading on delete | 6 → 7 |
 | `media_location_scan` | Which items the map has already examined for GPS — including those that carry none | 7 → 8 |
 
-Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, `5 → 6`, `6 → 7`, and `7 → 8`. Each has a migration test that builds the previous version and proves existing rows survive. Note that `TelepicDatabase` is always the latest version, so each of those tests chains *every* migration from its starting version — a version bump therefore touches all of them.
+Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, `5 → 6`, `6 → 7`, `7 → 8`, `8 → 9` (index-only) and `9 → 10` (adds `cloud_media_manifest.contentSizeBytes`). Each has a migration test that builds the previous version and proves existing rows survive. Note that `TelepicDatabase` is always the latest version, so each of those tests chains *every* migration from its starting version — a version bump therefore touches all of them.
+
+The schema JSON Room exports per version lives in `app/schemas/`, and CI uploads it as the
+`telepic-room-schemas` artifact. **It must be committed with the migration that produced it**: the
+committed baseline is what a hand-written future migration is checked against. The migration tests
+themselves do not need it — they build the previous version with raw SQL and then open the real
+database, so Room's runtime migration validation compares the result against the compiled entities.
 
 ---
 
@@ -521,6 +527,7 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 
 - **Device validation is outstanding.** The entire live Telegram path (auth, cloud browse/preview, upload, download), MediaStore write/delete consent, all rendering (ExoPlayer, osmdroid, GIF decode), and the app lock's credential prompt are unverified on a device. See [Device validation status](#device-validation-status).
 - **App lock re-locks on a grace window, not instantly.** Returning to the foreground within 30 seconds does not re-prompt, because launching a system activity (the photo picker, the delete-consent dialog, the Telegram link) stops this activity and an instant re-lock would interrupt the user's own flow. It locks on cold start and after longer background trips; see `AppLockTimer` for the exact rule.
+- **Reinstall recognition cannot cover media backed up by a build without the caption marker.** Those manifest rows carry no hash, so only the kinds Telegram gives a filename to (videos, GIFs, documents) can be recovered by name and size; photos backed up by such a build are re-uploaded once and then carry the marker themselves.
 - **Hiding videos or GIFs does not change what gets backed up.** The Media preferences filter the library *views* only; backup eligibility stays governed by the backup preference. The folder picker therefore lists folders by what a backup would take, not by what the timeline happens to show.
 - **No instrumented tests.** All tests are JVM/Robolectric; there is no `app/src/androidTest` source set, so nothing device-bound is covered by automated tests.
 - **Logging is minimal.** One seam exists (`diagnostics/TelepicLog`), and it is wired only at the fallbacks that used to be invisible — an aborted backup pass, a denied foreground notification, a swallowed TDLib request failure, a refused MediaStore delete. There is no analytics, no crash reporting, and no log of the happy path, so a device-gated failure is still easier to reproduce than to diagnose from the outside.
