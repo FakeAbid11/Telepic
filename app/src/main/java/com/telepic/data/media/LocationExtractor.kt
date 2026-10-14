@@ -3,7 +3,9 @@ package com.telepic.data.media
 import android.content.Context
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.GeoLocation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -35,7 +37,12 @@ class AndroidLocationExtractor(context: Context) : LocationExtractor {
                     null
                 }
             }
-        } catch (_: Throwable) {
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            // Debug, not warn: a file with no readable GPS is an expected per-item outcome, and a
+            // library full of them must not turn every map sweep into log spam.
+            TelepicLog.debug("LocationExtractor", "no readable GPS in this item", throwable)
             null
         }
     }

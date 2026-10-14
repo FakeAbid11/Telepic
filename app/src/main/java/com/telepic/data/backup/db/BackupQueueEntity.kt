@@ -29,6 +29,11 @@ import androidx.room.PrimaryKey
         Index(value = ["updatedAt"]),
         Index(value = ["telegramChatId", "telegramMessageId"]),
         Index(value = ["contentHash"]),
+        // Added in migration 8 -> 9. `observeAll` orders by createdAt and `fetchActionable` filters on
+        // retryCount, so both were full scans on the hot path of every Backup Center render and every
+        // upload pass.
+        Index(value = ["createdAt"]),
+        Index(value = ["retryCount"]),
     ],
 )
 data class BackupQueueEntity(

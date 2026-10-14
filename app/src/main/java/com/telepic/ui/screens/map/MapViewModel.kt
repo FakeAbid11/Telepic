@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.media.MapLocationRepository
 import com.telepic.data.media.SavedCamera
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.GeotaggedMedia
 import com.telepic.settings.MapCameraRepository
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -107,7 +109,12 @@ class MapViewModel(
             viewModelScope.launch {
                 _savedCamera.value = try {
                     repository.camera.first()
-                } catch (_: Exception) {
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (throwable: Throwable) {
+                    // Degrade to "no saved camera", but say so: a permanently unreadable preference was
+                    // previously indistinguishable from a user who had never moved the map.
+                    TelepicLog.warn("Map", "could not read the saved camera position", throwable)
                     null
                 }
                 _cameraResolved.value = true
@@ -136,12 +143,18 @@ class MapViewModel(
             try {
                 repository.save(camera)
                 _savedCamera.value = camera
-            } catch (_: Exception) {
-                // Losing a remembered camera is not worth surfacing; the map still opens correctly —
-                // at the last position that was actually persisted, which is the honest fallback.
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                // Not worth interrupting the user over, but it must be visible in the log: a silently
+                // discarded save is what made a failed write look like a successful one.
+                TelepicLog.warn("Map", "could not persist the saved camera position", throwable)
             }
         }
     }
+
+    /** Single-flight claim for [refresh]; see the comment there for why it has to be atomic. */
+    private val scanning = AtomicBoolean(false)
 
     /**
      * Bounded rescan of the EXIF location cache. Single-flight: a second call while one is running
@@ -151,7 +164,12 @@ class MapViewModel(
      * ViewModelScope and crashing the app; the already-known locations stay on screen.
      */
     fun refresh() {
-        if (_isScanning.value) return
+        // Claim the slot on the caller's thread, before launching. Reading `_isScanning` here and
+        // setting it *inside* the coroutine only ever worked because `viewModelScope` runs on
+        // `Dispatchers.Main.immediate`, which runs to the first suspension inline; any dispatcher
+        // change — or a test driving this ViewModel on another dispatcher — would let two scans
+        // overlap and the first finisher clear the flag while the second was still running.
+        if (!scanning.compareAndSet(false, true)) return
         viewModelScope.launch {
             _isScanning.value = true
             _scanSettled.value = false
@@ -177,6 +195,7 @@ class MapViewModel(
                 grace.cancel()
                 _scanSettled.value = true
                 _isScanning.value = false
+                scanning.set(false)
             }
         }
     }

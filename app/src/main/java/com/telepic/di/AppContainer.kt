@@ -153,6 +153,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                 TelepicDatabase.MIGRATION_5_6,
                 TelepicDatabase.MIGRATION_6_7,
                 TelepicDatabase.MIGRATION_7_8,
+                TelepicDatabase.MIGRATION_8_9,
             )
             .build()
     }

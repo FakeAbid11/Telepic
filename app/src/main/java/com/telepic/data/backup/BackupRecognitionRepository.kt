@@ -66,7 +66,7 @@ class DefaultBackupRecognitionRepository(
         //    otherwise stream-compute it (§16/§17). Failures are never "backed up" (§42).
         val cached = queueRow?.takeIf { it.contentHashMatches(media) }?.contentHash
         val hash = when {
-            cached != null -> ContentHashResult(cached, queueRow!!.contentSizeBytes ?: media.sizeBytes)
+            cached != null -> ContentHashResult(cached, queueRow?.contentSizeBytes ?: media.sizeBytes)
             else -> computeHash(media, queueRow) ?: return@withContext unavailable(media)
         }
 

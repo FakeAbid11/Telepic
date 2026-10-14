@@ -102,7 +102,11 @@ class CustomAlbumMigration6To7Test {
 
             // Act: reopen the same file at version 7 through the real migration.
             val db = Room.databaseBuilder(context, TelepicDatabase::class.java, dbFile)
-                .addMigrations(TelepicDatabase.MIGRATION_6_7, TelepicDatabase.MIGRATION_7_8)
+                .addMigrations(
+                    TelepicDatabase.MIGRATION_6_7,
+                    TelepicDatabase.MIGRATION_7_8,
+                    TelepicDatabase.MIGRATION_8_9,
+                )
                 .allowMainThreadQueries()
                 .build()
 

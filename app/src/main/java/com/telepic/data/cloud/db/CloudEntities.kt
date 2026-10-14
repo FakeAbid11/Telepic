@@ -29,7 +29,9 @@ data class CloudDestinationEntity(
 @Entity(
     tableName = "cloud_media_manifest",
     primaryKeys = ["chatId", "messageId"],
-    indices = [Index(value = ["contentHash"])],
+    // `dateEpochSec` was added in migration 8 -> 9: the manifest is listed ordered by it, so without
+    // the index every cloud-library read sorted a full scan.
+    indices = [Index(value = ["contentHash"]), Index(value = ["dateEpochSec"])],
 )
 data class CloudMediaManifestEntity(
     val chatId: Long,

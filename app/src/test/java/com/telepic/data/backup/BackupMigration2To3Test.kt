@@ -79,6 +79,7 @@ class BackupMigration2To3Test {
                 TelepicDatabase.MIGRATION_5_6,
                 TelepicDatabase.MIGRATION_6_7,
                 TelepicDatabase.MIGRATION_7_8,
+                TelepicDatabase.MIGRATION_8_9,
             )
             .allowMainThreadQueries()
             .build()

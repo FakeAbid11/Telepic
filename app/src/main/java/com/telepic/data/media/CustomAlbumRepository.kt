@@ -9,6 +9,7 @@ import androidx.room.withTransaction
 import com.telepic.data.media.db.CustomAlbumDao
 import com.telepic.data.media.db.CustomAlbumEntity
 import com.telepic.data.media.db.CustomAlbumMediaEntity
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.CustomAlbum
 import com.telepic.domain.media.PhotosItem
 import kotlinx.coroutines.CancellationException
@@ -195,7 +196,12 @@ class DefaultCustomAlbumRepository(
             lookup.byIdList(ids).associate { it.id to it.contentUri }
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (_: Throwable) {
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            // An empty cover map means every custom album falls back to its placeholder — visible to
+            // the user, so it is reported rather than silently swallowed.
+            TelepicLog.warn("CustomAlbum", "could not resolve album covers", throwable)
             emptyMap()
         }
     }

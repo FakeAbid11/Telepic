@@ -4,9 +4,11 @@ import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.GeoLocation
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -75,8 +77,12 @@ class AndroidMediaMetadataReader(context: Context) : MediaMetadataReader {
                     focalLengthMm = exif.safeDouble(ExifInterface.TAG_FOCAL_LENGTH),
                 )
             } ?: MediaMetadata(libraryAddedMillis = added)
-        } catch (_: Throwable) {
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
             // Corrupt file, unsupported format, or a stream we cannot open → keep the date, no fake.
+            // Debug, not warn: an expected per-item outcome, not a failure of the read.
+            TelepicLog.debug("MediaMetadata", "could not read EXIF; keeping the MediaStore date", throwable)
             MediaMetadata(libraryAddedMillis = added)
         }
     }
@@ -89,7 +95,10 @@ class AndroidMediaMetadataReader(context: Context) : MediaMetadataReader {
                 cursor.getLong(col) * 1000L
             } else null
         }
-    } catch (_: Throwable) {
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (throwable: Throwable) {
+        TelepicLog.debug("MediaMetadata", "DATE_ADDED unavailable for this item", throwable)
         null
     }
 

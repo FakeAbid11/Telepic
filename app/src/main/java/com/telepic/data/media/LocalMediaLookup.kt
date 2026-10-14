@@ -2,7 +2,9 @@ package com.telepic.data.media
 
 import android.content.Context
 import android.provider.MediaStore
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.LocalMedia
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -172,7 +174,12 @@ class MediaStoreLocalLookup(
                 val mime = row.string(MediaStore.MediaColumns.MIME_TYPE)
                 MediaStoreMediaMapper.map(row, MediaStoreMediaMapper.contentUriFor(id, mime))
             }
-        } catch (_: Throwable) {
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            // The caller reports the item as missing either way; the log is what separates "the row is
+            // gone" from "the provider refused to answer".
+            TelepicLog.warn("MediaLookup", "could not read the requested ids", throwable)
             null
         }
 

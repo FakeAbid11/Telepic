@@ -49,7 +49,9 @@ fun AlbumNameDialog(
     onDismiss: () -> Unit,
     initialName: String = "",
 ) {
-    var name by rememberSaveable { mutableStateOf(initialName) }
+    // Keyed on `initialName`: without it, reusing the dialog slot for a different album (rename A,
+    // then rename B) would keep showing the name captured the first time the slot was composed.
+    var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
     val trimmed = name.trim()
 
     AlertDialog(

@@ -32,6 +32,8 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  * - `6 → 7` ([MIGRATION_6_7]): introduces `custom_album` + `custom_album_media` (user-created albums).
  * - `7 → 8` ([MIGRATION_7_8]): introduces `media_location_scan` (which items the map has already
  *   examined for GPS, including the ones that carry none).
+ * - `8 → 9` ([MIGRATION_8_9]): adds the missing indices on the columns the queue and manifest are
+ *   sorted/filtered by. Additive only — no table or column changes.
  */
 @Database(
     entities = [
@@ -44,7 +46,7 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         CustomAlbumEntity::class,
         CustomAlbumMediaEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class TelepicDatabase : RoomDatabase() {
@@ -220,6 +222,24 @@ abstract class TelepicDatabase : RoomDatabase() {
                         "`localMediaId` INTEGER NOT NULL, " +
                         "`scannedAt` INTEGER NOT NULL, " +
                         "PRIMARY KEY(`localMediaId`))",
+                )
+            }
+        }
+
+        /**
+         * Index-only migration. `backup_queue.observeAll` orders by `createdAt`,
+         * `backup_queue.fetchActionable` filters on `retryCount`, and
+         * `cloud_media_manifest.observeAll` orders by `dateEpochSec` — all three were unindexed, so
+         * each was a full table scan plus a sort. No columns or rows are touched, which is why this
+         * migration has no data assertions to make.
+         */
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_backup_queue_createdAt` ON `backup_queue` (`createdAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_backup_queue_retryCount` ON `backup_queue` (`retryCount`)")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_cloud_media_manifest_dateEpochSec` " +
+                        "ON `cloud_media_manifest` (`dateEpochSec`)",
                 )
             }
         }

@@ -55,18 +55,13 @@ class MediaStoreMediaLoader(
     )
 
     // Restrict to images + videos only (excludes audio/documents in the Files table).
-    private val selection =
-        "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (" +
-            "${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE}, " +
-            "${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})"
-
     private val sortOrder = MediaSortOrder.TIMELINE_DESC
 
     override suspend fun load(offset: Int, limit: Int): List<LocalMedia> =
         withContext(Dispatchers.IO) {
             val scope = this
             val hidden = hiddenIdsProvider()
-            val (where, args) = buildSelection(hidden, typeFilterProvider(), searchQueryProvider())
+            val (where, args) = MediaSelectionBuilder.build(typeFilterProvider(), searchQueryProvider(), hidden)
             val collection = MediaStore.Files.getContentUri("external")
             val cancellation = CancellationSignal()
             val results = ArrayList<LocalMedia>(limit)
@@ -95,49 +90,4 @@ class MediaStoreMediaLoader(
             }
             results
         }
-
-    /**
-     * Builds the `WHERE` clause in a fixed order — kind filter, then search, then hidden ids — and
-     * returns the bound arguments in that same order. Getting the order wrong silently binds a
-     * filename pattern to an `_ID` slot, so the two are built together rather than apart.
-     *
-     * The search term is matched against the file name *and* the folder name, case-insensitively
-     * (`LIKE` is case-insensitive for ASCII in SQLite), with the caller's `%`/`_` escaped so a term
-     * containing them searches for those characters instead of turning into a wildcard.
-     */
-    private fun buildSelection(
-        hidden: Set<Long>,
-        filter: TimelineMediaFilter,
-        search: String?,
-    ): Pair<String, Array<String>?> {
-        val args = ArrayList<String>()
-        val where = StringBuilder(selection).append(filter.selectionSuffix())
-
-        val term = search?.trim().orEmpty()
-        if (term.isNotEmpty()) {
-            val pattern = "%${escapeLike(term)}%"
-            where.append(" AND (").append(MediaStore.MediaColumns.DISPLAY_NAME).append(" LIKE ? ESCAPE '\\'")
-                .append(" OR ").append(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME).append(" LIKE ? ESCAPE '\\')")
-            args += pattern
-            args += pattern
-        }
-
-        if (hidden.isNotEmpty()) {
-            // The hidden ids are interpolated as *integer literals*, not bound parameters. SQLite caps
-            // the number of bound parameters (~999 on the oldest supported SQLite) but places no such
-            // limit on literals in an `IN (...)` list, and every value here is a `Long` read from
-            // MediaStore — `toString()` yields only digits and a sign, so nothing can be injected. The
-            // previous `take(MAX_EXCLUDED_IDS)` bound the *parameters* to 500 and silently dropped the
-            // surplus, so once a library had more than 500 archived/trashed items they reappeared in
-            // the timeline. Interpolating removes that ceiling instead of hiding it.
-            where.append(" AND ").append(MediaStore.MediaColumns._ID).append(" NOT IN (")
-                .append(hidden.joinToString(",") { it.toString() }).append(")")
-        }
-
-        return where.toString() to args.toTypedArray().takeIf { it.isNotEmpty() }
-    }
-
-    /** Escapes the `LIKE` metacharacters so a literal `%` or `_` in a filename still matches itself. */
-    private fun escapeLike(raw: String): String =
-        raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 }

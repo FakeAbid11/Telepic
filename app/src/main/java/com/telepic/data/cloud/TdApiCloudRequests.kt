@@ -40,12 +40,6 @@ object TdApiCloudRequests {
     fun downloadSynchronously(fileId: Int, priority: Int): TdApi.DownloadFile =
         TdApi.DownloadFile(fileId, priority, 0L, 0L, true)
 
-    /** Ask TDLib for a file's current local/remote state (path, completion). */
-    fun getFile(fileId: Int): TdApi.GetFile = TdApi.GetFile(fileId)
-
-    /** Cancel an in-flight download (`onlyIfPending=false` also stops an active download). */
-    fun cancelDownload(fileId: Int): TdApi.CancelDownloadFile = TdApi.CancelDownloadFile(fileId, false)
-
     /** Send media into the destination. Reply/topic/markup/options are all null (a plain post). */
     fun sendMessage(chatId: Long, content: TdApi.InputMessageContent): TdApi.SendMessage =
         TdApi.SendMessage(chatId, null, null, null, null, content)

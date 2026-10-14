@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
+import com.telepic.diagnostics.TelepicLog
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -99,7 +100,10 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
             }
             val target: Uri = try {
                 resolver.insert(collection, values) ?: return@withContext PublishResult.Failed
-            } catch (_: Exception) {
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("MediaPublish", "publishing the restored item failed", throwable)
                 return@withContext PublishResult.Failed
             }
 
@@ -172,7 +176,10 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
     private fun hasRoomFor(bytes: Long): Boolean = try {
         val stat = StatFs(Environment.getExternalStorageDirectory().absolutePath)
         stat.availableBytes > bytes + SPACE_HEADROOM_BYTES
-    } catch (_: Exception) {
+    } catch (throwable: Throwable) {
+        // Best-effort by design: an unreadable StatFs must not block a write we cannot judge. Debug
+        // because it is an expected outcome on some volumes, not a failure of the restore.
+        TelepicLog.debug("MediaPublish", "free space could not be measured; allowing the write", throwable)
         true
     }
 
