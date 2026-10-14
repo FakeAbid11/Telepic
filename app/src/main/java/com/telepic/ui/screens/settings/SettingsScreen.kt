@@ -506,30 +506,42 @@ private fun SettingsMessage.textRes(): Int = when (this) {
     SettingsMessage.ActionFailed -> R.string.settings_action_failed
 }
 
+/**
+ * The one radio-list dialog behind all three of Settings' pickers.
+ *
+ * `BackupPreferenceDialog`, `BackupNetworkDialog` and `ThemeModeDialog` were three copies of the same
+ * AlertDialog — title, a column of radio rows, a Cancel button — differing only in their option type
+ * and wording, so every change had to be made three times.
+ */
 @Composable
-private fun BackupPreferenceDialog(
-    current: BackupPreference?,
-    onSelect: (BackupPreference) -> Unit,
+private fun <T> RadioListDialog(
+    titleRes: Int,
+    options: List<T>,
+    current: T?,
+    labelResOf: (T) -> Int,
+    onSelect: (T) -> Unit,
     onDismiss: () -> Unit,
-) {    AlertDialog(
+) {
+    val spacing = TelepicTokens.spacing
+    AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_backup_preferences_dialog_title)) },
+        title = { Text(stringResource(titleRes)) },
         text = {
             Column {
-                BackupPreference.entries.forEach { preference ->
-                    val selected = preference == current
-                    Surface(onClick = { onSelect(preference) }, color = MaterialTheme.colorScheme.surface) {
+                options.forEach { option ->
+                    val selected = option == current
+                    Surface(onClick = { onSelect(option) }, color = MaterialTheme.colorScheme.surface) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = TelepicTokens.spacing.xs, horizontal = TelepicTokens.spacing.xs),
+                                .padding(vertical = spacing.xs, horizontal = spacing.xs),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            RadioButton(selected = selected, onClick = { onSelect(preference) })
+                            RadioButton(selected = selected, onClick = { onSelect(option) })
                             Text(
-                                text = stringResource(preference.labelRes),
+                                text = stringResource(labelResOf(option)),
                                 style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.padding(start = TelepicTokens.spacing.md),
+                                modifier = Modifier.padding(start = spacing.md),
                             )
                         }
                     }
@@ -541,6 +553,22 @@ private fun BackupPreferenceDialog(
                 Text(stringResource(android.R.string.cancel))
             }
         },
+    )
+}
+
+@Composable
+private fun BackupPreferenceDialog(
+    current: BackupPreference?,
+    onSelect: (BackupPreference) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    RadioListDialog(
+        titleRes = R.string.settings_backup_preferences_dialog_title,
+        options = BackupPreference.entries,
+        current = current,
+        labelResOf = { it.labelRes },
+        onSelect = onSelect,
+        onDismiss = onDismiss,
     )
 }
 
@@ -551,36 +579,13 @@ private fun BackupNetworkDialog(
     onSelect: (BackupNetworkPreference) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_backup_network_dialog_title)) },
-        text = {
-            Column {
-                BackupNetworkPreference.entries.forEach { preference ->
-                    val selected = preference == current
-                    Surface(onClick = { onSelect(preference) }, color = MaterialTheme.colorScheme.surface) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = TelepicTokens.spacing.xs, horizontal = TelepicTokens.spacing.xs),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = selected, onClick = { onSelect(preference) })
-                            Text(
-                                text = stringResource(preference.labelRes),
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.padding(start = TelepicTokens.spacing.md),
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        },
+    RadioListDialog(
+        titleRes = R.string.settings_backup_network_dialog_title,
+        options = BackupNetworkPreference.entries,
+        current = current,
+        labelResOf = { it.labelRes },
+        onSelect = onSelect,
+        onDismiss = onDismiss,
     )
 }
 
@@ -590,48 +595,12 @@ private fun ThemeModeDialog(
     onSelect: (ThemeMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_theme_dialog_title)) },
-        text = {
-            Column {
-                ThemeMode.entries.forEach { mode ->
-                    ThemeOptionRow(
-                        mode = mode,
-                        selected = mode == current,
-                        onClick = { onSelect(mode) },
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        },
+    RadioListDialog(
+        titleRes = R.string.settings_theme_dialog_title,
+        options = ThemeMode.entries,
+        current = current,
+        labelResOf = { it.labelRes },
+        onSelect = onSelect,
+        onDismiss = onDismiss,
     )
-}
-
-@Composable
-private fun ThemeOptionRow(
-    mode: ThemeMode,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val spacing = TelepicTokens.spacing
-    Surface(onClick = onClick, color = MaterialTheme.colorScheme.surface) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = spacing.xs, horizontal = spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RadioButton(selected = selected, onClick = onClick)
-            Text(
-                text = stringResource(mode.labelRes),
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(start = spacing.md),
-            )
-        }
-    }
 }
