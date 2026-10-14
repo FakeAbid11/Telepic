@@ -2,6 +2,7 @@ package com.telepic
 
 import android.app.Application
 import android.os.Build
+import android.os.Process
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
@@ -13,6 +14,7 @@ import com.telepic.di.AppContainer
 import com.telepic.di.DefaultAppContainer
 import com.telepic.diagnostics.TelepicLog
 import com.telepic.telegram.TelegramAuthState
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,10 +32,18 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
     lateinit var container: AppContainer
         private set
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val appScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
+            // Background work (the Telegram state collection, the startup backup sync) must never be
+            // able to take the process down. Each call site is guarded in its own right; this is the
+            // net for the one that is not, and it reports rather than swallowing.
+            TelepicLog.error("AppScope", "unhandled failure in a background coroutine", throwable)
+        },
+    )
 
     override fun onCreate() {
         super.onCreate()
+        installCrashLogger()
         container = DefaultAppContainer(this)
         // Initialize the Telegram session at startup to restore a persisted login. This opens
         // TDLib on a background scope and never blocks or crashes local startup (Photos works
@@ -53,6 +63,33 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
                     runCatching { container.backupCoordinator.startPendingBackup() }
                         .onFailure { TelepicLog.error("BackupScheduler", "could not resume the queue after sign-in", it) }
                 }
+        }
+    }
+
+    /**
+     * Turns the app's signature failure mode — a silent process death — into a stack trace.
+     *
+     * Every coroutine boundary here degrades instead of rethrowing, and `viewModelScope` installs no
+     * `CoroutineExceptionHandler`, so when an exception still escapes there is nothing in logcat and
+     * nothing on disk: the app just closes. (That is exactly how the "choosing a folder closes the
+     * app" report presented, and why it had to be diagnosed by reading code rather than by reading a
+     * crash.) This installs one handler that logs the throwable through [TelepicLog] and then hands
+     * off to the platform's handler, so the process still fails fast exactly as before — but
+     * `adb logcat -b crash` finally has the reason.
+     *
+     * It must never swallow: the previous handler is always invoked when present, and the process is
+     * killed directly when it is not, so an uncaught error can never leave a half-dead process behind.
+     */
+    private fun installCrashLogger() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            // A crash inside the crash logger must not mask the original throwable.
+            runCatching { TelepicLog.error("Crash", "uncaught exception on thread ${thread.name}", throwable) }
+            if (previous != null) {
+                previous.uncaughtException(thread, throwable)
+            } else {
+                Process.killProcess(Process.myPid())
+            }
         }
     }
 
