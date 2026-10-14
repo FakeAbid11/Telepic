@@ -1,14 +1,8 @@
 package com.telepic.data.backup
 
 import android.content.Context
-import androidx.room.Database
 import androidx.room.Room
-import androidx.room.RoomDatabase
 import androidx.test.core.app.ApplicationProvider
-import com.telepic.data.cloud.db.CloudDestinationDao
-import com.telepic.data.cloud.db.CloudDestinationEntity
-import com.telepic.data.cloud.db.CloudMediaManifestDao
-import com.telepic.data.cloud.db.CloudMediaManifestEntity
 import com.telepic.data.cloud.db.TelepicDatabase
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
@@ -17,52 +11,61 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Mirrors the Phase 5 (version 1) schema exactly — two entities, no backup queue. */
-@Database(entities = [CloudDestinationEntity::class, CloudMediaManifestEntity::class], version = 1, exportSchema = false)
-abstract class Phase5Database : RoomDatabase() {
-    abstract fun cloudDestinationDao(): CloudDestinationDao
-    abstract fun cloudMediaManifestDao(): CloudMediaManifestDao
-}
-
 /**
  * Verifies the *actual* Phase 5 → Phase 6 Room migration, not just creation of the newest schema:
  * a database built at version 1 (cloud destination + manifest only), with real rows, is reopened at
- * version 2 through [TelepicDatabase.MIGRATION_1_2], and the Phase 5 data must survive while the new
- * backup_queue table becomes usable. No destructive fallback.
+ * the current version through the whole migration chain, and the Phase 5 data must survive while the
+ * new backup_queue table becomes usable. No destructive fallback.
+ *
+ * The version-1 schema is written out as raw SQL rather than by aliasing the live entity classes.
+ * That is load-bearing, not stylistic: a legacy database defined by the *current* entity would gain
+ * every column added since, so `ALTER TABLE … ADD COLUMN` in a later migration would fail on a
+ * duplicate column and the test would stop proving anything about real upgrade paths. Freezing the
+ * old schema here is what makes "this migration works on a database that predates it" a real claim —
+ * and it is why the manifest below has no `contentSizeBytes`.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class BackupMigrationTest {
 
     @Test
-    fun `phase 5 data survives the 1 to 2 migration and the queue is usable`() {
+    fun `phase 5 data survives the full migration chain and the queue is usable`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dbFile = "migration_phase6.db"
         context.deleteDatabase(dbFile)
 
         kotlinx.coroutines.runBlocking {
 
-        // Arrange: create a real version-1 database with a destination + a manifest row.
-        val v1 = Room.databaseBuilder(context, Phase5Database::class.java, dbFile)
-            .allowMainThreadQueries()
-            .build()
-        v1.cloudDestinationDao().upsert(
-            CloudDestinationEntity("telegram", 100L, "Telepic Backup", true, 1L, 1L),
+        // Arrange: the exact version-1 schema (Phase 5: destination + manifest, no queue), with real
+        // rows, built by hand.
+        val raw = context.openOrCreateDatabase(dbFile, Context.MODE_PRIVATE, null)
+        raw.version = 1
+        raw.execSQL(
+            "CREATE TABLE `cloud_destination` (`provider` TEXT NOT NULL, `chatId` INTEGER NOT NULL, " +
+                "`title` TEXT NOT NULL, `validated` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`provider`))",
         )
-        v1.cloudMediaManifestDao().upsertAll(
-            listOf(
-                CloudMediaManifestEntity(
-                    chatId = 100L, messageId = 1L, mediaType = "IMAGE", mimeType = "image/jpeg",
-                    fileName = "a.jpg", sizeBytes = 10L, width = null, height = null, durationMs = null,
-                    dateEpochSec = 1L, previewFileId = null, originalFileId = null, isDownloaded = false,
-                    contentHash = null, createdAt = 1L, updatedAt = 1L,
-                ),
-            ),
+        raw.execSQL(
+            "CREATE TABLE `cloud_media_manifest` (`chatId` INTEGER NOT NULL, `messageId` INTEGER NOT NULL, " +
+                "`mediaType` TEXT NOT NULL, `mimeType` TEXT, `fileName` TEXT, `sizeBytes` INTEGER, " +
+                "`width` INTEGER, `height` INTEGER, `durationMs` INTEGER, `dateEpochSec` INTEGER, " +
+                "`previewFileId` INTEGER, `originalFileId` INTEGER, `isDownloaded` INTEGER NOT NULL, " +
+                "`contentHash` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`chatId`,`messageId`))",
         )
-        v1.close()
+        raw.execSQL(
+            "INSERT INTO `cloud_destination` (`provider`, `chatId`, `title`, `validated`, `createdAt`, `updatedAt`) " +
+                "VALUES ('telegram', 100, 'Telepic Backup', 1, 1, 1)",
+        )
+        raw.execSQL(
+            "INSERT INTO `cloud_media_manifest` (`chatId`, `messageId`, `mediaType`, `mimeType`, `fileName`, " +
+                "`sizeBytes`, `isDownloaded`, `contentHash`, `createdAt`, `updatedAt`) " +
+                "VALUES (100, 1, 'IMAGE', 'image/jpeg', 'a.jpg', 10, 0, NULL, 1, 1)",
+        )
+        raw.close()
 
         // Act: reopen the same file at the current version with the full migration chain.
-        val v2 = Room.databaseBuilder(context, TelepicDatabase::class.java, dbFile)
+        val migrated = Room.databaseBuilder(context, TelepicDatabase::class.java, dbFile)
             .addMigrations(
                 // Chained all the way to the current version: TelepicDatabase is always the latest, so
                 // opening a v1 file has to walk every step. MIGRATION_1_2 is the one under test; the
@@ -75,17 +78,22 @@ class BackupMigrationTest {
                 TelepicDatabase.MIGRATION_6_7,
                 TelepicDatabase.MIGRATION_7_8,
                 TelepicDatabase.MIGRATION_8_9,
+                TelepicDatabase.MIGRATION_9_10,
             )
             .allowMainThreadQueries()
             .build()
 
-        // Assert: Phase 5 rows survived.
-        assertEquals(100L, v2.cloudDestinationDao().find("telegram")?.chatId)
-        assertEquals(1, v2.cloudMediaManifestDao().count())
+        // Assert: Phase 5 rows survived, and the column added by the last step is present and NULL —
+        // which is the honest value for a row that predates it, and the one recognition's COALESCE
+        // fallback exists to handle.
+        assertEquals(100L, migrated.cloudDestinationDao().find("telegram")?.chatId)
+        assertEquals(1, migrated.cloudMediaManifestDao().count())
+        val manifestRow = migrated.cloudMediaManifestDao().get(100L, 1L)
+        assertEquals(null, manifestRow?.contentSizeBytes)
 
         // Assert: the new queue table exists and works.
-        assertEquals(0, v2.backupQueueDao().observeAll().first().size)
-        v2.close()
+        assertEquals(0, migrated.backupQueueDao().observeAll().first().size)
+        migrated.close()
         }
 
         context.deleteDatabase(dbFile)

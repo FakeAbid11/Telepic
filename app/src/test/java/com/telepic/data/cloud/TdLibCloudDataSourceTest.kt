@@ -135,10 +135,30 @@ class TdLibCloudDataSourceTest {
                 else -> TdApi.Error(400, "unhandled")
             }
         }
-        val media = ds.loadNewestMedia(100L, limit = 10)
-        assertEquals(2, media.size)
-        assertEquals(30L, media[0].messageId)
-        assertEquals(28L, media[1].messageId)
+        val page = ds.loadMediaPage(100L, fromMessageId = 0L, limit = 10)
+        assertEquals(2, page.items.size)
+        assertEquals(30L, page.items[0].messageId)
+        assertEquals(28L, page.items[1].messageId)
+        // A short page is the provider's "no more history" signal, so the cursor must be null —
+        // otherwise a rebuild would treat a finished channel as one with older pages to walk.
+        assertNull(page.nextFromMessageId)
+    }
+
+    @Test
+    fun `history paging hands back a cursor while older messages may remain`() = runBlocking {
+        // A full page means there may be more history. Returning a null cursor here is exactly the
+        // bug that capped the manifest at the newest page and made a reinstall re-upload everything
+        // older, so this pins the contract: cursor set, pointing at the oldest id consumed.
+        val full = TdApi.Messages(50, Array(50) { i -> message((50L - i), photoContent(1, 2)) })
+        val (ds, _) = source { req ->
+            when (req) {
+                is TdApi.GetChatHistory -> full
+                else -> TdApi.Error(400, "unhandled")
+            }
+        }
+        val page = ds.loadMediaPage(100L, fromMessageId = 0L, limit = 50)
+        assertEquals(50, page.items.size)
+        assertEquals(1L, page.nextFromMessageId)
     }
 
     @Test

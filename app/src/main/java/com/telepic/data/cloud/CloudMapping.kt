@@ -22,6 +22,7 @@ object CloudMapping {
         originalFileId = originalFileId,
         isDownloaded = isDownloaded,
         contentHash = contentHash,
+        contentSizeBytes = contentSizeBytes,
         createdAt = nowMillis,
         updatedAt = nowMillis,
     )
@@ -41,5 +42,6 @@ object CloudMapping {
         originalFileId = originalFileId,
         isDownloaded = isDownloaded,
         contentHash = contentHash,
+        contentSizeBytes = contentSizeBytes,
     )
 }

@@ -5,6 +5,7 @@ import com.telepic.data.cloud.db.CloudDestinationEntity
 import com.telepic.data.cloud.db.CloudMediaManifestDao
 import com.telepic.data.cloud.CloudMapping.toDomain
 import com.telepic.data.cloud.CloudMapping.toEntity
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.cloud.ChatCandidate
 import com.telepic.domain.cloud.ChatValidator
 import com.telepic.domain.cloud.CloudMedia
@@ -109,6 +110,23 @@ class TelegramCloudRepository(
         mutex.withLock { refreshLocked() }
     }
 
+    /**
+     * Rebuild the manifest from the channel's history, walking older pages until the walk reaches
+     * history this install already holds.
+     *
+     * Paging here is a **correctness** requirement, not a nicety. The manifest is the reinstall-proof
+     * recognition source: `BackupRecognitionRepository` answers "already backed up?" by matching a
+     * locally computed SHA-256 against it. A rebuild that could only ever read the newest page left
+     * every older row absent, so recognition found nothing, and the entire library older than that
+     * page was re-uploaded after a reinstall — while `CloudEntities`/`TdApiCloudMapper`/`README`
+     * claimed the rebuilt manifest was as complete as the lost one.
+     *
+     * The walk is affordable because of the stop rule: a page whose every message id is already
+     * recorded means the walk has reached known territory, so everything older is known too. A
+     * routine refresh therefore costs a single round trip, while a first refresh after a reinstall
+     * (empty manifest) covers the whole channel once. [MAX_REBUILD_PAGES] is a backstop so a
+     * pathological history cannot spin forever.
+     */
     private suspend fun refreshLocked() {
         val destination = currentDestination() ?: run {
             // An outstanding confirmation offer is not a missing destination: overwriting the status
@@ -118,12 +136,25 @@ class TelegramCloudRepository(
         }
         _status.value = CloudStatus.Refreshing
         try {
-            val items = dataSource.loadNewestMedia(destination.chatId, PAGE_SIZE)
             val now = clock()
-            // Merge the whole page in memory, then write it in one statement. The previous
-            // one-upsert-per-row shape cost a separate transaction per item — 50 for a full page.
-            val merged = items.map { mergePreservingTrusted(it.toEntity(now)) }
-            if (merged.isNotEmpty()) manifestDao.upsertAll(merged)
+            // Read once per refresh: this is both the stop signal and the source of the per-row
+            // "existing" lookups, replacing one query per discovered row with two queries per page.
+            val known = manifestDao.messageIds(destination.chatId).toHashSet()
+            var cursor = 0L
+            var pages = 0
+            while (pages < MAX_REBUILD_PAGES) {
+                val page = dataSource.loadMediaPage(destination.chatId, cursor, PAGE_SIZE)
+                pages++
+                if (page.items.isNotEmpty()) {
+                    // Merge the whole page in memory, then write it in one statement.
+                    manifestDao.upsertAll(mergePreservingTrusted(page.items, now))
+                    // Nothing on this page is new, so everything older is already recorded too.
+                    if (page.items.none { it.messageId !in known }) break
+                }
+                // Null cursor = the history really ended. An empty page with a cursor still set means
+                // the page held only messages Telepic cannot browse, so keep walking past it.
+                cursor = page.nextFromMessageId ?: break
+            }
             _status.value = if (manifestDao.count() == 0) CloudStatus.Empty else CloudStatus.Ready
         } catch (network: CloudNetworkException) {
             _status.value = CloudStatus.Offline
@@ -240,6 +271,10 @@ class TelegramCloudRepository(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (throwable: Throwable) {
+            // A provider/transport fault used to be indistinguishable from "this media has no
+            // preview", which made a failing preview path invisible in the field. The message id is
+            // the whole diagnostic: never the local path, never a filename.
+            TelepicLog.warn("Cloud", "preview unavailable for messageId=${media.messageId}", throwable)
             null
         }
     }
@@ -257,6 +292,7 @@ class TelegramCloudRepository(
                 // mark a perfectly good cloud item undownloadable.
                 throw cancellation
             } catch (throwable: Throwable) {
+                TelepicLog.warn("Cloud", "original download failed for messageId=${media.messageId}", throwable)
                 null
             }
         }
@@ -281,7 +317,7 @@ class TelegramCloudRepository(
             val result = dataSource.upload(destination.chatId, request, onProgress, onSent)
             // Remote confirmation arrived: record it under its stable identity, preserving any
             // existing trusted hash (upload rows carry a real hash; discovery rows carry none).
-            manifestDao.upsertAll(listOf(mergePreservingTrusted(fromUpload(request, result).toEntity(clock()))))
+            manifestDao.upsertAll(mergePreservingTrusted(listOf(fromUpload(request, result)), clock()))
             result
         }
     }
@@ -302,8 +338,8 @@ class TelegramCloudRepository(
             // content hash from the queue row so content recognition dedups this upload too — even
             // when its confirmation arrived late, via this path instead of the original send run.
             manifestDao.upsertAll(
-                listOf(
-                    mergePreservingTrusted(
+                mergePreservingTrusted(
+                    listOf(
                         CloudMedia(
                             messageId = confirmed.messageId,
                             chatId = confirmed.chatId,
@@ -319,8 +355,12 @@ class TelegramCloudRepository(
                             originalFileId = confirmed.telegramFileId,
                             isDownloaded = false,
                             contentHash = contentHash,
-                        ).toEntity(clock()),
+                            // No provider size is known on this path, so the hashed size stands in for
+                            // both — the pair stays internally consistent either way.
+                            contentSizeBytes = contentSizeBytes,
+                        ),
                     ),
+                    clock(),
                 ),
             )
             confirmed
@@ -328,29 +368,47 @@ class TelegramCloudRepository(
     }
 
     /**
-     * The row to write for [entity]: the remote row wins, except for the fields only this device
-     * knows — a trusted content hash, a completed download, resolved file ids, and the original
+     * The rows to write for [items]: each remote row wins, except for the fields only this device
+     * knows — a trusted content identity, a completed download, resolved file ids, and the original
      * `createdAt`.
      *
-     * Returns the merged entity rather than writing it, so a page of N rows costs one upsert instead
-     * of N transactions. The read-then-write is not atomic on its own, so every caller holds the
-     * repository mutex — and identity is (chatId, messageId), so a preserved hash always belongs to
-     * the same Telegram message and repeated refreshes stay idempotent.
+     * [CloudMediaManifestEntity.contentSizeBytes] is preserved rather than taken from the discovered
+     * row, because the two sizes describe different things and only one of them is checkable here.
+     * A refresh legitimately overwrites `sizeBytes` with Telegram's own figure for the stored file
+     * (which is *not* the original's size for a recompressed photo), while the hashed size has to
+     * survive for the hash lookup to keep matching. The discovered row supplies it only when the
+     * caption marker carried it, which is how a rebuilt manifest recovers the identity at all.
+     *
+     * Takes the whole page at once and resolves every "existing row" in **one** query, so a page of N
+     * rows costs one read and one write instead of N of each. The read-then-write is not atomic on
+     * its own, so every caller holds the repository mutex — and identity is (chatId, messageId), so a
+     * preserved hash always belongs to the same Telegram message and repeated refreshes stay
+     * idempotent.
      */
     private suspend fun mergePreservingTrusted(
-        entity: com.telepic.data.cloud.db.CloudMediaManifestEntity,
-    ): com.telepic.data.cloud.db.CloudMediaManifestEntity {
-        val existing = manifestDao.get(entity.chatId, entity.messageId)
-        return if (existing == null) {
-            entity
-        } else {
-            entity.copy(
-                contentHash = entity.contentHash ?: existing.contentHash,
-                isDownloaded = entity.isDownloaded || existing.isDownloaded,
-                previewFileId = entity.previewFileId ?: existing.previewFileId,
-                originalFileId = entity.originalFileId ?: existing.originalFileId,
-                createdAt = existing.createdAt,
-            )
+        items: List<CloudMedia>,
+        now: Long,
+    ): List<com.telepic.data.cloud.db.CloudMediaManifestEntity> {
+        if (items.isEmpty()) return emptyList()
+        // Every item in a page comes from one chatId, so a single scoped lookup covers the page.
+        val chatId = items.first().chatId
+        val existing = manifestDao.findByIds(chatId, items.map { it.messageId })
+            .associateBy { it.messageId }
+        return items.map { media ->
+            val entity = media.toEntity(now)
+            val prior = existing[entity.messageId]
+            if (prior == null) {
+                entity
+            } else {
+                entity.copy(
+                    contentHash = entity.contentHash ?: prior.contentHash,
+                    contentSizeBytes = entity.contentSizeBytes ?: prior.contentSizeBytes,
+                    isDownloaded = entity.isDownloaded || prior.isDownloaded,
+                    previewFileId = entity.previewFileId ?: prior.previewFileId,
+                    originalFileId = entity.originalFileId ?: prior.originalFileId,
+                    createdAt = prior.createdAt,
+                )
+            }
         }
     }
 
@@ -369,6 +427,9 @@ class TelegramCloudRepository(
         originalFileId = result.telegramFileId,
         isDownloaded = true,
         contentHash = request.contentHash,
+        // The size the hash was computed over, so recognition can compare like with like even when
+        // the provider's `sizeBytes` is absent or stale.
+        contentSizeBytes = request.contentSizeBytes ?: request.sizeBytes,
     )
 
     private suspend fun currentDestination(): TelepicCloudDestination? {
@@ -418,6 +479,15 @@ class TelegramCloudRepository(
 
     private companion object {
         const val PROVIDER = "telegram"
+
+        /** Items requested per history page. */
         const val PAGE_SIZE = 50
+
+        /**
+         * Backstop on the manifest rebuild walk. In steady state the walk stops after the first page
+         * (everything on it is already known), so this only ever applies to a full rebuild — where it
+         * caps the one-time cost at 10,000 items rather than letting a pathological history spin.
+         */
+        const val MAX_REBUILD_PAGES = 200
     }
 }

@@ -86,24 +86,40 @@ class BackupRecognitionRepositoryTest {
         dispatcher = Dispatchers.Unconfined,
     )
 
-    private fun media(id: Long, uri: String, size: Long = 1000L, modifiedMs: Long = 1_000_000_000_000L) = LocalMedia(
+    private fun media(
+        id: Long,
+        uri: String,
+        size: Long = 1000L,
+        modifiedMs: Long = 1_000_000_000_000L,
+        displayName: String = "p$id.jpg",
+    ) = LocalMedia(
         id = id, contentUri = Uri.parse(uri), type = MediaType.PHOTO, mimeType = "image/jpeg",
-        displayName = "p$id.jpg", dateMillis = modifiedMs, durationMillis = null, width = 1, height = 1,
+        displayName = displayName, dateMillis = modifiedMs, durationMillis = null, width = 1, height = 1,
         sizeBytes = size, bucketId = null, bucketName = null, relativePath = null,
     )
 
-    private fun insertManifest(chatId: Long, messageId: Long, hash: String?, size: Long?) = runBlocking {
+    private fun insertManifest(
+        chatId: Long,
+        messageId: Long,
+        hash: String?,
+        size: Long?,
+        fileName: String? = "x.jpg",
+        contentSizeBytes: Long? = null,
+    ) = runBlocking {
         manifestDao.upsertAll(
             listOf(
                 CloudMediaManifestEntity(
                     chatId = chatId, messageId = messageId, mediaType = "IMAGE", mimeType = "image/jpeg",
-                    fileName = "x.jpg", sizeBytes = size, width = null, height = null, durationMs = null,
+                    fileName = fileName, sizeBytes = size, width = null, height = null, durationMs = null,
                     dateEpochSec = 1L, previewFileId = null, originalFileId = null, isDownloaded = false,
-                    contentHash = hash, createdAt = 1L, updatedAt = 1L,
+                    contentHash = hash, contentSizeBytes = contentSizeBytes, createdAt = 1L, updatedAt = 1L,
                 ),
             ),
         )
     }
+
+    private suspend fun manifestRow(chatId: Long, messageId: Long) =
+        manifestDao.get(chatId, messageId)
 
     private val hashA = "a".repeat(64)
     private val hashB = "b".repeat(64)
@@ -133,6 +149,101 @@ class BackupRecognitionRepositoryTest {
         insertManifest(chatId = 100L, messageId = 7L, hash = hashA, size = 999L)
         val hasher = FakeHasher(mapOf("content://a" to hashA), sizeFor = 1000L)
         val result = repo(hasher).recognize(media(1, "content://a"))
+        assertTrue(result is BackupRecognitionResult.NeedsBackup)
+    }
+
+    // --- Reinstall recovery ---------------------------------------------------------------------
+    //
+    // A manifest rebuilt from the channel's history after a reinstall has rows with no hash, so the
+    // hash lookup can never see them. These cover the weaker name+size path that recovers them, and
+    // — just as importantly — every way it must refuse to match.
+
+    @Test
+    fun `a hashless manifest row with the same name and size is recovered and upgraded`() = runBlocking {
+        insertManifest(
+            chatId = 100L, messageId = 7L, hash = null, size = 1000L,
+            fileName = "clip.mp4", contentSizeBytes = null,
+        )
+        val hasher = FakeHasher(mapOf("content://a" to hashA))
+        val result = repo(hasher).recognize(media(1, "content://a", displayName = "clip.mp4"))
+
+        assertEquals(
+            BackupRecognitionResult.AlreadyBackedUp("1", com.telepic.domain.backup.RemoteMediaIdentity(100L, 7L)),
+            result,
+        )
+        // The row is upgraded in place, so the next scan matches on the hash instead of the name.
+        val upgraded = manifestRow(100L, 7L)!!
+        assertEquals(hashA, upgraded.contentHash)
+        assertEquals(1000L, upgraded.contentSizeBytes)
+    }
+
+    /**
+     * The upgraded row must be reachable by hash alone from then on — that is the whole point of
+     * writing the identity back. Renaming the local file proves the name is no longer involved.
+     */
+    @Test
+    fun `recovery is one-shot - the upgraded row matches by hash afterwards`() = runBlocking {
+        insertManifest(
+            chatId = 100L, messageId = 7L, hash = null, size = 1000L,
+            fileName = "clip.mp4", contentSizeBytes = null,
+        )
+        val hasher = FakeHasher(mapOf("content://a" to hashA, "content://b" to hashA))
+        repo(hasher).recognize(media(1, "content://a", displayName = "clip.mp4"))
+
+        // A different local item, different id, different name, same bytes.
+        val second = repo(hasher).recognize(media(2, "content://b", displayName = "renamed.mp4"))
+        assertEquals(
+            BackupRecognitionResult.AlreadyBackedUp("2", com.telepic.domain.backup.RemoteMediaIdentity(100L, 7L)),
+            second,
+        )
+    }
+
+    @Test
+    fun `a hashless row with a different name is NOT recovered`() = runBlocking {
+        insertManifest(
+            chatId = 100L, messageId = 7L, hash = null, size = 1000L,
+            fileName = "clip.mp4", contentSizeBytes = null,
+        )
+        val hasher = FakeHasher(mapOf("content://a" to hashA))
+        val result = repo(hasher).recognize(media(1, "content://a", displayName = "other.mp4"))
+        assertTrue(result is BackupRecognitionResult.NeedsBackup)
+    }
+
+    @Test
+    fun `a hashless row with a different size is NOT recovered`() = runBlocking {
+        insertManifest(
+            chatId = 100L, messageId = 7L, hash = null, size = 999L,
+            fileName = "clip.mp4", contentSizeBytes = null,
+        )
+        val hasher = FakeHasher(mapOf("content://a" to hashA), sizeFor = 1000L)
+        val result = repo(hasher).recognize(media(1, "content://a", displayName = "clip.mp4"))
+        assertTrue(result is BackupRecognitionResult.NeedsBackup)
+    }
+
+    /**
+     * A filename is not identity. A row that already carries a hash must be matched by hash, so a
+     * name collision can never be mistaken for "already backed up" — which would silently skip an
+     * upload the user asked for.
+     */
+    @Test
+    fun `a row that already has a hash is never matched by name`() = runBlocking {
+        insertManifest(
+            chatId = 100L, messageId = 7L, hash = hashB, size = 1000L,
+            fileName = "clip.mp4", contentSizeBytes = 1000L,
+        )
+        val hasher = FakeHasher(mapOf("content://a" to hashA))
+        val result = repo(hasher).recognize(media(1, "content://a", displayName = "clip.mp4"))
+        assertTrue(result is BackupRecognitionResult.NeedsBackup)
+    }
+
+    @Test
+    fun `a null local display name never recovers a row`() = runBlocking {
+        insertManifest(
+            chatId = 100L, messageId = 7L, hash = null, size = 1000L,
+            fileName = null, contentSizeBytes = null,
+        )
+        val hasher = FakeHasher(mapOf("content://a" to hashA))
+        val result = repo(hasher).recognize(media(1, "content://a", displayName = ""))
         assertTrue(result is BackupRecognitionResult.NeedsBackup)
     }
 

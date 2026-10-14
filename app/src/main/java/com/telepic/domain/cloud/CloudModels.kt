@@ -26,8 +26,17 @@ data class TelepicCloudDestination(
  *
  * Stable remote identity is `chatId` + `messageId` — never the filename. Carries metadata and
  * optional file identities; [isDownloaded] reflects whether the *original* is available locally.
- * [contentHash] is reserved for the future recognition/dedup phase (Phase 7) and is never
- * computed in Phase 5.
+ *
+ * [contentHash] + [contentSizeBytes] are the content identity recognition matches on. They are
+ * populated from Telepic's own upload result, and — for a manifest rebuilt from the channel's
+ * history after a reinstall — recovered from the message caption via [CloudBackupMarker]. Both stay
+ * null when nothing trustworthy is available, which is why recognition must treat "no hash" as
+ * "unknown", never as "not backed up".
+ *
+ * [sizeBytes] and [contentSizeBytes] are deliberately distinct. [sizeBytes] is what Telegram reports
+ * for the file it now stores (Telegram recompresses photos, so this is *not* the original's size),
+ * while [contentSizeBytes] is the byte count the SHA-256 was computed over on this device. Matching
+ * on the former would fail for every photo.
  */
 data class CloudMedia(
     val messageId: Long,
@@ -44,6 +53,8 @@ data class CloudMedia(
     val originalFileId: Int?,
     val isDownloaded: Boolean = false,
     val contentHash: String? = null,
+    /** The byte count [contentHash] was computed over — the *original* size, not Telegram's. */
+    val contentSizeBytes: Long? = null,
 )
 
 /** A downloaded, locally available preview/thumbnail for a [CloudMedia]. */

@@ -20,7 +20,7 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  * recognition; Phase 10 favorites/archive/trash organization + geotagged-location cache; user-created
  * albums).
  *
- * Version 7 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
+ * Version 10 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
  * Phase 5 destination/manifest rows, Phase 6 queue rows and Phase 7 hashes always survive:
  * - `1 → 2` ([MIGRATION_1_2]): introduces `backup_queue`.
  * - `2 → 3` ([MIGRATION_2_3]): adds `contentSizeBytes` + `hashedAt` and the `contentHash` indexes
@@ -34,6 +34,8 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  *   examined for GPS, including the ones that carry none).
  * - `8 → 9` ([MIGRATION_8_9]): adds the missing indices on the columns the queue and manifest are
  *   sorted/filtered by. Additive only — no table or column changes.
+ * - `9 → 10` ([MIGRATION_9_10]): adds `cloud_media_manifest.contentSizeBytes`, the byte count a
+ *   recovered content hash was computed over. Additive only.
  */
 @Database(
     entities = [
@@ -46,7 +48,7 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         CustomAlbumEntity::class,
         CustomAlbumMediaEntity::class,
     ],
-    version = 9,
+    version = 10,
     // Schema JSON is exported to app/schemas (see the `ksp` block in app/build.gradle.kts) and
     // committed, so Room's migration checker can verify each migration against the real schema
     // instead of trusting the hand-written SQL in this file.
@@ -244,6 +246,21 @@ abstract class TelepicDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS `index_cloud_media_manifest_dateEpochSec` " +
                         "ON `cloud_media_manifest` (`dateEpochSec`)",
                 )
+            }
+        }
+
+        /**
+         * Recognition across reinstall: adds `cloud_media_manifest.contentSizeBytes`, the byte count
+         * the stored `contentHash` was computed over.
+         *
+         * Additive, and nullable, so every existing manifest row survives with the column NULL. That
+         * NULL is meaningful rather than a gap: it means "written before this column existed", and
+         * the recognition queries fall back to `sizeBytes` via `COALESCE` for exactly those rows
+         * instead of refusing to match them.
+         */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `cloud_media_manifest` ADD COLUMN `contentSizeBytes` INTEGER")
             }
         }
     }

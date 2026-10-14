@@ -1,6 +1,7 @@
 package com.telepic.data.cloud
 
 import com.telepic.domain.cloud.ChatCandidate
+import com.telepic.domain.cloud.CloudBackupMarker
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaKind
 import com.telepic.domain.cloud.CloudMediaType
@@ -64,6 +65,11 @@ object TdApiCloudMapper {
      * Maps one remote [TdApi.Message] to a [CloudMedia], or `null` when it is not supported media
      * (text, stickers, contacts, a failed send, etc.) so the scanner can safely skip it. Remote
      * identity is always `(chatId, messageId)` — never the filename.
+     *
+     * Each branch also recovers the content identity Telepic stamped into the caption on upload (see
+     * [CloudBackupMarker]), so a manifest rebuilt from history after a reinstall is as complete as
+     * the one that was lost. A message with no marker — anything not sent by Telepic, or sent before
+     * the marker existed — simply yields nulls, which recognition treats as "unknown".
      */
     fun messageToCloudMedia(chatId: Long, message: TdApi.Message?): CloudMedia? {
         if (message == null) return null
@@ -83,11 +89,14 @@ object TdApiCloudMapper {
         val sizes = content.photo?.sizes ?: return null
         val smallest = sizes.smallestByArea() ?: return null
         val largest = sizes.largestByArea() ?: smallest
+        val identity = CloudBackupMarker.parse(content.caption?.text)
         return CloudMedia(
             messageId = messageId,
             chatId = chatId,
             mediaType = CloudMediaType.IMAGE,
             mimeType = "image/jpeg",
+            // Telegram does not give a discovered photo a filename; the caption marker is what makes
+            // it identifiable instead, so nothing is invented here.
             fileName = null,
             sizeBytes = largest.photo?.size,
             width = largest.width.takeIf { it > 0 },
@@ -96,11 +105,14 @@ object TdApiCloudMapper {
             dateEpochSec = date,
             previewFileId = smallest.photo?.id,
             originalFileId = largest.photo?.id,
+            contentHash = identity?.sha256,
+            contentSizeBytes = identity?.sizeBytes,
         )
     }
 
     private fun video(chatId: Long, messageId: Long, content: TdApi.MessageVideo, date: Long): CloudMedia? {
         val v = content.video ?: return null
+        val identity = CloudBackupMarker.parse(content.caption?.text)
         return CloudMedia(
             messageId = messageId,
             chatId = chatId,
@@ -114,11 +126,14 @@ object TdApiCloudMapper {
             dateEpochSec = date,
             previewFileId = v.thumbnail?.file?.id,
             originalFileId = v.video?.id,
+            contentHash = identity?.sha256,
+            contentSizeBytes = identity?.sizeBytes,
         )
     }
 
     private fun animation(chatId: Long, messageId: Long, content: TdApi.MessageAnimation, date: Long): CloudMedia? {
         val a = content.animation ?: return null
+        val identity = CloudBackupMarker.parse(content.caption?.text)
         return CloudMedia(
             messageId = messageId,
             chatId = chatId,
@@ -132,6 +147,8 @@ object TdApiCloudMapper {
             dateEpochSec = date,
             previewFileId = a.thumbnail?.file?.id,
             originalFileId = a.animation?.id,
+            contentHash = identity?.sha256,
+            contentSizeBytes = identity?.sizeBytes,
         )
     }
 
@@ -139,6 +156,7 @@ object TdApiCloudMapper {
         val d = content.document ?: return null
         // Documents are only browsable when they are really image/video/gif media sent as a file.
         val type = CloudMediaKind.classify(d.mimeType) ?: return null
+        val identity = CloudBackupMarker.parse(content.caption?.text)
         return CloudMedia(
             messageId = messageId,
             chatId = chatId,
@@ -152,6 +170,8 @@ object TdApiCloudMapper {
             dateEpochSec = date,
             previewFileId = d.thumbnail?.file?.id,
             originalFileId = d.document?.id,
+            contentHash = identity?.sha256,
+            contentSizeBytes = identity?.sizeBytes,
         )
     }
 
@@ -160,13 +180,25 @@ object TdApiCloudMapper {
      * for each supported type over an [TdApi.InputFileLocal] pointing at the staged file (the original
      * bytes are handed to TDLib untouched — Telepic never re-encodes them itself).
      *
+     * The caption carries the content identity ([CloudBackupMarker]) so the backup describes itself:
+     * this is the only field TDLib exposes on a photo/video/animation message that can hold it, and
+     * without it a manifest rebuilt from history after a reinstall has no way to recognise anything.
+     * When no trustworthy identity exists the caption is empty rather than a partial marker.
+     *
      * Note on preservation: Telegram applies its own media pipeline to photos (it may recompress),
      * so byte-for-byte preservation of an *image* is not claimed. Videos/animations are sent as their
-     * native media types. This is documented honestly rather than asserted.
+     * native media types. This is documented honestly rather than asserted — and it is exactly why the
+     * marker records the *original* size alongside the hash.
      */
     fun uploadContent(request: CloudUploadRequest): TdApi.InputMessageContent {
         val file = TdApi.InputFileLocal(request.stagedPath)
-        val caption = TdApi.FormattedText("", null)
+        val caption = TdApi.FormattedText(
+            CloudBackupMarker.encode(
+                hash = request.contentHash,
+                sizeBytes = request.contentSizeBytes ?: request.sizeBytes,
+            ),
+            null,
+        )
         val width = request.width ?: 0
         val height = request.height ?: 0
         val durationSec = (request.durationMs ?: 0L).let { if (it > 0) (it / 1000L).toInt() else 0 }

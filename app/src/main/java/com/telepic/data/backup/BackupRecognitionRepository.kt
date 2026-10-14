@@ -25,6 +25,14 @@ import kotlinx.coroutines.withContext
  * source), and only reports [BackupRecognitionResult.NeedsBackup] when no trusted remote record
  * matches. A hash/read failure is [BackupRecognitionResult.Unavailable], never "backed up".
  *
+ * Two remote matches are possible, in order of strength:
+ * 1. **Exact** — the manifest holds this hash and this byte count. This is the only match that proves
+ *    the remote bytes are the same bytes.
+ * 2. **Recovered** — the row predates the caption marker, so it has no hash, but its filename and
+ *    byte count match exactly. Used once, then upgraded to an exact row so the weaker path is never
+ *    taken again. Filename is not identity, so it is only ever trusted for a row that has no hash to
+ *    check against.
+ *
  * Knows nothing about TDLib: remote identity comes only from the manifest.
  */
 interface BackupRecognitionRepository {
@@ -80,6 +88,41 @@ class DefaultBackupRecognitionRepository(
         val match = manifestDao.findByContentHashAndSize(hash.sha256, hash.sizeBytes)
         if (match != null) {
             val remote = RemoteMediaIdentity(match.chatId, match.messageId)
+            markRecognized(media, remote, hash.sha256, hash.sizeBytes)
+            return@withContext BackupRecognitionResult.AlreadyBackedUp(localMediaId, remote)
+        }
+
+        // 3b) Reinstall recovery for media backed up before Telepic stamped an identity into the
+        //     caption: those manifest rows carry no hash, so the hash lookup above can never see
+        //     them. A row is recoverable only when its filename AND byte count match exactly, and
+        //     only when it has no hash of its own — a row that has one must be matched by hash,
+        //     because that is the only check that proves the bytes are the same.
+        //
+        //     Videos, GIFs and documents are the only kinds Telegram gives a filename to, so a
+        //     discovered photo can never match here; photos are covered by the caption marker
+        //     instead. Nothing is guessed: a miss simply falls through to NeedsBackup.
+        val name = media.displayName?.takeIf { it.isNotBlank() }
+        val recovered = name?.let { manifestDao.findHashlessByNameAndSize(it, hash.sizeBytes) }
+        if (recovered != null) {
+            // Upgrade the row first, so the very next scan matches on the hash and never has to take
+            // this weaker path again. Ordering matters: this is a single-statement UPDATE, so it is
+            // atomic on its own, and doing it before the queue write means a crash in between leaves
+            // a manifest row that is *more* trustworthy, never a queue row justified by nothing.
+            val applied = manifestDao.setContentIdentity(
+                chatId = recovered.chatId,
+                messageId = recovered.messageId,
+                hash = hash.sha256,
+                sizeBytes = hash.sizeBytes,
+                updatedAt = clock(),
+            )
+            if (applied == 0) {
+                // Already recorded by a concurrent scan: not an error, and not worth re-reporting.
+                TelepicLog.debug(
+                    "BackupRecognition",
+                    "manifest identity already recorded for messageId=${recovered.messageId}",
+                )
+            }
+            val remote = RemoteMediaIdentity(recovered.chatId, recovered.messageId)
             markRecognized(media, remote, hash.sha256, hash.sizeBytes)
             return@withContext BackupRecognitionResult.AlreadyBackedUp(localMediaId, remote)
         }

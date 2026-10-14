@@ -57,6 +57,12 @@ class TelegramCloudRepositoryTest {
         var candidates: List<ChatCandidate> = emptyList(),
         var created: ChatCandidate? = null,
         var media: List<CloudMedia> = emptyList(),
+        /**
+         * When set, history is served cursor-by-cursor from these pages; otherwise [media] is served
+         * as a single page with no cursor. Cursor-driven rather than call-count-driven so a test can
+         * prove the rebuild really stops when it reaches pages it has already recorded.
+         */
+        var mediaPages: List<List<CloudMedia>>? = null,
         var preview: CloudPreview? = null,
         var download: LocalDownloadedMedia? = null,
         var searchError: Throwable? = null,
@@ -70,6 +76,7 @@ class TelegramCloudRepositoryTest {
         var createCalls = 0
         var uploadCalls = 0
         var confirmCalls = 0
+        var mediaPageCalls = 0
         var confirmResult: com.telepic.domain.cloud.CloudUploadResult? = null
         var confirmError: Throwable? = null
         override suspend fun searchDestinationCandidates(): List<ChatCandidate> {
@@ -83,9 +90,14 @@ class TelegramCloudRepositoryTest {
             return created
         }
 
-        override suspend fun loadNewestMedia(chatId: Long, limit: Int): List<CloudMedia> {
+        override suspend fun loadMediaPage(chatId: Long, fromMessageId: Long, limit: Int): CloudMediaPage {
+            mediaPageCalls++
             mediaError?.let { throw it }
-            return media
+            val pages = mediaPages ?: return CloudMediaPage(media, nextFromMessageId = null)
+            val index = fromMessageId.toInt()
+            if (index >= pages.size) return CloudMediaPage(emptyList(), nextFromMessageId = null)
+            val next = if (index + 1 < pages.size) (index + 1).toLong() else null
+            return CloudMediaPage(pages[index], nextFromMessageId = next)
         }
 
         override suspend fun downloadPreview(media: CloudMedia): CloudPreview? {
@@ -303,12 +315,47 @@ class TelegramCloudRepositoryTest {
     }
 
     @Test
+    fun `a rebuild after a reinstall covers history beyond the newest page`() = runBlocking {
+        // The manifest is the reinstall-proof recognition source. A rebuild that could only read the
+        // newest page left everything older absent, so recognition matched nothing and the whole
+        // older library was re-uploaded. Three full pages is well past that old single-page ceiling.
+        val pages = (0 until 3).map { p -> (1..50).map { i -> mediaItem(p * 50L + i) } }
+        val source = FakeDataSource(candidates = listOf(candidate()), mediaPages = pages)
+        val r = repo(source)
+        r.prepare()
+
+        assertEquals(150, db.cloudMediaManifestDao().count())
+        assertEquals(3, source.mediaPageCalls)
+
+        // A routine refresh must stop the moment it reaches pages it already holds, or every refresh
+        // would re-walk the entire channel.
+        r.refresh()
+        assertEquals(150, db.cloudMediaManifestDao().count())
+        assertEquals(4, source.mediaPageCalls)
+    }
+
+    @Test
+    fun `a page holding no browsable media does not end the rebuild early`() = runBlocking {
+        // A channel can hold messages Telepic cannot browse (text, audio, a sticker). Those produce
+        // an empty page but the history has not ended, so the walk has to continue past them —
+        // otherwise everything older than the first unsupported message is never discovered.
+        val source = FakeDataSource(
+            candidates = listOf(candidate()),
+            mediaPages = listOf(listOf(mediaItem(3)), emptyList(), listOf(mediaItem(1))),
+        )
+        val r = repo(source)
+        r.prepare()
+        assertEquals(2, db.cloudMediaManifestDao().count())
+        assertEquals(3, source.mediaPageCalls)
+    }
+
+    @Test
     fun `refresh preserves a trusted content hash the remote row does not carry`() = runBlocking {
         val source = FakeDataSource(candidates = listOf(candidate()), media = listOf(mediaItem(1)))
         val r = repo(source)
         r.prepare()
         // Simulate app-generated recognition metadata the remote scan cannot reconstruct.
-        db.cloudMediaManifestDao().setContentHash(100L, 1L, "trusted-hash", 2L)
+        db.cloudMediaManifestDao().setContentIdentity(100L, 1L, "trusted-hash", 2L, 2L)
         r.refresh() // remote returns the same message with a null hash
         val stored = db.cloudMediaManifestDao().observeAll().first().first { it.messageId == 1L }
         assertEquals("trusted-hash", stored.contentHash)

@@ -1,5 +1,6 @@
 package com.telepic.data.cloud
 
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.cloud.ChatCandidate
 import com.telepic.domain.cloud.ChatValidator
 import com.telepic.domain.cloud.CloudMedia
@@ -68,24 +69,47 @@ class TdLibCloudDataSource(
         return TdApiCloudMapper.chatToCandidate(chat, canPost = true, isOwnedByAccount = true, accessible = true)
     }
 
-    override suspend fun loadNewestMedia(chatId: Long, limit: Int): List<CloudMedia> {
+    override suspend fun loadMediaPage(chatId: Long, fromMessageId: Long, limit: Int): CloudMediaPage {
         requireAuth()
         val collected = ArrayList<CloudMedia>(limit)
-        var fromMessageId = 0L
+        var cursor = fromMessageId
         var pages = 0
+        // `exhausted` is tracked separately from "we have enough items" on purpose: a page can hold
+        // only messages Telepic cannot browse (text, stickers, an audio file), in which case the loop
+        // must keep walking older history rather than report the channel as ended.
+        var exhausted = false
         while (collected.size < limit && pages < MAX_PAGES) {
             pages++
-            val response = gateway.request(TdApiCloudRequests.history(chatId, fromMessageId, 0, PAGE_SIZE))
+            val response = gateway.request(TdApiCloudRequests.history(chatId, cursor, 0, PAGE_SIZE))
             if (response is TdApi.Error) throw CloudNetworkException("History failed: ${response.message}")
-            val messages = (response as? TdApi.Messages)?.messages ?: break
-            if (messages.isEmpty()) break
+            val messages = (response as? TdApi.Messages)?.messages
+            if (messages.isNullOrEmpty()) {
+                exhausted = true
+                break
+            }
             for (message in messages) {
                 TdApiCloudMapper.messageToCloudMedia(chatId, message)?.let { collected += it }
             }
-            fromMessageId = messages.last().id
-            if (messages.size < PAGE_SIZE) break
+            val next = messages.last().id
+            // A page that does not move the cursor would spin here forever; the same oldest id twice
+            // means this client can see no further back.
+            if (next == cursor) {
+                exhausted = true
+                break
+            }
+            cursor = next
+            // A short page is the provider's own "no more history" signal.
+            if (messages.size < PAGE_SIZE) {
+                exhausted = true
+                break
+            }
         }
-        return collected.take(limit)
+        return CloudMediaPage(
+            items = collected.take(limit),
+            // Null only when the history really ended. Stopping because `limit` was reached leaves the
+            // cursor at the last consumed message so the caller can continue from there.
+            nextFromMessageId = if (exhausted) null else cursor,
+        )
     }
 
     override suspend fun downloadPreview(media: CloudMedia): CloudPreview? {
@@ -154,7 +178,12 @@ class TdLibCloudDataSource(
 
     private suspend fun candidateFor(chatId: Long): ChatCandidate? {
         val chatResponse = gateway.request(TdApiCloudRequests.getChat(chatId))
-        if (chatResponse is TdApi.Error) return null // inaccessible/deleted → not a candidate
+        if (chatResponse is TdApi.Error) {
+            // Inaccessible/deleted → not a candidate. Logged at debug rather than swallowed: a search
+            // that keeps returning nothing is otherwise indistinguishable from one that is failing.
+            TelepicLog.debug("CloudDiscovery", "chat $chatId is not accessible: ${chatResponse.message}")
+            return null
+        }
         val chat = chatResponse as? TdApi.Chat ?: return null
         val member = currentUserId()?.let { userId ->
             gateway.request(TdApiCloudRequests.getChatMember(chatId, userId)) as? TdApi.ChatMember
@@ -176,15 +205,40 @@ class TdLibCloudDataSource(
 
     /** Synchronously downloads [fileId] and returns a verified, non-empty local path (or null). */
     private suspend fun downloadAndVerify(fileId: Int?, priority: Int): String? {
-        if (fileId == null) return null
+        if (fileId == null) {
+            TelepicLog.warn("CloudDownload", "this record carries no file id, so there is nothing to download")
+            return null
+        }
         val response = gateway.request(TdApiCloudRequests.downloadSynchronously(fileId, priority))
-        if (response is TdApi.Error) return null
-        val file = response as? TdApi.File ?: return null
-        val local = file.local ?: return null
-        if (!local.isDownloadingCompleted) return null
-        val path = local.path ?: return null
+        if (response is TdApi.Error) {
+            // Every branch below used to return a bare null, which made a rejected or half-finished
+            // download indistinguishable from "this media has no file". The file id is the whole
+            // diagnostic — the local path is never logged.
+            TelepicLog.warn("CloudDownload", "download rejected for fileId=$fileId: ${response.message}")
+            return null
+        }
+        val file = response as? TdApi.File ?: run {
+            TelepicLog.warn("CloudDownload", "unexpected response type for fileId=$fileId")
+            return null
+        }
+        val local = file.local ?: run {
+            TelepicLog.warn("CloudDownload", "fileId=$fileId has no local state")
+            return null
+        }
+        if (!local.isDownloadingCompleted) {
+            TelepicLog.warn("CloudDownload", "fileId=$fileId did not finish downloading")
+            return null
+        }
+        val path = local.path ?: run {
+            TelepicLog.warn("CloudDownload", "fileId=$fileId completed without a path")
+            return null
+        }
         val onDisk = File(path)
-        return if (onDisk.exists() && onDisk.length() > 0L) path else null
+        if (!onDisk.exists() || onDisk.length() <= 0L) {
+            TelepicLog.warn("CloudDownload", "fileId=$fileId is missing or empty on disk")
+            return null
+        }
+        return path
     }
 
     /**
