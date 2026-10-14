@@ -532,7 +532,11 @@ class ViewerViewModel(
         val requestedSource = current.source
         _uiState.value = current.copy(download = CloudDownload.Downloading)
         viewModelScope.launch {
-            val local = runCatching { cloudRepository.downloadOriginal(cloud.media) }.getOrNull()
+            val local = runCatching { cloudRepository.downloadOriginal(cloud.media) }
+                // A cancelled download is not "unavailable": rethrow so cancellation flows instead of
+                // being turned into a user-visible Unavailable state.
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
             // Identity-guarded: navigating away mid-download must never resurrect the old item's state.
             _uiState.update { state ->
                 if (state.source != requestedSource) return@update state
@@ -561,9 +565,11 @@ class ViewerViewModel(
         val requestedSource = _uiState.value.source
         _restore.value = RestoreState.Restoring
         viewModelScope.launch {
-            val result = runCatching { repo.restore(cloud.media) }.getOrElse {
-                RestoreResult.Failed(RestoreFailure.DOWNLOAD_UNAVAILABLE)
-            }
+            val result = runCatching { repo.restore(cloud.media) }
+                // Same rule as the download path: a torn-down scope must not be reported as a failed
+                // restore. Only a real throwable maps to the honest failure below.
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrElse { RestoreResult.Failed(RestoreFailure.DOWNLOAD_UNAVAILABLE) }
             // Guard: a restore that finishes after navigation must not claim the new item was saved.
             if (_uiState.value.source == requestedSource) {
                 _restore.value = when (result) {

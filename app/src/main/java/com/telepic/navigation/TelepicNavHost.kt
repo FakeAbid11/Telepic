@@ -344,7 +344,13 @@ private fun TelepicNavGraph(
                 navArgument(ViewerRoute.ARG_ALBUM_ID) { type = NavType.LongType; defaultValue = -1L },
             ),
         ) { backStackEntry ->
-            val mediaId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_MEDIA_ID) ?: 0L
+            val mediaId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_MEDIA_ID)
+            if (mediaId == null) {
+                // Never fabricate id 0: a missing required arg degrades to the same honest fallback the
+                // cloud route uses, instead of silently loading a non-existent item.
+                InvalidRouteFallback(onBack = { navController.popBackStack() })
+                return@composable
+            }
             val bucketId = backStackEntry.arguments?.getLong(ViewerRoute.ARG_BUCKET_ID)
                 ?.takeIf { it >= 0L }
             val orgKind = OrganizationRoute.kindOf(backStackEntry.arguments?.getString(ViewerRoute.ARG_ORG_KIND))
