@@ -40,6 +40,7 @@ secrets.properties
 /Telepic_UIUX_Review_*.md
 /STATIC_CODE_REVIEW.md
 /UI_UX_AUDIT.md
+/APP_REVIEW.md
 
 # Product requirements doc — local working copy only, never committed
 /PRD.md
