@@ -1,6 +1,7 @@
 package com.telepic.data.backup
 
 import android.net.Uri
+import com.telepic.data.ScanCursorStore
 import com.telepic.data.backup.work.BackupWorkScheduler
 import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
@@ -117,7 +118,7 @@ class BackupCoordinatorTest {
         pageSize: Int = 100,
         buckets: Set<Long> = emptySet(),
         loaderFactory: ((Long?) -> com.telepic.data.media.MediaPageLoader)? = null,
-        cursorStore: DiscoveryCursorStore = DiscoveryCursorStore.NoOp,
+        cursorStore: ScanCursorStore = ScanCursorStore.NoOp,
     ) = DefaultBackupCoordinator(
         repository = repo,
         recognition = recognition,
@@ -330,7 +331,7 @@ class BackupCoordinatorTest {
             scheduler = scheduler,
             onboardingRepository = FakeOnboarding(BackupPreference.BACKUP_ALL),
             pageLoaderFactory = { stoppingLoader },
-            cursorStore = DiscoveryCursorStore.NoOp,
+            cursorStore = ScanCursorStore.NoOp,
             discoveryPageSize = 2,
         )
 
@@ -348,7 +349,7 @@ class BackupCoordinatorTest {
         assertEquals(1, scheduler.scheduled)
     }
 
-    private class InMemoryCursorStore : DiscoveryCursorStore {
+    private class InMemoryCursorStore : ScanCursorStore {
         private val offsets = HashMap<String, Int>()
 
         override suspend fun offset(key: String): Int = offsets[key] ?: 0

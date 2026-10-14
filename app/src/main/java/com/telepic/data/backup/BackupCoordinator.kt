@@ -1,5 +1,6 @@
 package com.telepic.data.backup
 
+import com.telepic.data.ScanCursorStore
 import com.telepic.data.backup.work.BackupWorkScheduler
 import com.telepic.data.media.MediaPageLoader
 import com.telepic.diagnostics.TelepicLog
@@ -87,7 +88,7 @@ class DefaultBackupCoordinator(
     private val scheduler: BackupWorkScheduler,
     private val onboardingRepository: OnboardingRepository,
     private val pageLoaderFactory: (bucketId: Long?) -> MediaPageLoader,
-    private val cursorStore: DiscoveryCursorStore,
+    private val cursorStore: ScanCursorStore,
     private val discoveryPageSize: Int = 100,
     private val discoveryMaxItems: Int = 25_000,
 ) : BackupCoordinator {

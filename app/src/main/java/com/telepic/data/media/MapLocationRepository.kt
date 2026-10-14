@@ -1,9 +1,12 @@
 package com.telepic.data.media
 
+import com.telepic.data.ScanCursorStore
 import com.telepic.data.media.db.MediaLocationDao
 import com.telepic.data.media.db.MediaLocationEntity
 import com.telepic.data.media.db.MediaLocationScanEntity
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.GeotaggedMedia
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -27,6 +30,7 @@ class DefaultMapLocationRepository(
     private val dao: MediaLocationDao,
     private val pageLoader: MediaPageLoader,
     private val extractor: LocationExtractor,
+    private val cursorStore: ScanCursorStore,
     private val clock: () -> Long = System::currentTimeMillis,
     private val pageSize: Int = 120,
     private val maxPages: Int = 2_000,
@@ -51,23 +55,27 @@ class DefaultMapLocationRepository(
      *    than the cap was therefore **unreachable** — the map could never show it, no matter how many
      *    times the user opened the screen, and the screen sat on its loading state throughout.
      *
-     * Fixing (1) is what makes (2) affordable to fix. The page cap is now only a runaway guard
-     * (2,000 pages ≈ 240,000 items), not a silent ceiling on what the map can ever find: because an
-     * examined item costs nothing on a later sweep, a sweep can afford to walk the whole library.
-     * Raising it is the only way coverage can grow — every sweep restarts at offset 0, so a small cap
-     * would bound coverage at `maxPages × pageSize` no matter how often the screen is reopened.
+     * Fixing (1) made (2) affordable, but the cap was still a real ceiling: every sweep restarted at
+     * offset 0, so coverage could never exceed `maxPages × pageSize`. The sweep now resumes from a
+     * persisted [ScanCursorStore] offset, which is what lets a library larger than the cap converge
+     * over successive opens; a sweep that reaches the end rewinds the cursor to 0, so newly added
+     * media is still found.
      *
-     * The cost is that each open re-pages the library. That is reads only (no EXIF, and no writes
-     * once every item has been examined), it runs off the main thread, and it is cancellable — and
-     * the screen deliberately no longer waits on it (see `MapViewModel.scanSettled`).
+     * What this does *not* change: an open on a library smaller than the cap still pages the whole
+     * library. That is reads only (no EXIF, and no writes once every item has been examined), it runs
+     * off the main thread, it is cancellable, and the screen deliberately does not wait on it (see
+     * `MapViewModel.scanSettled`). Skipping that read entirely needs change-detection, which is a
+     * different change from this one.
      *
-     * Reconcile-prune still only runs on a sweep that actually reached the end: a truncated one has
-     * an incomplete `present` set and would wrongly delete still-existing markers.
+     * Reconcile-prune still only runs on a sweep that covered the **whole** library — it reached the
+     * end *and* started at offset 0. A truncated sweep, or one resumed part-way, has an incomplete
+     * `present` set and would otherwise delete markers that still exist.
      */
     override suspend fun rescan() {
+        val startOffset = cursorStore.offset(CURSOR_KEY).coerceAtLeast(0)
         val scanned = dao.scannedIds().toHashSet()
         val present = HashSet<Long>()
-        var offset = 0
+        var offset = startOffset
         var pages = 0
         var reachedEnd = false
         while (pages < maxPages) {
@@ -105,15 +113,35 @@ class DefaultMapLocationRepository(
                 break
             }
         }
+        // A sweep that saw the end restarts from the newest item next time, so newly added media is
+        // still discovered; a capped one resumes where it stopped.
+        persistCursor(if (reachedEnd) 0 else offset)
+
         // Drop markers for media that is gone (deleted) or now hidden (archived/trashed — the
         // pageLoader excludes those). Both tables are pruned from the union of what they know, so
         // location rows written before this table existed are reconciled too.
-        if (reachedEnd) {
+        if (reachedEnd && startOffset == 0) {
             val known = HashSet<Long>(scanned).apply { addAll(dao.cachedIds()) }
             (known - present).forEach { id ->
                 dao.delete(id)
                 dao.deleteScanned(id)
             }
         }
+    }
+
+    /** Best-effort: a cursor that cannot be written costs a re-scan, never correctness. */
+    private suspend fun persistCursor(offset: Int) {
+        try {
+            cursorStore.save(CURSOR_KEY, offset)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("MapScan", "could not persist the map scan cursor", throwable)
+        }
+    }
+
+    private companion object {
+        /** One loader, so one key. */
+        const val CURSOR_KEY = "map_scan"
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.telepic.data.ScanCursorStore
 import com.telepic.data.cloud.db.TelepicDatabase
 import com.telepic.data.media.db.MediaLocationDao
 import com.telepic.domain.media.GeoLocation
@@ -75,7 +76,7 @@ class MapLocationRepositoryTest {
 
     @Test
     fun `only geotagged items are cached and never a fabricated location`() = runBlocking {
-        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), pageSize = 10, maxPages = 5)
+        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), ScanCursorStore.NoOp, pageSize = 10, maxPages = 5)
         repository.rescan()
         val cached = repository.locations.first()
         assertEquals(setOf(1L, 3L), cached.map { it.mediaId }.toSet())
@@ -86,7 +87,7 @@ class MapLocationRepositoryTest {
     @Test
     fun `a coordinate-less item is examined once and never re-read`() = runBlocking {
         val extractor = FakeExtractor()
-        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), extractor, pageSize = 10, maxPages = 5)
+        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), extractor, ScanCursorStore.NoOp, pageSize = 10, maxPages = 5)
         repository.rescan()
         assertEquals(listOf("content://m/1", "content://m/2", "content://m/3"), extractor.calls)
 
@@ -111,32 +112,32 @@ class MapLocationRepositoryTest {
             override suspend fun extract(uri: Uri): GeoLocation? =
                 if (uri.toString() == "content://m/5000") GeoLocation(48.85, 2.35) else null
         }
-        val repository = DefaultMapLocationRepository(dao, FakeLoader(library), extractor)
+        val repository = DefaultMapLocationRepository(dao, FakeLoader(library), extractor, ScanCursorStore.NoOp)
         repository.rescan()
         assertEquals(setOf(5_000L), repository.locations.first().map { it.mediaId }.toSet())
     }
 
     @Test
     fun `rescan drops markers for media no longer in the library`() = runBlocking {
-        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), pageSize = 10, maxPages = 5)
+        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), ScanCursorStore.NoOp, pageSize = 10, maxPages = 5)
         repository.rescan()
         assertEquals(setOf(1L, 3L), repository.locations.first().map { it.mediaId }.toSet())
 
         // id 3 is removed from the device; the next complete rescan reconciles the cache.
         val afterDelete = listOf(items[0], items[1]) // ids 1 and 2 only
-        val reopened = DefaultMapLocationRepository(dao, FakeLoader(afterDelete), FakeExtractor(), pageSize = 10, maxPages = 5)
+        val reopened = DefaultMapLocationRepository(dao, FakeLoader(afterDelete), FakeExtractor(), ScanCursorStore.NoOp, pageSize = 10, maxPages = 5)
         reopened.rescan()
         assertEquals(setOf(1L), reopened.locations.first().map { it.mediaId }.toSet())
     }
 
     @Test
     fun `a scan that cannot reach the library end does not prune still-existing markers`() = runBlocking {
-        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), pageSize = 10, maxPages = 5)
+        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), ScanCursorStore.NoOp, pageSize = 10, maxPages = 5)
         repository.rescan() // caches 1 and 3
 
         // Only one page of size 2 is read, so id 3 is never seen this pass — but because the scan did
         // not reach the end, the reconcile-prune must not run and id 3 stays.
-        val truncated = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), pageSize = 2, maxPages = 1)
+        val truncated = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), ScanCursorStore.NoOp, pageSize = 2, maxPages = 1)
         truncated.rescan()
         assertEquals(setOf(1L, 3L), truncated.locations.first().map { it.mediaId }.toSet())
     }
@@ -146,4 +147,43 @@ class MapLocationRepositoryTest {
         displayName = "f$id", dateMillis = 1L, durationMillis = null, width = 1, height = 1, sizeBytes = 1L,
         bucketId = null, bucketName = null, relativePath = null,
     )
+
+    private class InMemoryCursorStore : ScanCursorStore {
+        private val offsets = HashMap<String, Int>()
+
+        override suspend fun offset(key: String): Int = offsets[key] ?: 0
+
+        override suspend fun save(key: String, offset: Int) {
+            offsets[key] = offset
+        }
+    }
+
+    @Test
+    fun `a capped sweep resumes from its cursor instead of restarting at the newest item`() = runBlocking {
+        // The page cap used to be a hard ceiling on map coverage: every sweep restarted at offset 0, so
+        // a geotagged item beyond `maxPages × pageSize` was unreachable however often the screen was
+        // reopened. The cursor is what lets successive sweeps walk further down the library.
+        //
+        // "map_scan" mirrors the repository's own private cursor key.
+        val cursor = InMemoryCursorStore()
+        val library = (1L..6L).map { media(it, "content://m/$it") }
+        val extractor = FakeExtractor()
+        val loader = FakeLoader(library)
+
+        DefaultMapLocationRepository(dao, loader, extractor, cursor, pageSize = 2, maxPages = 1).rescan()
+        assertEquals("the capped sweep records where it stopped", 2, cursor.offset("map_scan"))
+        assertEquals(listOf("content://m/1", "content://m/2"), extractor.calls)
+
+        DefaultMapLocationRepository(dao, loader, extractor, cursor, pageSize = 2, maxPages = 5).rescan()
+        assertEquals(
+            "the resumed sweep reads the tail the first one never reached",
+            listOf("content://m/3", "content://m/4", "content://m/5", "content://m/6"),
+            extractor.calls.drop(2),
+        )
+        assertEquals(
+            "a sweep that reached the end rewinds so newly added media is still found",
+            0,
+            cursor.offset("map_scan"),
+        )
+    }
 }

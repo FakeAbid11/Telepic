@@ -12,11 +12,11 @@ import com.telepic.data.backup.BackupRepository
 import com.telepic.data.backup.BackupStager
 import com.telepic.data.backup.MediaStoreBackupStager
 import com.telepic.data.backup.BackupStatusRepository
+import com.telepic.data.PreferencesScanCursorStore
 import com.telepic.data.backup.DefaultBackupCoordinator
 import com.telepic.data.backup.DefaultBackupRecognitionRepository
 import com.telepic.data.backup.DefaultBackupRepository
 import com.telepic.data.backup.DefaultBackupStatusRepository
-import com.telepic.data.backup.PreferencesDiscoveryCursorStore
 import com.telepic.data.backup.hash.AndroidContentHasher
 import com.telepic.data.backup.hash.ContentHasher
 import com.telepic.data.backup.work.BackupWorkScheduler
@@ -260,6 +260,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             dao = mediaLocationDao,
             pageLoader = mediaLoader,
             extractor = AndroidLocationExtractor(appContext),
+            // The map sweep has its own page cap, and without a cursor every open restarts at offset 0
+            // — so a library past the cap can never be covered no matter how often the screen opens.
+            cursorStore = PreferencesScanCursorStore(appContext.telepicDataStore),
         )
     }
 
@@ -366,7 +369,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             },
             // Persists how far each loader's discovery pass reached, so a library larger than the
             // per-pass cap converges over successive ticks instead of re-scanning its newest slice.
-            cursorStore = PreferencesDiscoveryCursorStore(appContext.telepicDataStore),
+            cursorStore = PreferencesScanCursorStore(appContext.telepicDataStore),
         )
     }
 }
