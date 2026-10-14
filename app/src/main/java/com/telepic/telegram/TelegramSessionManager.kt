@@ -59,6 +59,18 @@ class TelegramSessionManager(
      */
     private val starting = AtomicBoolean(false)
 
+    /**
+     * Whether [close] has run. Terminal, and checked before anything else in [initialize].
+     *
+     * [scope] is a constructor `val`, so [close]'s `scope.cancel()` cannot be undone. Previously that
+     * made [close] a trap: a later [initialize] set the state to `Initializing`, won the [starting]
+     * compare-and-set, and then launched into a cancelled scope — so the coroutine never ran, the
+     * `finally` that clears [starting] never executed, and the UI sat on `Initializing` forever with
+     * no error and no timeout. Refusing up front and reporting it is the honest alternative.
+     */
+    @Volatile
+    private var closed = false
+
     // A build compiled without real credentials (CI defaults apiId=0) can never log in; surface that
     // honestly up front instead of opening TDLib and reporting a generic engine error.
     private val credentialsConfigured = apiId > 0 && apiHash.isNotBlank()
@@ -74,6 +86,14 @@ class TelegramSessionManager(
      */
     @Synchronized
     fun initialize() {
+        if (closed) {
+            // See [closed]: the scope is cancelled for good, so there is no start to perform. Saying so
+            // is strictly better than the silent hang this used to produce.
+            _state.value = TelegramAuthState.Failed(
+                TelegramError.Initialization("The Telegram session was closed."),
+            )
+            return
+        }
         if (!credentialsConfigured) {
             _state.value = TelegramAuthState.Failed(TelegramError.NotConfigured())
             return
@@ -372,11 +392,26 @@ class TelegramSessionManager(
         _state.value = AuthorizationStateMapper.map(lastAuthorizationState, authorizedUser.value)
     }
 
+    /**
+     * Shut the session down for good. Terminal: [scope] is cancelled and cannot be recreated, so
+     * [initialize] afterwards reports a failure rather than hanging (see [closed]).
+     *
+     * The published state is cleared as well. Leaving it at `Authorized` would keep telling every
+     * caller — the backup engine's auth gate included — that a usable session exists after the client
+     * behind it has gone.
+     */
     fun close() {
+        closed = true
         gateway.close()
         scope.cancel()
         collectorJob = null
         parametersSent = false
+        lastAuthorizationState = null
+        authorizedUser.value = null
+        _state.value = TelegramAuthState.NotConnected
+        // Nothing is in flight any more, so the latch must not stay set — otherwise a later
+        // initialize() would be dropped as a "duplicate request" instead of reporting the closure.
+        starting.set(false)
     }
 
     private companion object {

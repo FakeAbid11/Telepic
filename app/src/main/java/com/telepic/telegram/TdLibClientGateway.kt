@@ -76,6 +76,18 @@ class TdLibClientGatewayImpl(
     @Volatile
     private var client: Client? = null
 
+    /**
+     * Whether [close] has run. Guards [open] against re-creating a client that can never be released.
+     *
+     * [close] can only drop the reference, because the binding exposes no instance `close()` — so the
+     * native client and its threads live until the process ends. Without this flag, `open()` after
+     * `close()` passed its `client != null` check (the reference had just been nulled) and called
+     * [Client.create] a second time, leaking a second native client for the process lifetime. The
+     * gateway is a single-use resource; saying so is cheaper than leaking.
+     */
+    @Volatile
+    private var closed = false
+
     override val isOpen: Boolean get() = client != null
 
     /**
@@ -83,10 +95,13 @@ class TdLibClientGatewayImpl(
      * binding exposes no instance `close()`, so a second [Client.create] from a racing first-open leaks
      * a native client and its threads for the life of the app. `@Synchronized` is the cheap guarantee —
      * the caller in `TelegramSessionManager` is already single-flight, and this is the second lock.
+     *
+     * @throws IllegalStateException if the gateway was already closed; it cannot be reopened.
      */
     @Synchronized
     override fun open() {
         if (client != null) return
+        check(!closed) { "The TDLib client was closed and cannot be reopened" }
         // Client's own static initializer loads "tdjni"; we also attempt it explicitly so a
         // missing native library fails here (surfaced as an initialization error) instead of
         // crashing later. Any Throwable from native binding is propagated to the caller.
@@ -123,7 +138,9 @@ class TdLibClientGatewayImpl(
 
     override fun close() {
         // The bundled org.drinkless.tdlib.Client exposes no instance close(); the native client's
-        // lifecycle is tied to the process/session. Drop the reference so no new requests are sent.
+        // lifecycle is tied to the process/session. Drop the reference so no new requests are sent,
+        // and latch the gateway shut so [open] cannot create a second, equally unreleasable client.
+        closed = true
         client = null
     }
 

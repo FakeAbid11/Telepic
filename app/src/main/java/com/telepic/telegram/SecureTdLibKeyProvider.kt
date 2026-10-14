@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.io.File
+import java.io.IOException
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -39,6 +40,15 @@ class KeystoreTdLibKeyProvider(context: Context) : SecureTdLibKeyProvider {
         }
     }
 
+    /**
+     * Writes the wrapped key **atomically**: to a sibling temp file, then renamed over the target.
+     *
+     * The previous single `writeBytes` was not atomic, so a crash or a kill mid-write left a
+     * truncated blob. The next launch then failed to unwrap it, fell through to [generateAndStore],
+     * and produced a *different* key for a TDLib database already encrypted with the old one — which
+     * surfaces as an init error and loses the user's Telegram session. A rename is atomic on the same
+     * filesystem, so the target is either the old blob or the new one, never a partial write.
+     */
     private fun generateAndStore(): ByteArray {
         val plaintext = ByteArray(KEY_LENGTH_BYTES).also { SECURE_RANDOM.nextBytes(it) }
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
@@ -46,11 +56,25 @@ class KeystoreTdLibKeyProvider(context: Context) : SecureTdLibKeyProvider {
         }
         val iv = cipher.iv
         val ciphertext = cipher.doFinal(plaintext)
-        keyFile.writeBytes(iv + ciphertext)
+        val tmp = File(keyFile.parentFile, "${keyFile.name}.tmp")
+        tmp.writeBytes(iv + ciphertext)
+        if (!tmp.renameTo(keyFile)) {
+            // Some filesystems refuse to rename over an existing file; clear the way and retry once.
+            keyFile.delete()
+            if (!tmp.renameTo(keyFile)) {
+                tmp.delete()
+                throw IOException("Could not persist the TDLib database key")
+            }
+        }
         return plaintext
     }
 
     private fun unwrap(blob: ByteArray): ByteArray {
+        // Checked rather than sliced blindly: copyOfRange on a short blob throws
+        // IndexOutOfBoundsException, which the caller's runCatching would treat as "unreadable" and
+        // answer by regenerating the key. Failing here with the real reason keeps that decision
+        // deliberate instead of accidental.
+        if (blob.size <= IV_LENGTH_BYTES) throw IOException("Wrapped TDLib key blob is truncated")
         val iv = blob.copyOfRange(0, IV_LENGTH_BYTES)
         val ciphertext = blob.copyOfRange(IV_LENGTH_BYTES, blob.size)
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {

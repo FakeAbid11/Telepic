@@ -2,10 +2,14 @@ package com.telepic
 
 import android.app.KeyguardManager
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -63,6 +67,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val appLockViewModel: AppLockViewModel = viewModel(factory = appLockFactory)
+
+            // A locked gallery must not be readable from outside the app. `AppLockScreen` swaps the
+            // content out of the tree, but that only covers what is *composed*: without FLAG_SECURE the
+            // system still captures the last drawn frame — the photo grid — for the Recents thumbnail
+            // when the activity stops, and the re-lock only happens on ON_START. The snapshot therefore
+            // outlived the lock and was visible in the task switcher. Setting the flag blanks both the
+            // Recents snapshot and any screenshot while the lock is on; it is cleared when the user
+            // turns the lock off, so a user who wants to screenshot their own photos still can.
+            val lockEnabled by appLockViewModel.enabled.collectAsStateWithLifecycle()
+            LaunchedEffect(lockEnabled) {
+                window.setFlags(
+                    if (lockEnabled) WindowManager.LayoutParams.FLAG_SECURE else 0,
+                    WindowManager.LayoutParams.FLAG_SECURE,
+                )
+            }
 
             TelepicRoot(
                 themeViewModel = themeViewModel,

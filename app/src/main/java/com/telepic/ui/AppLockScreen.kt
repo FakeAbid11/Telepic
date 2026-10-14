@@ -30,7 +30,13 @@ import com.telepic.ui.theme.TelepicTokens
 
 /**
  * The app-lock gate. Shown *instead of* the app content, never over it, so nothing is drawn behind
- * the lock and nothing leaks into a screenshot or the recents thumbnail.
+ * the lock.
+ *
+ * What this screen does **not** do on its own is stop the system from capturing the app's last drawn
+ * frame. That is `FLAG_SECURE`'s job, and it is applied in `MainActivity` while the lock preference
+ * is on — see the comment there. Removing it would leave the unlocked photo grid visible in the
+ * Recents thumbnail and capturable by a screenshot or screen recorder, because the re-lock happens on
+ * `ON_START` and the snapshot is taken when the activity stops.
  *
  * Authentication is delegated to the device's own credential (PIN / pattern / password) through
  * `KeyguardManager`. That is deliberate: Telepic stores no credential of its own, so there is nothing

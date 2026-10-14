@@ -62,10 +62,14 @@ fun TelepicRoot(
     }
 
     // Created here rather than inside the branch below. While locked, the app's content must not be
-    // composed at all (see AppLockScreen: nothing may exist behind the lock to be screenshotted or read
-    // by TalkBack), so `locked` swaps TelepicApp out of the tree — and a controller remembered *there*
-    // would go with it, dropping the back stack, the current tab and every NavBackStackEntry's own
-    // saved state on every re-lock. Hoisted, it outlives the composition it drives.
+    // composed at all (see AppLockScreen: nothing may exist behind the lock to be read by TalkBack),
+    // so `locked` swaps TelepicApp out of the tree — and a controller remembered *there* would go with
+    // it, dropping the back stack, the current tab and every NavBackStackEntry's own saved state on
+    // every re-lock. Hoisted, it outlives the composition it drives.
+    //
+    // Not composing the content is necessary but not sufficient: it stops the content being *read*
+    // from the live view tree, not from the system's Recents snapshot. That half is FLAG_SECURE, set
+    // in MainActivity while the lock preference is on.
     val navController = rememberNavController()
 
     TelepicTheme(darkTheme = themeMode.isDarkTheme(isSystemInDarkTheme())) {
