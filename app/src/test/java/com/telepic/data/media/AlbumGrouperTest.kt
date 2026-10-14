@@ -109,4 +109,25 @@ class AlbumGrouperTest {
 
         assertEquals("DCIM/Camera/", albums.single().relativePath)
     }
+
+    @Test
+    fun `the streaming accumulator produces exactly the batch grouping`() {
+        // `MediaStoreAlbumRepository` feeds the accumulator straight from the cursor so a large
+        // library is never materialised as one row object per item. That is only safe if the two
+        // paths agree exactly, including the newest-first cover rule, the counts and the ordering.
+        val rows = listOf(
+            row(10, 1, "Camera", "image/jpeg", 300L, path = "DCIM/Camera/"),
+            row(11, 1, "Camera", "image/jpeg", 200L, path = "DCIM/Camera/"),
+            row(12, 2, "Screenshots", "image/png", 250L, path = "Pictures/Screenshots/"),
+            row(13, null, null, "image/jpeg", 999L),
+            row(14, 3, "Videos", "video/mp4", 100L),
+        )
+        val accumulator = AlbumGrouper.Accumulator("Album") { id, mime -> uriFor(id, mime) }
+        rows.forEach(accumulator::add)
+
+        assertEquals(
+            AlbumGrouper.group(rows) { id, mime -> uriFor(id, mime) },
+            accumulator.build(),
+        )
+    }
 }

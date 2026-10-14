@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -530,20 +532,28 @@ private fun <T> RadioListDialog(
             Column {
                 options.forEach { option ->
                     val selected = option == current
-                    Surface(onClick = { onSelect(option) }, color = MaterialTheme.colorScheme.surface) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = spacing.xs, horizontal = spacing.xs),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = selected, onClick = { onSelect(option) })
-                            Text(
-                                text = stringResource(labelResOf(option)),
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.padding(start = spacing.md),
+                    Row(
+                        // One focus stop with one role. A clickable `Surface` wrapping a clickable
+                        // `RadioButton` made each option two focus targets and announced the container
+                        // as a *button* rather than a radio. `onClick = null` on the button makes it
+                        // decorative and lets the row own both the action and the semantics — the same
+                        // shape `FolderPickerDialog` already uses for its checkboxes.
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = selected,
+                                role = Role.RadioButton,
+                                onClick = { onSelect(option) },
                             )
-                        }
+                            .padding(vertical = spacing.xs, horizontal = spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = selected, onClick = null)
+                        Text(
+                            text = stringResource(labelResOf(option)),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = spacing.md),
+                        )
                     }
                 }
             }

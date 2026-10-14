@@ -87,25 +87,28 @@ class DefaultMapLocationRepository(
             }
             val now = clock()
             val newlyScanned = ArrayList<MediaLocationScanEntity>(items.size)
+            // Collected and written per page rather than per item: a per-item upsert made a first
+            // sweep of a geotagged-heavy library issue one transaction per geotagged file, which is
+            // the same batching rule `markScanned` below already follows.
+            val newlyLocated = ArrayList<MediaLocationEntity>()
             for (item in items) {
                 present += item.id
                 if (item.id in scanned) continue
                 // A coordinate-less item is still recorded as examined — that record is the whole
                 // point: it is what stops the next sweep from reading this file's EXIF again.
                 extractor.extract(item.contentUri)?.let { location ->
-                    dao.upsert(
-                        MediaLocationEntity(
-                            localMediaId = item.id,
-                            latitude = location.latitude,
-                            longitude = location.longitude,
-                            contentUri = item.contentUri.toString(),
-                            extractedAt = now,
-                        ),
+                    newlyLocated += MediaLocationEntity(
+                        localMediaId = item.id,
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        contentUri = item.contentUri.toString(),
+                        extractedAt = now,
                     )
                 }
                 newlyScanned += MediaLocationScanEntity(item.id, now)
                 scanned += item.id
             }
+            if (newlyLocated.isNotEmpty()) dao.upsertAll(newlyLocated)
             if (newlyScanned.isNotEmpty()) dao.markScanned(newlyScanned)
             offset += items.size
             if (items.size < pageSize) {

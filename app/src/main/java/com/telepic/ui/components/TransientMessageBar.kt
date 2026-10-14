@@ -63,7 +63,10 @@ fun TransientMessageBar(
         )
         ?: baseDismissMs
 
-    LaunchedEffect(message, messageId) {
+    // `autoDismissMs` is a key, not just a captured value: it is derived from the accessibility
+    // manager's recommended timeout and from whether an action is present, so a change to either while
+    // the bar is visible must restart the timer rather than let the old duration run out.
+    LaunchedEffect(message, messageId, autoDismissMs) {
         delay(autoDismissMs)
         onDismiss()
     }

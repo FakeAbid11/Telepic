@@ -18,9 +18,10 @@ import kotlinx.coroutines.withContext
 
 /**
  * [AlbumRepository] over MediaStore. Albums are grouped by `BUCKET_ID` from a light, projection-
- * limited, newest-first query — never a full-library load of every media record. Bucket contents
- * reuse the exact Photos paging pipeline ([MediaPagingSource] + [MediaStoreMediaMapper]), filtered
- * by bucket, so an album grid behaves identically to the timeline.
+ * limited, newest-first query, and the grouping is accumulated **as the cursor streams**
+ * ([AlbumGrouper.Accumulator]) — so the read never materialises one row object per media item, only
+ * one entry per bucket. Bucket contents reuse the exact Photos paging pipeline ([MediaPagingSource] +
+ * [MediaStoreMediaMapper]), filtered by bucket, so an album grid behaves identically to the timeline.
  *
  * [typeFilterProvider] carries the user's hide-videos / hide-GIFs preferences. It is applied to the
  * album *grouping* as well as to the contents, so an album's cover and count describe what the user
@@ -68,7 +69,6 @@ class MediaStoreAlbumRepository(
     override suspend fun albums(): List<Album> = withContext(Dispatchers.IO) {
         val scope: CoroutineScope = this
         val order = MediaSortOrder.TIMELINE_DESC
-        val rows = ArrayList<AlbumGrouper.Row>()
         // Exclude archived/trashed media the same way the timeline and bucket loaders do, so album
         // counts and covers reflect only what the user can actually see. Done in-query to keep the
         // projection-light grouping honest rather than filtering a partial cursor afterward. The
@@ -85,6 +85,13 @@ class MediaStoreAlbumRepository(
         // carries a null arg array.
         val args: Array<String>? = null
         val cancellation = CancellationSignal()
+        // Grouped as the cursor streams rather than into a `List<Row>` of every media item first. The
+        // grouping only ever needs per-bucket aggregates, so this holds one entry per *album* instead
+        // of one per file — on a large library that is the difference between a few dozen objects and
+        // tens of thousands.
+        val accumulator = AlbumGrouper.Accumulator(appContext.getString(R.string.albums_untitled)) { id, mime ->
+            MediaStoreMediaMapper.contentUriFor(id, mime)
+        }
         contentResolver.query(
             MediaStore.Files.getContentUri("external"),
             albumProjection,
@@ -108,19 +115,19 @@ class MediaStoreAlbumRepository(
                 val bucketId = if (cursor.isNull(bucketCol)) null else cursor.getLong(bucketCol)
                 val taken = if (takenCol >= 0 && !cursor.isNull(takenCol)) cursor.getLong(takenCol) else 0L
                 val mod = if (modCol >= 0 && !cursor.isNull(modCol)) cursor.getLong(modCol) else 0L
-                rows += AlbumGrouper.Row(
-                    id = cursor.getLong(idCol),
-                    bucketId = bucketId,
-                    bucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol) else null,
-                    relativePath = if (pathCol >= 0) cursor.getString(pathCol) else null,
-                    mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null,
-                    whenMillis = if (taken > 0L) taken else mod * 1000L,
+                accumulator.add(
+                    AlbumGrouper.Row(
+                        id = cursor.getLong(idCol),
+                        bucketId = bucketId,
+                        bucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol) else null,
+                        relativePath = if (pathCol >= 0) cursor.getString(pathCol) else null,
+                        mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null,
+                        whenMillis = if (taken > 0L) taken else mod * 1000L,
+                    ),
                 )
             }
         }
-        AlbumGrouper.group(rows, appContext.getString(R.string.albums_untitled)) { id, mime ->
-            MediaStoreMediaMapper.contentUriFor(id, mime)
-        }
+        accumulator.build()
     }
 
     /**

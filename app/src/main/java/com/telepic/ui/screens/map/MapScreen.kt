@@ -233,6 +233,12 @@ private fun OsmMap(
     var pendingCamera by remember { mutableStateOf<MapCameraResolver.Decision?>(null) }
     var selected by remember { mutableStateOf<MapClusterer.MapPin.Single?>(null) }
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+    // The marker set only changes when `pins` does, but `AndroidView`'s `update` block runs on *every*
+    // recomposition — and this screen recomposes on each pin tap and each zoom-band change. Rebuilding
+    // every `Marker` and re-allocating a `Bitmap` per cluster (`MapPinBadge.clusterDrawable`) on every
+    // one of those was the map's dominant cost. Identity comparison suffices: `pins` is `remember`ed
+    // over the clustering inputs, so a different list instance means genuinely different pins.
+    val renderedPins = remember { RenderedPins() }
     // Claimed and applied here rather than inside the AndroidView factory: a factory block runs once,
     // when the view is created, and is never re-run when `focus` changes. A request that arrived while
     // the map was already on screen was therefore neither applied nor cleared, so it replayed onto a
@@ -303,58 +309,66 @@ private fun OsmMap(
                     setExpectedCenter(GeoPoint(20.0, 0.0))
                     addMapListener(zoomListener)
                     mapViewRef = this
+                    // A freshly created MapView carries no overlays, so whatever the previous one had
+                    // must not be treated as already rendered.
+                    renderedPins.pins = null
                 }
             },
             update = { mapView ->
-                mapView.overlays.clear()
-                pins.forEach { pin ->
-                    val marker = Marker(mapView)
-                    marker.setPosition(GeoPoint(pin.latitude, pin.longitude))
-                    when (pin) {
-                        is MapClusterer.MapPin.Single -> {
-                            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                            // TalkBack parity with the photo grids: the label rides on the marker's
-                            // title (osmdroid has no per-marker contentDescription), and the map view
-                            // itself announces how many pins are on screen. The coordinates make each
-                            // pin's label distinct — one shared "at this location" for every pin told
-                            // the user nothing about which photo it belonged to. osmdroid markers are
-                            // canvas overlays, so this fixes label identity, not per-pin navigation.
-                            marker.title = mapView.context.getString(
-                                R.string.map_marker_description,
-                                formatCoordinate(pin.latitude, pin.longitude),
-                            )
-                            marker.setOnMarkerClickListener { _, _ ->
-                                // Centre and offer a preview rather than throwing the user straight
-                                // into the Viewer — the map keeps its context behind the sheet.
-                                pendingCamera = MapCameraResolver.focus(pin.latitude, pin.longitude)
-                                selected = pin
-                                true
+                // Only rebuild the overlay list when the pins actually changed. `mapView.invalidate()`
+                // below still runs every time, so camera moves and the content description stay live.
+                if (renderedPins.pins !== pins) {
+                    mapView.overlays.clear()
+                    pins.forEach { pin ->
+                        val marker = Marker(mapView)
+                        marker.setPosition(GeoPoint(pin.latitude, pin.longitude))
+                        when (pin) {
+                            is MapClusterer.MapPin.Single -> {
+                                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                                // TalkBack parity with the photo grids: the label rides on the marker's
+                                // title (osmdroid has no per-marker contentDescription), and the map view
+                                // itself announces how many pins are on screen. The coordinates make each
+                                // pin's label distinct — one shared "at this location" for every pin told
+                                // the user nothing about which photo it belonged to. osmdroid markers are
+                                // canvas overlays, so this fixes label identity, not per-pin navigation.
+                                marker.title = mapView.context.getString(
+                                    R.string.map_marker_description,
+                                    formatCoordinate(pin.latitude, pin.longitude),
+                                )
+                                marker.setOnMarkerClickListener { _, _ ->
+                                    // Centre and offer a preview rather than throwing the user straight
+                                    // into the Viewer — the map keeps its context behind the sheet.
+                                    pendingCamera = MapCameraResolver.focus(pin.latitude, pin.longitude)
+                                    selected = pin
+                                    true
+                                }
+                            }
+                            is MapClusterer.MapPin.Cluster -> {
+                                // A count badge (drawn, never an icon pack) so clusters read differently from
+                                // singles at any zoom band.
+                                marker.setIcon(
+                                    MapPinBadge.clusterDrawable(
+                                        mapView.context,
+                                        pin.size,
+                                        clusterFill,
+                                        clusterCountColor,
+                                    ),
+                                )
+                                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                marker.title =
+                                    mapView.context.resources.getQuantityString(R.plurals.map_cluster_description, pin.size, pin.size)
+                                marker.setOnMarkerClickListener { _, _ ->
+                                    // Center on the cluster, then zoom in — the recluster follows via the
+                                    // zoom listener; no zoom level is invented here.
+                                    mapView.controller.setCenter(GeoPoint(pin.latitude, pin.longitude))
+                                    mapView.controller.setZoom((mapView.zoomLevelDouble + 2.0).coerceAtMost(MAX_ZOOM))
+                                    true
+                                }
                             }
                         }
-                        is MapClusterer.MapPin.Cluster -> {
-                            // A count badge (drawn, never an icon pack) so clusters read differently from
-                            // singles at any zoom band.
-                            marker.setIcon(
-                                MapPinBadge.clusterDrawable(
-                                    mapView.context,
-                                    pin.size,
-                                    clusterFill,
-                                    clusterCountColor,
-                                ),
-                            )
-                            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                            marker.title =
-                                mapView.context.resources.getQuantityString(R.plurals.map_cluster_description, pin.size, pin.size)
-                            marker.setOnMarkerClickListener { _, _ ->
-                                // Center on the cluster, then zoom in — the recluster follows via the
-                                // zoom listener; no zoom level is invented here.
-                                mapView.controller.setCenter(GeoPoint(pin.latitude, pin.longitude))
-                                mapView.controller.setZoom((mapView.zoomLevelDouble + 2.0).coerceAtMost(MAX_ZOOM))
-                                true
-                            }
-                        }
+                        mapView.overlays.add(marker)
                     }
-                    mapView.overlays.add(marker)
+                    renderedPins.pins = pins
                 }
                 // TalkBack reads the map as one focusable surface: announce how many pins it holds.
                 mapView.contentDescription =
@@ -506,3 +520,14 @@ private fun MapPinPreviewSheet(
 }
 
 private const val MAX_ZOOM = 19.0
+
+/**
+ * Remembers which pin list the map's overlays currently represent.
+ *
+ * A plain holder rather than `mutableStateOf`: it is only ever read and written inside
+ * `AndroidView`'s `update` block, so making it observable would schedule a recomposition for a value
+ * composition never reads.
+ */
+private class RenderedPins {
+    var pins: List<MapClusterer.MapPin>? = null
+}

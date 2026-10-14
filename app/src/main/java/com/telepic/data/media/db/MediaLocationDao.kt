@@ -20,6 +20,14 @@ interface MediaLocationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: MediaLocationEntity)
 
+    /**
+     * Batch write for one scan page. A per-item [upsert] made a first sweep of a geotagged-heavy
+     * library issue one transaction per geotagged file; the page is already in memory, so it costs
+     * nothing to write it in one statement.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<MediaLocationEntity>)
+
     @Query("DELETE FROM media_location WHERE localMediaId = :localMediaId")
     suspend fun delete(localMediaId: Long)
 

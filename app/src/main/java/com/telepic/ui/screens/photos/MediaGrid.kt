@@ -142,9 +142,17 @@ fun MediaGrid(
     // Scrubber anchors grow incrementally as pages append: only items past the last examined index
     // are scanned per change, instead of re-walking the whole loaded list. The head cell's key carries
     // the Paging generation, so a refresh — even one landing on the same item count — rebuilds from zero.
+    //
+    // The scan runs inside `remember`, not directly in the composition body: `update` mutates the
+    // holder, and a mutation in composition re-runs on every recomposition of this grid — which
+    // happens on each backup-progress tick. Keying on the loaded count and the head cell's key means
+    // it runs exactly when the paging generation actually changes, which is the same condition the
+    // holder itself already used to decide whether to reuse its cached anchors.
     val anchorHolder = remember { AnchorScanHolder() }
-    val anchors: List<DateAnchor> = anchorHolder.update(media.itemCount, media[0]?.key) { index ->
-        media[index] as? PhotosItem.Day
+    val loadedCount = media.itemCount
+    val firstKey = media[0]?.key
+    val anchors: List<DateAnchor> = remember(anchorHolder, loadedCount, firstKey) {
+        anchorHolder.update(loadedCount, firstKey) { index -> media[index] as? PhotosItem.Day }
     }
 
     Box(modifier = modifier.fillMaxSize()) {

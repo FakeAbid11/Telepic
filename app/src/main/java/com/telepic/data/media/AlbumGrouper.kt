@@ -34,19 +34,42 @@ object AlbumGrouper {
         untitled: String = "Album",
         coverUriFor: (id: Long, mimeType: String?) -> Uri,
     ): List<Album> {
-        val counts = LinkedHashMap<Long, Int>()
-        val covers = HashMap<Long, Row>()
-        val titles = HashMap<Long, String>()
-        val paths = HashMap<Long, String>()
-        for (row in rows) {
-            val bucket = row.bucketId ?: continue
+        val accumulator = Accumulator(untitled, coverUriFor)
+        rows.forEach(accumulator::add)
+        return accumulator.build()
+    }
+
+    /**
+     * Streaming form of [group]: the same grouping, accumulated as rows arrive, so a caller reading a
+     * MediaStore cursor never has to materialise the whole library first.
+     *
+     * [group] only needs the complete list because it takes one. The grouping itself keeps four maps
+     * keyed by bucket, so its memory is proportional to the number of **albums**, not the number of
+     * media items — which is what lets `MediaStoreAlbumRepository.albums` hold a few dozen entries on
+     * a 50,000-item library instead of 50,000 [Row] objects.
+     */
+    class Accumulator(
+        private val untitled: String,
+        private val coverUriFor: (id: Long, mimeType: String?) -> Uri,
+    ) {
+        private val counts = LinkedHashMap<Long, Int>()
+        private val covers = HashMap<Long, Row>()
+        private val titles = HashMap<Long, String>()
+        private val paths = HashMap<Long, String>()
+
+        /**
+         * Rows must arrive newest-first, exactly as [group] requires: the first row seen for a bucket
+         * is its cover, so feeding them in any other order changes which item represents the album.
+         */
+        fun add(row: Row) {
+            val bucket = row.bucketId ?: return
             counts[bucket] = (counts[bucket] ?: 0) + 1
-            // Rows are newest-first, so the first row seen for a bucket is its cover.
             covers.putIfAbsent(bucket, row)
             row.bucketName?.takeIf { it.isNotBlank() }?.let { titles.putIfAbsent(bucket, it) }
             row.relativePath?.takeIf { it.isNotBlank() }?.let { paths.putIfAbsent(bucket, it) }
         }
-        return covers.mapNotNull { (bucket, cover) ->
+
+        fun build(): List<Album> = covers.mapNotNull { (bucket, cover) ->
             Album(
                 bucketId = bucket,
                 title = titles[bucket] ?: untitled,
