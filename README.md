@@ -536,7 +536,7 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 - **Restored images are not byte-for-byte identical** to the source, because Telegram may recompress photos; only the *restored* bytes are hashed.
 - **The open-source licence list is hand-maintained** (`OpenSourceLicenses.kt`), so it has to be updated whenever a runtime dependency changes. It mirrors `gradle/libs.versions.toml` rather than being generated.
 - **ARM-only**, `minSdk 26`.
-- **No shipping release is built.** The `release-smoke` CI job compiles the R8/minified configuration on every push (so shrinking cannot rot unnoticed), but only the debug APK is published as an artifact.
+- **No shipping release is built.** Only the debug APK is produced on every push, because that is the artifact being installed while the project is being tested. The `release-smoke` job that compiles the R8/minified configuration and builds an AAB is **manual-only** — run it from *Actions → Android CI → Run workflow* before any release attempt, so shrinking and the bundle path cannot rot unnoticed in the meantime.
 
 ---
 
@@ -555,8 +555,19 @@ All tests are JVM-based and run in CI; no instrumented tests exist yet.
 ./gradlew assembleDebug
 ```
 
-These are exactly the commands the [CI workflow](.github/workflows/android-ci.yml) runs. If you build
-locally, you will need JDK 17 and the Android SDK; if you don't, CI will run them for you on push.
+These are exactly the commands the [CI workflow](.github/workflows/android-ci.yml) runs on every push.
+If you build locally, you will need JDK 17 and the Android SDK; if you don't, CI will run them for you.
+
+The release configuration is checked separately, on demand:
+
+```bash
+# R8 + resource shrinking + the AAB Play consumes (not run on push)
+./gradlew assembleRelease bundleRelease
+```
+
+That is the `release-smoke` job, triggered by *Actions → Android CI → Run workflow*. It also fails any
+release task when `TELEGRAM_API_ID`/`TELEGRAM_API_HASH` are absent, so a credential-less release cannot
+be produced by accident.
 
 What the suite covers: the backup state machine, all Room migrations, hashing and recognition/dedup,
 viewer race conditions, navigation, permission policy, persistence, and the pure logic seams

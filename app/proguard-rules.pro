@@ -24,7 +24,7 @@
 # here. A blanket keep is deliberate: osmdroid resolves tile sources, overlays and its configuration
 # provider by class name, so obfuscating its package risks a release-only NoClassDefFoundError that
 # no unit test can catch. The cost is a little APK size, against a `release-smoke` job that only
-# compiles (it cannot exercise map rendering).
+# compiles (it cannot exercise map rendering) and is run on demand rather than on every push.
 -keep class org.osmdroid.** { *; }
 -dontwarn org.osmdroid.**
 #

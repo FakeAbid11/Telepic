@@ -55,9 +55,10 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      # Still no *publishing* step: nothing here reaches Play. The `release-smoke` job below compiles
-      # the release configuration and builds an AAB so R8 and the bundle path cannot rot unnoticed;
-      # those artifacts are for inspection, not distribution.
+      # Still no *publishing* step: nothing here reaches Play. The debug APK uploaded below is the
+      # artifact this workflow exists to produce while the project is being tested. The
+      # `release-smoke` job that compiles the R8 configuration and builds an AAB is manual-only (see
+      # its own note) — and its artifacts were for inspection rather than distribution anyway.
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -121,9 +122,16 @@ jobs:
   # — so `isMinifyEnabled`/`isShrinkResources` and every rule in proguard-rules.pro were unverified,
   # including a dependency (osmdroid) that ships no consumer rules at all. This job compiles that
   # configuration *and* builds the AAB that Play actually consumes, so the release path is exercised
-  # rather than assumed. It runs in parallel with the job above so it costs no extra wall-clock.
+  # rather than assumed.
+  #
+  # Manual only, deliberately. The project is in its testing phase: the debug APK is what gets
+  # installed, so compiling R8 plus a full AAB on every push spends minutes on an artifact nobody
+  # consumes — and it was the slower half of the run. Nothing is lost by deferring it, because the
+  # check is one click away (Actions -> Android CI -> Run workflow), and it should be run before any
+  # release attempt. Re-enable it on push (`on: push` above) once a shippable build is the goal again.
   release-smoke:
     name: Release build (R8 & resource shrinking)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       # Real credentials when the secrets exist; a non-zero placeholder otherwise, because the
