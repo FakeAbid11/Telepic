@@ -1,5 +1,7 @@
 package com.telepic.data.organization
 
+import androidx.room.RoomDatabase
+import androidx.room.withTransaction
 import com.telepic.data.organization.db.MediaOrganizationDao
 import com.telepic.data.organization.db.MediaOrganizationEntity
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +40,7 @@ interface MediaOrganizationRepository {
 }
 
 class DefaultMediaOrganizationRepository(
+    private val db: RoomDatabase,
     private val dao: MediaOrganizationDao,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : MediaOrganizationRepository {
@@ -77,10 +80,15 @@ class DefaultMediaOrganizationRepository(
     override suspend fun remove(id: Long) = dao.delete(id.key())
 
     private suspend fun mutate(id: Long, transform: (MediaOrganizationEntity) -> MediaOrganizationEntity) {
-        val now = clock()
-        val existing = dao.get(id.key())
-        val base = existing ?: MediaOrganizationEntity(localMediaId = id.key(), updatedAt = now)
-        dao.upsert(transform(base).copy(updatedAt = now))
+        // Read-modify-write inside one transaction. Without it, two concurrent edits of the same item
+        // (favouriting while archiving) each read the same row and the second write silently discards
+        // the first — these are independent columns, so a lost update is a lost user action.
+        db.withTransaction {
+            val now = clock()
+            val existing = dao.get(id.key())
+            val base = existing ?: MediaOrganizationEntity(localMediaId = id.key(), updatedAt = now)
+            dao.upsert(transform(base).copy(updatedAt = now))
+        }
     }
 
     private fun Long.key(): String = toString()

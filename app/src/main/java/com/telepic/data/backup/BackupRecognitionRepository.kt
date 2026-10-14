@@ -1,5 +1,7 @@
 package com.telepic.data.backup
 
+import androidx.room.RoomDatabase
+import androidx.room.withTransaction
 import com.telepic.data.backup.BackupMapping.toRecognizedQueueEntity
 import com.telepic.data.backup.db.BackupQueueDao
 import com.telepic.data.backup.db.BackupQueueEntity
@@ -33,6 +35,7 @@ interface BackupRecognitionRepository {
 }
 
 class DefaultBackupRecognitionRepository(
+    private val db: RoomDatabase,
     private val queueDao: BackupQueueDao,
     private val manifestDao: com.telepic.data.cloud.db.CloudMediaManifestDao,
     private val hasher: ContentHasher,
@@ -141,24 +144,30 @@ class DefaultBackupRecognitionRepository(
 
     override suspend fun markRecognized(media: LocalMedia, remote: RemoteMediaIdentity, hash: String, sizeBytes: Long) {
         withContext(dispatcher) {
-            val existing = queueDao.findByLocalId(media.id.toString())
-            val now = clock()
-            if (existing == null) {
-                queueDao.insertIgnore(media.toRecognizedQueueEntity(remote, hash, sizeBytes, now))
-            } else {
-                // `confirmRemoteMatch`, not `markBackedUp`: recognition reaches here only for rows the
-                // queue's own denylist would refuse (FAILED / CANCELLED), so the old call was a
-                // guaranteed no-op — content already in the cloud stayed displayed as FAILED and was
-                // re-hashed on every scan. A 0 here now means "already complete", which is the only
-                // honest outcome, and is logged rather than discarded.
-                val applied = queueDao.confirmRemoteMatch(existing.id, remote.chatId, remote.messageId, now)
-                if (applied == 0) {
-                    TelepicLog.debug(
-                        "BackupRecognition",
-                        "remote match already recorded for localMediaId=${existing.localMediaId}",
-                    )
+            // find → insert/confirm → persistHash is one transaction. A concurrent scan reading
+            // between the find and the insert would otherwise create a second row for the same media,
+            // and a crash between the confirm and the persistHash would leave a row claiming a remote
+            // identity without the hash that justifies it.
+            db.withTransaction {
+                val existing = queueDao.findByLocalId(media.id.toString())
+                val now = clock()
+                if (existing == null) {
+                    queueDao.insertIgnore(media.toRecognizedQueueEntity(remote, hash, sizeBytes, now))
+                } else {
+                    // `confirmRemoteMatch`, not `markBackedUp`: recognition reaches here only for rows
+                    // the queue's own denylist would refuse (FAILED / CANCELLED), so the old call was a
+                    // guaranteed no-op — content already in the cloud stayed displayed as FAILED and was
+                    // re-hashed on every scan. A 0 here now means "already complete", which is the only
+                    // honest outcome, and is logged rather than discarded.
+                    val applied = queueDao.confirmRemoteMatch(existing.id, remote.chatId, remote.messageId, now)
+                    if (applied == 0) {
+                        TelepicLog.debug(
+                            "BackupRecognition",
+                            "remote match already recorded for localMediaId=${existing.localMediaId}",
+                        )
+                    }
+                    queueDao.persistHash(existing.id, hash, sizeBytes, now, now)
                 }
-                queueDao.persistHash(existing.id, hash, sizeBytes, now, now)
             }
         }
     }

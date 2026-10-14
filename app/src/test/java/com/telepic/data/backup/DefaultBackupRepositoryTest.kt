@@ -108,6 +108,7 @@ class DefaultBackupRepositoryTest {
 
     private fun repo(cloud: CloudRepository, auth: MutableStateFlow<TelegramAuthState> = authorized) =
         DefaultBackupRepository(
+            db = db,
             dao = db.backupQueueDao(),
             cloudRepository = cloud,
             authState = auth,
@@ -323,6 +324,7 @@ class DefaultBackupRepositoryTest {
             .apply { mkdirs() }
         try {
             val r = DefaultBackupRepository(
+                db = db,
                 dao = db.backupQueueDao(),
                 cloudRepository = FakeCloud(),
                 authState = authorized,
@@ -345,6 +347,7 @@ class DefaultBackupRepositoryTest {
         try {
             val cloud = FakeCloud(uploadError = kotlinx.coroutines.CancellationException("worker cancelled"))
             val r = DefaultBackupRepository(
+                db = db,
                 dao = db.backupQueueDao(),
                 cloudRepository = cloud,
                 authState = authorized,

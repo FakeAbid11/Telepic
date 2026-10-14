@@ -35,7 +35,7 @@ class MediaOrganizationRepositoryTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, TelepicDatabase::class.java).allowMainThreadQueries().build()
-        repository = DefaultMediaOrganizationRepository(db.mediaOrganizationDao(), clock = { 1_000L })
+        repository = DefaultMediaOrganizationRepository(db, db.mediaOrganizationDao(), clock = { 1_000L })
         queue = db.backupQueueDao()
     }
 
@@ -49,7 +49,7 @@ class MediaOrganizationRepositoryTest {
         assertEquals(setOf(7L), repository.favoriteIds.first())
         assertTrue(repository.isFavorite(7L))
 
-        val reopened = DefaultMediaOrganizationRepository(dao, clock = { 2_000L })
+        val reopened = DefaultMediaOrganizationRepository(db, dao, clock = { 2_000L })
         assertTrue(reopened.isFavorite(7L))
         assertFalse(reopened.isArchived(7L))
     }

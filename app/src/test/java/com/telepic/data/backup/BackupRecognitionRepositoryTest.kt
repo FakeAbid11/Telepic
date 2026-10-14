@@ -79,6 +79,7 @@ class BackupRecognitionRepositoryTest {
     }
 
     private fun repo(hasher: ContentHasher) = DefaultBackupRecognitionRepository(
+        db = db,
         queueDao = queueDao,
         manifestDao = manifestDao,
         hasher = hasher,

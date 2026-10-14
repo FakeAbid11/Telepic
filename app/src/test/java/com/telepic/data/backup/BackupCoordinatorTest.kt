@@ -117,12 +117,14 @@ class BackupCoordinatorTest {
         pageSize: Int = 100,
         buckets: Set<Long> = emptySet(),
         loaderFactory: ((Long?) -> com.telepic.data.media.MediaPageLoader)? = null,
+        cursorStore: DiscoveryCursorStore = DiscoveryCursorStore.NoOp,
     ) = DefaultBackupCoordinator(
         repository = repo,
         recognition = recognition,
         scheduler = scheduler,
         onboardingRepository = FakeOnboarding(preference, buckets),
         pageLoaderFactory = loaderFactory ?: { FakeLoader(pages, pageSize) },
+        cursorStore = cursorStore,
         discoveryPageSize = pageSize,
     )
 
@@ -328,6 +330,7 @@ class BackupCoordinatorTest {
             scheduler = scheduler,
             onboardingRepository = FakeOnboarding(BackupPreference.BACKUP_ALL),
             pageLoaderFactory = { stoppingLoader },
+            cursorStore = DiscoveryCursorStore.NoOp,
             discoveryPageSize = 2,
         )
 
@@ -343,5 +346,45 @@ class BackupCoordinatorTest {
         val scheduler = FakeScheduler()
         coordinator(RecordingRepo(), scheduler, BackupPreference.BACKUP_ALL).syncFromPreference()
         assertEquals(1, scheduler.scheduled)
+    }
+
+    private class InMemoryCursorStore : DiscoveryCursorStore {
+        private val offsets = HashMap<String, Int>()
+
+        override suspend fun offset(key: String): Int = offsets[key] ?: 0
+
+        override suspend fun save(key: String, offset: Int) {
+            offsets[key] = offset
+        }
+    }
+
+    @Test
+    fun `a capped pass resumes from its cursor instead of re-scanning the same slice`() = runBlocking {
+        // discoveryMaxItems used to be a permanent ceiling: [offset] was a local reset to 0 on every
+        // pass, so the tail of a library larger than the cap was never examined, however many 12h
+        // ticks ran. The cursor is what makes successive passes walk further down.
+        val cursor = InMemoryCursorStore()
+        val pages = listOf(listOf(media(1), media(2)), listOf(media(3), media(4)))
+
+        fun build(repo: RecordingRepo, maxItems: Int) = DefaultBackupCoordinator(
+            repository = repo,
+            recognition = NeedsBackupRecognition(),
+            scheduler = FakeScheduler(),
+            onboardingRepository = FakeOnboarding(BackupPreference.BACKUP_ALL),
+            pageLoaderFactory = { FakeLoader(pages, pageSize = 2) },
+            cursorStore = cursor,
+            discoveryPageSize = 2,
+            discoveryMaxItems = maxItems,
+        )
+
+        val firstRepo = RecordingRepo()
+        build(firstRepo, maxItems = 2).syncFromPreference()
+        assertEquals("the capped pass records where it stopped", 2, cursor.offset("all"))
+        assertEquals(2, firstRepo.enqueuedWithHash.size)
+
+        val secondRepo = RecordingRepo()
+        build(secondRepo, maxItems = 10).syncFromPreference()
+        assertEquals("the resumed pass reaches the tail it had not seen", 2, secondRepo.enqueuedWithHash.size)
+        assertEquals("a pass that reached the end rewinds for newly added media", 0, cursor.offset("all"))
     }
 }

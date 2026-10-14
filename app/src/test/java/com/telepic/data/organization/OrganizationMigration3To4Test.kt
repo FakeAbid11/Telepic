@@ -90,7 +90,7 @@ class OrganizationMigration3To4Test {
         assertEquals("feedface", queueRow!!.contentHash)
 
         // The new organization table is functional and matches the entity.
-        val organization = DefaultMediaOrganizationRepository(db.mediaOrganizationDao(), clock = { 5L })
+        val organization = DefaultMediaOrganizationRepository(db, db.mediaOrganizationDao(), clock = { 5L })
         organization.setFavorite(42L, true)
         organization.moveToTrash(9L)
         assertTrue(organization.favoriteIds.first().contains(42L))

@@ -87,6 +87,7 @@ class DefaultBackupCoordinator(
     private val scheduler: BackupWorkScheduler,
     private val onboardingRepository: OnboardingRepository,
     private val pageLoaderFactory: (bucketId: Long?) -> MediaPageLoader,
+    private val cursorStore: DiscoveryCursorStore,
     private val discoveryPageSize: Int = 100,
     private val discoveryMaxItems: Int = 25_000,
 ) : BackupCoordinator {
@@ -141,7 +142,7 @@ class DefaultBackupCoordinator(
                 // policy makes this idempotent, and the worker re-checks the preference on every tick.
                 scheduler.schedulePeriodic()
                 val enqueued = try {
-                    discoverAndEnqueue(pageLoaderFactory(null))
+                    discoverAndEnqueue(pageLoaderFactory(null), cursorKey(null))
                 } catch (cancellation: CancellationException) {
                     scheduleInterruptedPass()
                     throw cancellation
@@ -156,7 +157,7 @@ class DefaultBackupCoordinator(
                 val enqueuedAny = try {
                     var any = false
                     for (bucketId in buckets) {
-                        if (discoverAndEnqueue(pageLoaderFactory(bucketId))) any = true
+                        if (discoverAndEnqueue(pageLoaderFactory(bucketId), cursorKey(bucketId))) any = true
                     }
                     any
                 } catch (cancellation: CancellationException) {
@@ -200,20 +201,21 @@ class DefaultBackupCoordinator(
     /**
      * Bounded, incremental scan of one loader (the whole library, or a single chosen bucket).
      *
-     * What the cap really is: a ceiling on **one** pass, measured from the newest item. [offset] and
-     * [seen] are locals, not a persisted cursor, so a library larger than [discoveryMaxItems] is only
-     * ever scanned as deeply as a single pass can reach — the older tail does *not* converge over
-     * consecutive periodic runs, and making it do so needs a resume cursor (or age-bucketed passes),
-     * which is a separate change from this one.
+     * The cap is a ceiling on **one** pass, measured from wherever [cursorKey]'s cursor points. That
+     * cursor is persisted, so a library larger than [discoveryMaxItems] converges over successive
+     * passes instead of re-examining the same newest slice forever. A pass that walks the loader to
+     * its end rewinds the cursor to 0 — that is what keeps newly added media discoverable — while a
+     * capped or interrupted one leaves it at the next unexamined offset.
      *
-     * What a repeat pass genuinely costs little is re-visiting rows it already queued: recognition
-     * reuses the cached hash while size + modified still match, and a stop mid-way now still hands the
-     * enqueued rows to the worker — see [scheduleInterruptedPass].
+     * What a repeat pass costs little is re-visiting rows it already queued: recognition reuses the
+     * cached hash while size + modified still match, and a stop mid-way still hands the enqueued rows
+     * to the worker — see [scheduleInterruptedPass].
      */
-    private suspend fun discoverAndEnqueue(pageLoader: MediaPageLoader): Boolean {
-        var offset = 0
+    private suspend fun discoverAndEnqueue(pageLoader: MediaPageLoader, cursorKey: String): Boolean {
+        var offset = cursorStore.offset(cursorKey).coerceAtLeast(0)
         var seen = 0
         var enqueuedAny = false
+        var reachedEnd = false
         while (seen < discoveryMaxItems) {
             val page = try {
                 pageLoader.load(offset, discoveryPageSize)
@@ -223,18 +225,45 @@ class DefaultBackupCoordinator(
                 // One unreadable page ends *this* loader, not the pass. A MediaStore query can fail on
                 // its own — a revoked or limited media grant, a provider error — and that must not
                 // discard the buckets already scanned, nor propagate into whatever is awaiting the
-                // pass (the periodic worker, the app's startup scope, an onboarding ViewModel).
+                // pass (the periodic worker, the app's startup scope, an onboarding ViewModel). The
+                // cursor stays where it is, so the next pass resumes at the page that failed rather
+                // than skipping past it.
                 return enqueuedAny
             }
-            if (page.isEmpty()) break
+            if (page.isEmpty()) {
+                reachedEnd = true
+                break
+            }
             for (item in page) {
                 if (recognizeAndMaybeEnqueue(item).queued > 0) enqueuedAny = true
             }
             seen += page.size
-            if (page.size < discoveryPageSize) break
             offset += page.size
+            if (page.size < discoveryPageSize) {
+                reachedEnd = true
+                break
+            }
         }
+        persistCursor(cursorKey, if (reachedEnd) 0 else offset)
         return enqueuedAny
+    }
+
+    /** The key a loader's progress is stored under: one for the whole library, one per bucket. */
+    private fun cursorKey(bucketId: Long?): String =
+        if (bucketId == null) CURSOR_KEY_ALL else "bucket_$bucketId"
+
+    /**
+     * Record discovery progress. Best-effort on purpose: the cursor is an optimisation, so a store that
+     * cannot be written must not turn a scan that already enqueued work into a failure.
+     */
+    private suspend fun persistCursor(key: String, offset: Int) {
+        try {
+            cursorStore.save(key, offset)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("BackupCoordinator", "could not persist the discovery cursor for '$key'", throwable)
+        }
     }
 
     /**
@@ -272,5 +301,10 @@ class DefaultBackupCoordinator(
         throw cancellation
     } catch (_: Throwable) {
         BulkBackupSummary.Empty // neither queued nor covered: nothing is claimed about this item
+    }
+
+    private companion object {
+        /** Cursor key for the whole-library loader; per-bucket loaders use `bucket_<id>`. */
+        const val CURSOR_KEY_ALL = "all"
     }
 }

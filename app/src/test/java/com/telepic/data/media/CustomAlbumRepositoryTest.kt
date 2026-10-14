@@ -78,6 +78,7 @@ class CustomAlbumRepositoryTest {
 
     private fun repository(lookup: LocalMediaLookup = FakeLookup(emptyMap())) =
         DefaultCustomAlbumRepository(
+            db = db,
             dao = db.customAlbumDao(),
             lookup = lookup,
             clock = { 1_000L },

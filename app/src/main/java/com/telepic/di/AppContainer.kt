@@ -16,6 +16,7 @@ import com.telepic.data.backup.DefaultBackupCoordinator
 import com.telepic.data.backup.DefaultBackupRecognitionRepository
 import com.telepic.data.backup.DefaultBackupRepository
 import com.telepic.data.backup.DefaultBackupStatusRepository
+import com.telepic.data.backup.PreferencesDiscoveryCursorStore
 import com.telepic.data.backup.hash.AndroidContentHasher
 import com.telepic.data.backup.hash.ContentHasher
 import com.telepic.data.backup.work.BackupWorkScheduler
@@ -246,7 +247,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val mediaOrganizationRepository: MediaOrganizationRepository by lazy {
-        DefaultMediaOrganizationRepository(mediaOrganizationDao)
+        DefaultMediaOrganizationRepository(database, mediaOrganizationDao)
     }
 
     override val mediaDeleter: LocalMediaDeleter by lazy { MediaStoreLocalDeleter(appContext) }
@@ -297,6 +298,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val customAlbumRepository: CustomAlbumRepository by lazy {
         DefaultCustomAlbumRepository(
+            db = database,
             dao = customAlbumDao,
             lookup = localMediaLookup,
             hiddenIdsProvider = { mediaOrganizationRepository.hiddenIds() },
@@ -316,6 +318,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     private val backupRecognitionRepository: BackupRecognitionRepository by lazy {
         DefaultBackupRecognitionRepository(
+            db = database,
             queueDao = backupQueueDao,
             manifestDao = cloudManifestDao,
             hasher = contentHasher,
@@ -324,6 +327,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val backupRepository: BackupRepository by lazy {
         DefaultBackupRepository(
+            db = database,
             dao = backupQueueDao,
             cloudRepository = cloudRepository,
             authState = telegramSessionManager.state,
@@ -359,6 +363,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                     )
                 }
             },
+            // Persists how far each loader's discovery pass reached, so a library larger than the
+            // per-pass cap converges over successive ticks instead of re-scanning its newest slice.
+            cursorStore = PreferencesDiscoveryCursorStore(appContext.telepicDataStore),
         )
     }
 }

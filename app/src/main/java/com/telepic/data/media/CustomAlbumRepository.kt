@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import androidx.room.RoomDatabase
+import androidx.room.withTransaction
 import com.telepic.data.media.db.CustomAlbumDao
 import com.telepic.data.media.db.CustomAlbumEntity
 import com.telepic.data.media.db.CustomAlbumMediaEntity
@@ -75,6 +77,7 @@ interface CustomAlbumRepository {
  * albums the user has made.
  */
 class DefaultCustomAlbumRepository(
+    private val db: RoomDatabase,
     private val dao: CustomAlbumDao,
     private val lookup: LocalMediaLookup,
     private val hiddenIdsProvider: suspend () -> Set<Long> = { emptySet() },
@@ -119,26 +122,36 @@ class DefaultCustomAlbumRepository(
 
     override suspend fun addMedia(albumId: Long, mediaIds: List<Long>): Int {
         if (mediaIds.isEmpty()) return 0
-        // Deduplicate within the request as well as against the table. The primary key already makes a
-        // repeat a no-op, but reporting "added 3" for three copies of one photo would be a lie.
-        val distinct = mediaIds.distinct()
-        val existing = dao.memberIds(albumId).toSet()
-        val toAdd = distinct.filterNot { it in existing }
-        if (toAdd.isEmpty()) return 0
-        val now = clock()
-        dao.insertMembers(toAdd.map { CustomAlbumMediaEntity(albumId, it, now) })
-        // The cover hint is the most recently added member, which is the last one in this request.
-        dao.setCover(albumId, toAdd.last(), now)
-        return toAdd.size
+        // Membership, cover and timestamps move together: a reader must never see the new members
+        // beside a stale cover, and two concurrent adds must not interleave their reads and writes.
+        return db.withTransaction {
+            // Deduplicate within the request as well as against the table. The primary key already
+            // makes a repeat a no-op, but reporting "added 3" for three copies of one photo would be
+            // a lie.
+            val distinct = mediaIds.distinct()
+            val existing = dao.memberIds(albumId).toSet()
+            val toAdd = distinct.filterNot { it in existing }
+            if (toAdd.isEmpty()) return@withTransaction 0
+            val now = clock()
+            dao.insertMembers(toAdd.map { CustomAlbumMediaEntity(albumId, it, now) })
+            // The cover hint is the most recently added member, which is the last one in this request.
+            dao.setCover(albumId, toAdd.last(), now)
+            toAdd.size
+        }
     }
 
     override suspend fun removeMedia(albumId: Long, localMediaId: Long) {
-        val now = clock()
-        dao.removeMember(albumId, localMediaId)
-        // The cover hint may now name something the album no longer holds. Clearing it is honest — the
-        // card falls back to a placeholder — where leaving it would show a cover the album does not own.
-        dao.clearCoverIfMatches(albumId, localMediaId)
-        dao.touch(albumId, now)
+        // The three statements are one edit: a reader landing between them would see a member removed
+        // while the album still claims it as its cover.
+        db.withTransaction {
+            val now = clock()
+            dao.removeMember(albumId, localMediaId)
+            // The cover hint may now name something the album no longer holds. Clearing it is honest —
+            // the card falls back to a placeholder — where leaving it would show a cover the album does
+            // not own.
+            dao.clearCoverIfMatches(albumId, localMediaId)
+            dao.touch(albumId, now)
+        }
     }
 
     override fun observeName(albumId: Long): Flow<String?> = dao.observeName(albumId)

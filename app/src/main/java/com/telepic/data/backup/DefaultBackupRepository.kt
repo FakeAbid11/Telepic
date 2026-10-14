@@ -1,5 +1,7 @@
 package com.telepic.data.backup
 
+import androidx.room.RoomDatabase
+import androidx.room.withTransaction
 import com.telepic.data.backup.db.BackupQueueDao
 import com.telepic.data.backup.db.BackupQueueEntity
 import com.telepic.data.backup.BackupMapping.toDomain
@@ -35,6 +37,7 @@ import kotlinx.coroutines.withContext
  * to match TDLib's request ordering and to keep destination/manifest writes race-free.
  */
 class DefaultBackupRepository(
+    private val db: RoomDatabase,
     private val dao: BackupQueueDao,
     private val cloudRepository: CloudRepository,
     private val authState: StateFlow<TelegramAuthState>,
@@ -70,11 +73,14 @@ class DefaultBackupRepository(
      * [BackupQueueDao.requeueForRetry] is the same transition that screen's Retry button uses, so the
      * two paths cannot drift apart.
      */
-    private suspend fun enqueueInternal(entity: BackupQueueEntity): Boolean {
-        if (dao.insertIgnore(entity) != -1L) return true
-        val existing = dao.findByLocalId(entity.localMediaId) ?: return false
+    private suspend fun enqueueInternal(entity: BackupQueueEntity): Boolean = db.withTransaction {
+        // insert → find → requeue is atomic. Two concurrent enqueues of the same local id would
+        // otherwise both miss the insert and both attempt the re-queue, and a reader landing between
+        // the re-queue and the hash write would see a QUEUED row carrying a stale hash.
+        if (dao.insertIgnore(entity) != -1L) return@withTransaction true
+        val existing = dao.findByLocalId(entity.localMediaId) ?: return@withTransaction false
         val state = BackupState.fromName(existing.state)
-        if (state != BackupState.FAILED && state != BackupState.CANCELLED) return false
+        if (state != BackupState.FAILED && state != BackupState.CANCELLED) return@withTransaction false
         val now = clock()
         dao.requeueForRetry(existing.id, now)
         // Keep the content identity current: recognition may have just recomputed the hash because
@@ -82,7 +88,7 @@ class DefaultBackupRepository(
         entity.contentHash?.let {
             dao.persistHash(existing.id, it, entity.contentSizeBytes ?: entity.sizeBytes, now, now)
         }
-        return true
+        true
     }
 
     override suspend fun enqueueAll(media: List<LocalMedia>): Int = withContext(dispatcher) {
