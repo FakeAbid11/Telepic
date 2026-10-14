@@ -6,6 +6,7 @@ import android.provider.MediaStore
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import com.telepic.R
 import com.telepic.domain.media.Album
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
@@ -117,7 +118,9 @@ class MediaStoreAlbumRepository(
                 )
             }
         }
-        AlbumGrouper.group(rows) { id, mime -> MediaStoreMediaMapper.contentUriFor(id, mime) }
+        AlbumGrouper.group(rows, appContext.getString(R.string.albums_untitled)) { id, mime ->
+            MediaStoreMediaMapper.contentUriFor(id, mime)
+        }
     }
 
     /**

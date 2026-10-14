@@ -88,7 +88,10 @@ fun MediaDetailsSheet(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.End,
-                            modifier = Modifier.fillMaxWidth(),
+                            // `weight`, not `fillMaxWidth`: asking for the full row width made a long
+                            // value (a file path, a filename) run past the label and clip. Weighted, it
+                            // takes exactly the space left and wraps inside it.
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }

@@ -263,7 +263,11 @@ private fun FavoriteBadge(modifier: Modifier = Modifier) {
 @Composable
 private fun BackupBadge(state: MediaBackupVisualState, modifier: Modifier = Modifier) {
     if (state == MediaBackupVisualState.NONE) return
-    val scrim = TelepicTokens.colors.scrim
+    // `chromeScrim` (70% black), not `scrim`: this badge is a 20dp disc sitting on a photo, and in
+    // light mode `scrim` is only 40% black — over a bright image the effective background is
+    // ~#999999, where neither a dark nor a light glyph reaches the 3:1 floor. A darker disc is what
+    // makes the on-media tones below readable in both schemes.
+    val scrim = TelepicTokens.colors.chromeScrim
     Box(
         modifier = modifier
             .size(20.dp)
@@ -280,9 +284,11 @@ private fun BackupBadge(state: MediaBackupVisualState, modifier: Modifier = Modi
             else -> {
                 val (icon, tint) = when (state) {
                     MediaBackupVisualState.BACKED_UP -> Icons.Outlined.CloudDone to Color.White
-                    MediaBackupVisualState.FAILED -> Icons.Outlined.CloudOff to MaterialTheme.colorScheme.error
+                    // On-media tones, not `colorScheme.error`/`tertiary`: this disc is over a photo,
+                    // not over a theme surface, and the light scheme's dark red measured ~2.3:1 here.
+                    MediaBackupVisualState.FAILED -> Icons.Outlined.CloudOff to TelepicTokens.colors.mediaErrorText
                     // Retry-exhausted: a distinct warning marker, never the quiet "queued" cloud.
-                    MediaBackupVisualState.STALLED -> Icons.Outlined.ErrorOutline to MaterialTheme.colorScheme.tertiary
+                    MediaBackupVisualState.STALLED -> Icons.Outlined.ErrorOutline to TelepicTokens.colors.mediaWarningText
                     MediaBackupVisualState.QUEUED -> Icons.Outlined.CloudUpload to Color.White
                     else -> Icons.Outlined.CloudUpload to Color.White
                 }

@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -125,6 +126,10 @@ private fun AuthContent(
             var countryIso by rememberSaveable { mutableStateOf(defaultCountry.iso) }
             val country = PhoneCountries.byIso(countryIso) ?: defaultCountry
             var menuExpanded by remember { mutableStateOf(false) }
+            // A fixed width is right for this field — a flag and a dial code are short and stable —
+            // but it has to scale with the user's font size. At a large font scale a hard 132dp
+            // clipped the very content it was sized for.
+            val countryFieldWidth = with(LocalDensity.current) { (132 * fontScale).dp }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 modifier = Modifier.fillMaxWidth(),
@@ -132,7 +137,7 @@ private fun AuthContent(
                 ExposedDropdownMenuBox(
                     expanded = menuExpanded,
                     onExpandedChange = { menuExpanded = it },
-                    modifier = Modifier.width(132.dp),
+                    modifier = Modifier.width(countryFieldWidth),
                 ) {
                     OutlinedTextField(
                         value = "${country.flag} ${country.dialCode}",

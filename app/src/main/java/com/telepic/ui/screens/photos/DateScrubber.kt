@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.telepic.R
@@ -337,6 +338,7 @@ internal fun DateScrubber(
                             fontWeight = if (isActive) FontWeight.Medium else FontWeight.Normal,
                             color = if (isActive) labelActiveColor else labelIdleColor,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(end = spacing.sm),
                         )
                         Box(
@@ -451,6 +453,7 @@ internal fun DateScrubber(
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.inverseOnSurface,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(
                                 horizontal = spacing.lg,
                                 vertical = spacing.sm,

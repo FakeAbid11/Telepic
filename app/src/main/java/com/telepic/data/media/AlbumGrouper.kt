@@ -25,7 +25,15 @@ object AlbumGrouper {
         val whenMillis: Long,
     )
 
-    fun group(rows: List<Row>, coverUriFor: (id: Long, mimeType: String?) -> Uri): List<Album> {
+    fun group(
+        rows: List<Row>,
+        /**
+         * Name for a bucket the provider gave no display name for. Passed in rather than hard-coded so
+         * it stays translatable — it is the only user-visible string this otherwise-pure object emits.
+         */
+        untitled: String = "Album",
+        coverUriFor: (id: Long, mimeType: String?) -> Uri,
+    ): List<Album> {
         val counts = LinkedHashMap<Long, Int>()
         val covers = HashMap<Long, Row>()
         val titles = HashMap<Long, String>()
@@ -41,7 +49,7 @@ object AlbumGrouper {
         return covers.mapNotNull { (bucket, cover) ->
             Album(
                 bucketId = bucket,
-                title = titles[bucket] ?: UNTITLED,
+                title = titles[bucket] ?: untitled,
                 coverUri = coverUriFor(cover.id, cover.mimeType),
                 coverIsVideo = cover.mimeType?.startsWith("video/") == true,
                 count = counts[bucket] ?: 0,
@@ -50,6 +58,4 @@ object AlbumGrouper {
             )
         }.sortedByDescending { it.latestMillis }
     }
-
-    private const val UNTITLED = "Album"
 }

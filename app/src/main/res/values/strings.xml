@@ -339,6 +339,11 @@
     <string name="settings_cache_cleared">Cache cleared</string>
     <string name="settings_action_failed">That didn\'t work. Try again.</string>
     <string name="cloud_connect_action">Connect Telegram</string>
+    <!-- Stands in for a video's length until the player reports one. Deliberately not "0:00" — an
+         unknown duration is not a zero-length video, and formatPlaybackTime(0) would claim exactly
+         that, which is the same lie the seek bar refuses to tell. -->
+    <string name="viewer_duration_unknown" translatable="false">--:--</string>
+    <string name="albums_untitled">Album</string>
     <string name="backup_queue_state_queued">Queued</string>
     <string name="backup_queue_state_preparing">Preparing</string>
     <string name="backup_queue_state_uploading">Uploading</string>

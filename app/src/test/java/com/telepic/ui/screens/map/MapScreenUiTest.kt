@@ -4,7 +4,6 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import com.telepic.data.media.MapLocationRepository
 import com.telepic.data.media.SavedCamera
@@ -142,8 +141,9 @@ class MapScreenUiTest {
         settle()
 
         // "Still loading", not "no locations": the empty state must never flash before the first
-        // markers land, and the surface must not be built at the wrong camera position.
-        composeRule.onNodeWithContentDescription("Loading").assertIsDisplayed()
+        // markers land, and the surface must not be built at the wrong camera position. Asserted by
+        // the label text: the spinner is decorative now, so the label is the single announcement.
+        composeRule.onNodeWithText("Loading").assertIsDisplayed()
     }
 
     @Test

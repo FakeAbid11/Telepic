@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.telepic.R
 import com.telepic.domain.media.CustomAlbum
@@ -134,6 +135,10 @@ fun AlbumPickerDialog(
                                 text = album.name,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface,
+                                // Ellipsized like the album tiles: an unbounded name wrapped and made
+                                // this row taller than every other in the picker.
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                             Text(

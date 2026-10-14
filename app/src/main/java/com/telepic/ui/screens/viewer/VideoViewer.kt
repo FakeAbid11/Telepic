@@ -48,9 +48,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import com.telepic.domain.media.DurationLabel
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -286,19 +288,13 @@ fun VideoViewer(
 /**
  * Formats a playback position as `m:ss`, or `h:mm:ss` once an hour is exceeded — a long recording
  * must not silently lose its hour. Pure, so the transport's clock is testable without a player.
+ *
+ * Delegates to [DurationLabel] rather than carrying its own copy of the rule: a 90-minute clip has to
+ * read `1:30:00` in the transport exactly as it does on its thumbnail. The only difference is the
+ * zero case — a player sitting at position 0 genuinely has a position to show, whereas a tile with an
+ * unknown duration has nothing, so the transport supplies its own `0:00` for the null.
  */
-internal fun formatPlaybackTime(millis: Long): String {
-    if (millis <= 0L) return "0:00"
-    val totalSeconds = millis / 1000
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, seconds)
-    } else {
-        "%d:%02d".format(minutes, seconds)
-    }
-}
+internal fun formatPlaybackTime(millis: Long): String = DurationLabel.format(millis) ?: "0:00"
 
 /**
  * What the video transport renders, as plain data. Deliberately holds no `Player` reference, so the
@@ -378,13 +374,6 @@ internal class VideoPlaybackState {
 internal const val TAG_VIDEO_TRANSPORT = "video_transport"
 
 /**
- * Stands in for the duration until the player reports one. Deliberately not `0:00` — an unknown
- * duration is not a zero-length video, and `formatPlaybackTime(0)` would claim exactly that, which
- * is the same lie the seek bar refuses to tell. `DurationLabel` makes the same call for badges.
- */
-private const val UNKNOWN_DURATION_LABEL = "--:--"
-
-/**
  * The video's only bottom bar. Sized to `TelepicSpacing.chromeBarHeight` — the same band the video
  * surface reserves for it and the same height the Viewer's photo chrome uses — and placed in the last
  * `chromeBarHeight` of the inset-adjusted surface, so it *is* the bar instead of a second one stacked
@@ -454,6 +443,9 @@ internal fun VideoTransport(
             style = MaterialTheme.typography.labelMedium,
             color = Color.White,
             maxLines = 1,
+            // Ellipsis, not the default Clip: at a large font scale a clipped duration was cut
+            // mid-glyph with no indication anything was missing.
+            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.End,
             modifier = Modifier.padding(horizontal = spacing.xs),
         )
@@ -484,10 +476,11 @@ internal fun VideoTransport(
         Text(
             // Tied to `isSeekable`, not to a second `> 0` test: an unknown duration disables the
             // bar *and* must not be printed as a length.
-            text = if (state.isSeekable) formatPlaybackTime(state.durationMs) else UNKNOWN_DURATION_LABEL,
+            text = if (state.isSeekable) formatPlaybackTime(state.durationMs) else stringResource(R.string.viewer_duration_unknown),
             style = MaterialTheme.typography.labelMedium,
             color = Color.White,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Start,
             modifier = Modifier.padding(horizontal = spacing.xs),
         )
