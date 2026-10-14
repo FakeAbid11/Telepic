@@ -3,6 +3,7 @@ package com.telepic.data.backup
 import android.content.ContentResolver
 import android.database.Cursor
 import android.net.Uri
+import com.telepic.diagnostics.TelepicLog
 import java.io.File
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
@@ -78,6 +79,11 @@ class MediaStoreBackupStager(
         val cursor: Cursor? = contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)
         cursor?.use { it.count > 0 } ?: false
     } catch (throwable: Throwable) {
+        // Not silent: `false` here makes `stage` return null, which the queue records as a *permanent*
+        // "local media is no longer available" failure. A provider error (a revoked or limited media
+        // grant, a transient provider fault) looks identical to a deleted file without this line, so a
+        // recoverable condition was being reported as an unrecoverable one with nothing to diagnose.
+        TelepicLog.warn("BackupStager", "could not confirm the source row before staging", throwable)
         false
     }
 

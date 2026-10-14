@@ -6,6 +6,7 @@ import android.os.Build
 import android.provider.MediaStore
 import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.LocalMedia
+import kotlinx.coroutines.CancellationException
 
 /** The outcome of asking to permanently delete a local file. Never claims success it did not get. */
 sealed interface DeleteRequest {
@@ -81,6 +82,10 @@ class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
             // the item stays in trash, and the reason now leaves a trace instead of vanishing.
             TelepicLog.warn("MediaDelete", "the provider refused the delete; the item stays in trash", security)
             DeleteRequest.Failed
+        } catch (cancellation: CancellationException) {
+            // Cancellation is control flow, not a failed delete: reporting Failed would leave the
+            // caller believing the provider refused, when the caller's own scope simply went away.
+            throw cancellation
         } catch (throwable: Throwable) {
             TelepicLog.error("MediaDelete", "delete request failed", throwable)
             DeleteRequest.Failed

@@ -196,8 +196,6 @@ class DefaultCustomAlbumRepository(
             lookup.byIdList(ids).associate { it.id to it.contentUri }
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (cancellation: CancellationException) {
-            throw cancellation
         } catch (throwable: Throwable) {
             // An empty cover map means every custom album falls back to its placeholder — visible to
             // the user, so it is reported rather than silently swallowed.

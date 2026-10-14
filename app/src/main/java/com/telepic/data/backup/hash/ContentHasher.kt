@@ -5,6 +5,7 @@ import android.net.Uri
 import com.telepic.domain.backup.ContentHashResult
 import java.io.IOException
 import java.io.InputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -61,6 +62,11 @@ class AndroidContentHasher(
         try {
             contentResolver.openInputStream(uri)?.close()
             true
+        } catch (cancellation: CancellationException) {
+            // Cancellation is control flow, not "unreadable". The rest of the app rethrows it, and
+            // swallowing it here would report a torn-down scan as a broken file — the caller uses this
+            // answer to choose between "hash failed" and "source unreadable".
+            throw cancellation
         } catch (_: Throwable) {
             false
         }
