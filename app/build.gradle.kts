@@ -1,9 +1,7 @@
 import java.util.Base64
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
@@ -130,14 +128,9 @@ android {
     }
 }
 
-// Kotlin 2.2 removed the deprecated `android { kotlinOptions { } }` DSL in favour of the Kotlin
-// plugin's own `compilerOptions`. The JVM target must be set here so the Kotlin compiler and the
-// `compileOptions` block above agree; a mismatch fails the build.
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
-    }
-}
+// With AGP's built-in Kotlin there is no `android { kotlinOptions { } }` block, and no replacement is
+// needed: `kotlin.compilerOptions.jvmTarget` defaults to `android.compileOptions.targetCompatibility`,
+// which is already Java 17 above.
 
 // Compose compiler reports + metrics. These are the only way to *verify* the performance contract
 // rather than infer it: the class report states each type's inferred stability, and the composables
