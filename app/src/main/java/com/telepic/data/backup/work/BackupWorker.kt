@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import com.telepic.R
 import com.telepic.data.backup.BackupRepository
 import com.telepic.diagnostics.TelepicLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 
 /**
@@ -44,7 +45,21 @@ class BackupWorker(
         error("BackupWorker must be created by TelepicWorkerFactory"),
     )
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result =
+        try {
+            runPass()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            // A run can fail for a reason no branch below models — a database error, a provider throw.
+            // That is not provably permanent, so ask WorkManager to retry (with its backoff) instead of
+            // letting the exception turn the run into a permanent FAILED one. Nothing is claimed as
+            // backed up on this path: the queue rows keep whatever state they already had.
+            TelepicLog.error("BackupWorker", "backup run failed unexpectedly; asking WorkManager to retry", throwable)
+            Result.retry()
+        }
+
+    private suspend fun runPass(): Result {
         val repo = repository
 
         // Repair anything a previous process left mid-flight before touching new work.

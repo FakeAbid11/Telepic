@@ -61,12 +61,6 @@ object ViewerRoute {
 
     fun cloud(chatId: Long, messageId: Long): String = "viewer/cloud/$chatId/$messageId"
 
-    /** Reconstructs the typed [MediaSource] from a local-route back stack entry. */
-    fun localSourceOf(mediaId: Long): MediaSource = MediaSource.Local(mediaId)
-
-    /** Reconstructs the typed [MediaSource] from a cloud-route back stack entry. */
-    fun cloudSourceOf(chatId: Long, messageId: Long): MediaSource = MediaSource.Cloud(chatId, messageId)
-
     /**
      * Rebuilds the originating [ViewerScope] from the back stack args, defaulting to the global
      * timeline.

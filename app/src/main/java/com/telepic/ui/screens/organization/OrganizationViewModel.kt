@@ -7,6 +7,7 @@ import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.organization.DeleteRequest
 import com.telepic.data.organization.LocalMediaDeleter
 import com.telepic.data.organization.MediaOrganizationRepository
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.LocalMedia
 import com.telepic.navigation.OrganizationKind
 import kotlinx.coroutines.CancellationException
@@ -214,7 +215,21 @@ class OrganizationViewModel(
         if (_isDeleting.value) return
         _isDeleting.value = true
         viewModelScope.launch {
-            when (val outcome = deleter.requestDeleteAll(selection)) {
+            // The deleter talks to MediaStore's delete-request API, which can throw for a provider
+            // reason no branch here models. Without this boundary the exception escaped
+            // viewModelScope (an uncaught main-thread crash) *and* left `_isDeleting` true forever, so
+            // the delete bar spun with no way out. A failed request is reported and the bar is freed.
+            val outcome = try {
+                deleter.requestDeleteAll(selection)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("OrganizationViewModel", "permanent-delete request failed", throwable)
+                _isDeleting.value = false
+                reportDeleteFailed(selection.size)
+                return@launch
+            }
+            when (outcome) {
                 is DeleteRequest.NeedsConsent -> {
                     pendingConsentIds = selection.map { it.id }
                     onNeedsConsent(outcome.intentSender)
@@ -255,7 +270,15 @@ class OrganizationViewModel(
         // organization row, so the flag would be written and destroyed in the same coroutine and
         // could never be read. Forgetting the item is what this path means; the `deletedFromStore`
         // column is left over from when the row survived, and is unused.
-        ids.forEach { organizationRepository.remove(it) }
+        try {
+            ids.forEach { organizationRepository.remove(it) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            // Bookkeeping only: the media is already gone from the device, so a failed row write must
+            // not crash the app. The id-set flow simply re-emits whatever is still there.
+            TelepicLog.warn("OrganizationViewModel", "could not forget deleted items", throwable)
+        }
     }
 
     fun reportDeleteFailed(count: Int) {

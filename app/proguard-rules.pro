@@ -21,7 +21,12 @@
 # Room (generated code) and androidx Paging/DataStore/Media3/Coil ship their own consumer rules.
 # osmdroid 6.1.20 does NOT — verified against the AAR, which contains no proguard.txt at all — and
 # it is reflection- and resource-lookup-heavy, so it is the dependency most likely to need keeps
-# here. If the `release-smoke` CI job reports missing classes for it, add them below.
+# here. A blanket keep is deliberate: osmdroid resolves tile sources, overlays and its configuration
+# provider by class name, so obfuscating its package risks a release-only NoClassDefFoundError that
+# no unit test can catch. The cost is a little APK size, against a `release-smoke` job that only
+# compiles (it cannot exercise map rendering).
+-keep class org.osmdroid.** { *; }
+-dontwarn org.osmdroid.**
 #
 # (The TDLib keep above is also redundant: the AAR ships its own proguard.txt containing exactly
 # `-keep class org.drinkless.tdlib.** { *; }`. It is kept here as documentation of the contract.)

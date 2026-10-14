@@ -6,6 +6,8 @@ import com.telepic.data.cloud.CloudRepository
 import com.telepic.domain.cloud.CloudMedia
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 sealed interface RestoreResult {
     /** The original was downloaded and committed to public media storage. */
@@ -44,19 +46,24 @@ class DefaultRestoreRepository(
     private val publisher: MediaStorePublisher,
 ) : RestoreRepository {
 
-    override suspend fun restore(media: CloudMedia): RestoreResult {
+    override suspend fun restore(media: CloudMedia): RestoreResult = withContext(Dispatchers.IO) {
+        // The whole pipeline — download, on-disk existence/length checks, a full streaming SHA-256 of
+        // the file, and the MediaStore publish — is file I/O and hashing. It used to run on whatever
+        // dispatcher the caller happened to be on (the Viewer's `viewModelScope`, i.e. Main), so a
+        // large original blocked the UI thread for the length of a hash. Everything below is IO-bound.
+        //
         // `onFailure { throw }` keeps cancellation flowing: without it a cancelled scope would be
         // reported to the user as "download unavailable".
         val downloaded = runCatching { cloudRepository.downloadOriginal(media) }
             .onFailure { if (it is CancellationException) throw it }
             .getOrNull()
-            ?: return RestoreResult.Failed(RestoreFailure.DOWNLOAD_UNAVAILABLE)
+            ?: return@withContext RestoreResult.Failed(RestoreFailure.DOWNLOAD_UNAVAILABLE)
 
         // A completed download must be present and non-empty; an absent/zero-length file is treated
         // as missing (and a partial/interrupted download never reaches a completed-path here).
         val file = File(downloaded.localPath)
         if (!file.exists() || file.length() <= 0L) {
-            return RestoreResult.Failed(RestoreFailure.MISSING_REMOTE)
+            return@withContext RestoreResult.Failed(RestoreFailure.MISSING_REMOTE)
         }
 
         // Compute the restored bytes' identity for the record. Unreadable bytes are a real integrity
@@ -65,9 +72,9 @@ class DefaultRestoreRepository(
             hashContent(ContentStreamSource { file.inputStream() }, expectedSize = null).sha256
         }
             .onFailure { if (it is CancellationException) throw it }
-            .getOrNull() ?: return RestoreResult.Failed(RestoreFailure.VERIFY_FAILED)
+            .getOrNull() ?: return@withContext RestoreResult.Failed(RestoreFailure.VERIFY_FAILED)
 
-        return when (val published = publisher.publish(downloaded.localPath, media.mimeType, media.fileName)) {
+        when (val published = publisher.publish(downloaded.localPath, media.mimeType, media.fileName)) {
             is PublishResult.Inserted -> RestoreResult.Restored(published.uri, restoredHash)
             PublishResult.NoSpace -> RestoreResult.Failed(RestoreFailure.LOW_STORAGE)
             PublishResult.Failed -> RestoreResult.Failed(RestoreFailure.PUBLISH_FAILED)

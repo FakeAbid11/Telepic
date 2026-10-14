@@ -55,7 +55,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 
 **Backup**
 - Persistent backup queue in Room that survives process death, restart, and reboot.
-- Explicit state machine: nothing reaches `BACKED_UP` without a confirmed remote identity from Telegram.
+- Explicit state machine: nothing reaches `BACKED_UP` without a confirmed remote identity from Telegram, enforced in the queue's SQL state guards.
 - Crash recovery, bounded retry, cooperative cancellation, and safe app-private staging (originals are never modified or deleted).
 - WorkManager-driven with a foreground notification and a network constraint; uploads resume on reconnect.
 - **Content-based deduplication** — streaming SHA-256 identity, so the same bytes are never uploaded twice, even after a reinstall.
@@ -263,7 +263,7 @@ app/src/main/java/com/telepic/
 ├── domain/
 │   ├── media/                      # LocalMedia, MediaType, PhotosItem, day grouping
 │   ├── cloud/                      # CloudMedia, destination, status, upload contract
-│   └── backup/                     # BackupState + state machine, BackupItem, recognition
+│   └── backup/                     # BackupState + BackupItem, recognition
 ├── data/
 │   ├── media/                      # MediaStore loader, mapper, PagingSource, repository, observer
 │   ├── cloud/                      # Cloud repository, TDLib data source, Room (destination/manifest)
@@ -288,7 +288,7 @@ app/src/main/java/com/telepic/
 
 ### Database
 
-Room is at **version 7**, with explicit migrations and **no destructive fallback**:
+Room is at **version 8**, with explicit migrations and **no destructive fallback**:
 
 | Table | Purpose | Introduced |
 |---|---|---|
@@ -324,12 +324,12 @@ device yet.
 | Favorites / Archive / Trash | Complete *(system delete consent device-validated only)* |
 | Telegram authentication (TDLib) | Code complete *(live login device-gated)* |
 | Cloud browse + preview | Code complete *(live calls device-gated)* |
-| Backup engine (queue, state machine, WorkManager) | Code complete *(live upload device-gated)* |
+| Backup engine (queue, WorkManager) | Code complete *(live upload device-gated)* |
 | Recognition & deduplication (SHA-256) | Code complete *(remote half device-gated)* |
 | Restore / save-to-device | Code complete *(download + MediaStore write device-gated)* |
 | Settings | Complete *(app lock + cache clearing device-gated)* |
 | Media Details | Complete |
-| Search | Not implemented (deliberately deferred) |
+| Search (file name & folder, in Photos) | Complete |
 | App lock | Complete *(device-credential prompt device-gated)* |
 
 ### Device validation status
@@ -351,7 +351,7 @@ never run against the real thing.
 
 ### Roadmap
 
-Next up: **full-device integration & hardening** (Phases 11–12), plus **Search**.
+Next up: **full-device integration & hardening** (Phases 11–12), plus date and place search.
 
 <details>
 <summary>Development history (phase by phase)</summary>
@@ -426,7 +426,7 @@ A chronological log of what each phase built. Two status labels are used:
 ### Phase 6 — Reliable Backup Engine *(code complete; live upload pending device validation)*
 
 - **Persistent backup queue** in Room (`backup_queue`) — the source of truth for backup state. It survives process death, app restart, and reboot. The **unique `localMediaId`** (the MediaStore id, never the filename) prevents duplicate active rows, so a repeated `enqueue(media)` is idempotent.
-- **Explicit state machine** (`NOT_BACKED_UP · QUEUED · PREPARING · UPLOADING · BACKED_UP · FAILED · CANCELLED`, plus the non-terminal `WAITING_FOR_NETWORK` / `WAITING_FOR_AUTH`). The **core invariant** — nothing reaches `BACKED_UP` except from `UPLOADING` — is encoded once in `BackupStateMachine` and unit-tested. The only success path is: upload → Telegram confirms → **remote identity persisted → THEN `BACKED_UP`** (the identity write is atomic with the state).
+- **Explicit state machine** (`NOT_BACKED_UP · QUEUED · PREPARING · UPLOADING · BACKED_UP · FAILED · CANCELLED`, plus the non-terminal `WAITING_FOR_NETWORK` / `WAITING_FOR_AUTH`). The **core invariant** — nothing reaches `BACKED_UP` except from `UPLOADING` — is enforced in `BackupQueueDao`'s SQL guards (every state `UPDATE` is `WHERE state NOT IN ('BACKED_UP', 'CANCELLED', 'FAILED')`, and the `BACKED_UP` write persists the remote identity in the same statement). The only success path is: upload → Telegram confirms → **remote identity persisted → THEN `BACKED_UP`** (the identity write is atomic with the state).
 - **Room migration 1 → 2**: the Phase 5 database is preserved by an explicit, non-destructive migration. A real migration test builds a version-1 database and verifies Phase 5 rows survive and the queue becomes usable.
 - **Crash recovery**: on worker start, rows left mid-flight (`PREPARING` / `UPLOADING`) with no persisted remote id return to `QUEUED`; a row that *does* carry a remote id is finalized. The queue never assumes an upload failed just because the process died, and never claims success without confirmation.
 - **Bounded retry**: transient failures (network / Telegram / TDLib) wait for network and consume a capped retry; permanent failures (missing/unsupported media, rejected upload) fail immediately and can be retried by the user. `retryCount`, `lastError`, and `updatedAt` are persisted.

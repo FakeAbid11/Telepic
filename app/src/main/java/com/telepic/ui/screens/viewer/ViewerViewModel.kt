@@ -14,6 +14,7 @@ import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.data.restore.RestoreFailure
 import com.telepic.data.restore.RestoreRepository
 import com.telepic.data.restore.RestoreResult
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
@@ -575,19 +576,33 @@ class ViewerViewModel(
 
     private fun load(target: MediaSource) {
         loadJob = viewModelScope.launch {
-            _restore.value = RestoreState.Idle
-            _details.value = null // a different item never leaks the previous item's details
-            val resolved = when (target) {
-                is MediaSource.Local -> resolveLocal(target)
-                is MediaSource.Cloud -> resolveCloud(target)
-            }
-            // Cloud items have no organization flags; reset so the flag bar never leaks across items.
-            if (resolved.item is ViewerItem.Local) {
-                loadFlags((resolved.item as ViewerItem.Local).media.id)
-            } else {
+            try {
+                _restore.value = RestoreState.Idle
+                _details.value = null // a different item never leaks the previous item's details
+                val resolved = when (target) {
+                    is MediaSource.Local -> resolveLocal(target)
+                    is MediaSource.Cloud -> resolveCloud(target)
+                }
+                // Cloud items have no organization flags; reset so the flag bar never leaks across items.
+                if (resolved.item is ViewerItem.Local) {
+                    loadFlags((resolved.item as ViewerItem.Local).media.id)
+                } else {
+                    _flags.value = ViewerFlags()
+                }
+                _uiState.update { if (it.source == resolved.source) resolved else it }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                // Resolving an item reads MediaStore, Room and (for a cloud item) the TDLib manifest.
+                // A failure there used to escape viewModelScope and crash; the honest outcome is a
+                // MISSING state for *this* item, never the previous item's content left on screen.
+                TelepicLog.warn("ViewerViewModel", "could not resolve the requested item", throwable)
                 _flags.value = ViewerFlags()
+                _uiState.update { state ->
+                    if (state.source != target) state
+                    else ViewerUiState(source = target, status = ViewerStatus.MISSING)
+                }
             }
-            _uiState.update { if (it.source == resolved.source) resolved else it }
         }
     }
 

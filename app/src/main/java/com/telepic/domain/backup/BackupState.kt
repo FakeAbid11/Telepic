@@ -18,14 +18,6 @@ enum class BackupState {
     WAITING_FOR_NETWORK,
     WAITING_FOR_AUTH;
 
-    val isTerminal: Boolean
-        get() = this == BACKED_UP || this == CANCELLED || this == FAILED
-
-    /** Whether a worker may actively pick this state up to do work (vs waiting/done). */
-    val isActionable: Boolean
-        get() = this == QUEUED || this == PREPARING || this == UPLOADING ||
-            this == WAITING_FOR_NETWORK || this == WAITING_FOR_AUTH
-
     companion object {
         fun fromName(name: String?): BackupState? =
             entries.firstOrNull { it.name == name }

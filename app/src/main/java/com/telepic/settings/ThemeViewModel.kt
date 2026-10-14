@@ -2,6 +2,8 @@ package com.telepic.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.telepic.diagnostics.TelepicLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -24,7 +26,15 @@ class ThemeViewModel(
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch {
-            repository.setThemeMode(mode)
+            try {
+                repository.setThemeMode(mode)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                // A failed preference write must not escape viewModelScope and take the app down; the
+                // previously persisted theme simply stays in effect instead of being half-applied.
+                TelepicLog.warn("ThemeViewModel", "could not persist the theme preference", throwable)
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ package com.telepic.ui.screens.cloud
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.cloud.CloudRepository
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudPreviewState
 import com.telepic.domain.cloud.CloudStatus
@@ -35,7 +36,7 @@ class CloudViewModel(
         )
 
     init {
-        viewModelScope.launch { repository.prepare() }
+        guarded("prepare the cloud session") { repository.prepare() }
     }
 
     // Per-item preview lifecycle, keyed by the FULL remote identity (chatId, messageId) — message
@@ -48,7 +49,7 @@ class CloudViewModel(
     /** Re-pulls the destination list and clears cached preview states so failed items retry. */
     fun refresh() {
         _previews.value = emptyMap()
-        viewModelScope.launch { repository.refresh() }
+        guarded("refresh the cloud destination") { repository.refresh() }
     }
 
     /**
@@ -57,12 +58,32 @@ class CloudViewModel(
      * outstanding.
      */
     fun confirmDestination() {
-        viewModelScope.launch { repository.confirmDestination() }
+        guarded("confirm the cloud destination") { repository.confirmDestination() }
     }
 
     /** Declines that offer — Telepic creates a channel this account owns instead. */
     fun createNewDestination() {
-        viewModelScope.launch { repository.createNewDestination() }
+        guarded("create a cloud destination") { repository.createNewDestination() }
+    }
+
+    /**
+     * The one exception boundary for this screen's cloud work.
+     *
+     * Every one of these calls reaches TDLib, which can throw for a reason no state here models — and
+     * an exception escaping `viewModelScope` is an uncaught main-thread exception, i.e. a crash with
+     * no trace. The screen's own `status` flow already carries the honest failure/connection state, so
+     * the right degradation is to log and let that state stand rather than take the process down.
+     */
+    private fun guarded(where: String, block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("CloudViewModel", "could not $where", throwable)
+            }
+        }
     }
 
     /**

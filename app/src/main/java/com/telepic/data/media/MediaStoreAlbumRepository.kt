@@ -72,10 +72,17 @@ class MediaStoreAlbumRepository(
         // counts and covers reflect only what the user can actually see. Done in-query to keep the
         // projection-light grouping honest rather than filtering a partial cursor afterward. The
         // media-kind filter rides along for the same reason: a count must describe the visible set.
-        val hidden = hiddenIdsProvider().take(MAX_EXCLUDED_IDS)
-        val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { "?" }})"
+        //
+        // The ids are interpolated as integer literals rather than bound parameters: SQLite caps bound
+        // parameters but not literals in an `IN (...)` list, and every value is a `Long` read from
+        // MediaStore, so nothing can be injected. This removes the old 500-id `take()` that silently
+        // let archived/trashed media back into a large library's counts and covers.
+        val hidden = hiddenIdsProvider()
+        val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { it.toString() }})"
         val realSelection = mediaSelection + typeFilterProvider().selectionSuffix() + exclusion
-        val args = hidden.map { it.toString() }.toTypedArray()
+        // No bound arguments remain: every value (kind literals, hidden ids) is inlined, so the query
+        // carries a null arg array.
+        val args: Array<String>? = null
         val cancellation = CancellationSignal()
         contentResolver.query(
             MediaStore.Files.getContentUri("external"),
@@ -140,7 +147,6 @@ class MediaStoreAlbumRepository(
         const val PAGE_SIZE = 60
         const val PREFETCH_DISTANCE = 30
         const val INITIAL_LOAD_SIZE = 90
-        const val MAX_EXCLUDED_IDS = 500
     }
 }
 
@@ -175,12 +181,15 @@ class MediaStoreBucketLoader(
             "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (" +
                 "${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE}, ${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})" +
                 " AND ${MediaStore.MediaColumns.BUCKET_ID} = ?"
-        val hidden = hiddenIdsProvider().take(MAX_EXCLUDED_IDS)
-        val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { "?" }})"
-        // The kind filter carries no bound arguments (a constant MIME literal), so it can be appended
-        // without disturbing the positional order of `bucketId` followed by the hidden ids.
+        // The hidden ids are interpolated as integer literals (see MediaStoreAlbumRepository.albums):
+        // SQLite caps bound parameters but not `IN (...)` literals, and the values are MediaStore
+        // `Long`s, so this is injection-safe and no longer truncates at 500.
+        val hidden = hiddenIdsProvider()
+        val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { it.toString() }})"
+        // The kind filter carries no bound arguments (a constant MIME literal) and the hidden ids are
+        // inlined, so `bucketId` is the only bound parameter and its position is unambiguous.
         val realSelection = base + typeFilterProvider().selectionSuffix() + exclusion
-        val args = (listOf(bucketId.toString()) + hidden.map { it.toString() }).toTypedArray()
+        val args = arrayOf(bucketId.toString())
         val results = ArrayList<LocalMedia>(limit)
         contentResolver.query(
             MediaStore.Files.getContentUri("external"),
@@ -203,9 +212,5 @@ class MediaStoreBucketLoader(
             }
         }
         results
-    }
-
-    private companion object {
-        const val MAX_EXCLUDED_IDS = 500
     }
 }

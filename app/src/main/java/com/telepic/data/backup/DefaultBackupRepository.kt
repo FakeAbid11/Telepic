@@ -247,8 +247,12 @@ class DefaultBackupRepository(
         } catch (cancellation: kotlinx.coroutines.CancellationException) {
             throw cancellation // cooperative: recovery returns the row to QUEUED (pending id kept)
         } catch (throwable: Throwable) {
-            dao.markFailed(item.id, safeError(throwable), clock())
-            ProcessOutcome.PermanentFailure
+            // An unclassified failure is not provably permanent. Recording it as a *transient* failure
+            // bumps the retry budget and parks the row in WAITING_FOR_NETWORK, so it gets the normal
+            // bounded retries (and surfaces as STALLED once exhausted) instead of one unexpected
+            // throwable burning the whole budget and marking the item permanently FAILED.
+            dao.recordTransientFailure(item.id, safeError(throwable), clock())
+            ProcessOutcome.Waiting
         } finally {
             staged?.cleanup()
         }

@@ -123,15 +123,15 @@ class MediaStoreMediaLoader(
         }
 
         if (hidden.isNotEmpty()) {
-            // Bounded to a safe argument count so an extreme archive/trash size never exceeds
-            // SQLite's parameter limit. Beyond the bound the surplus ids are simply not excluded this
-            // pass (an accepted, documented edge case for ordinary libraries).
-            val bounded = hidden.take(MAX_EXCLUDED_IDS)
-            if (bounded.isNotEmpty()) {
-                where.append(" AND ").append(MediaStore.MediaColumns._ID).append(" NOT IN (")
-                    .append(bounded.joinToString(",") { "?" }).append(")")
-                args += bounded.map { it.toString() }
-            }
+            // The hidden ids are interpolated as *integer literals*, not bound parameters. SQLite caps
+            // the number of bound parameters (~999 on the oldest supported SQLite) but places no such
+            // limit on literals in an `IN (...)` list, and every value here is a `Long` read from
+            // MediaStore — `toString()` yields only digits and a sign, so nothing can be injected. The
+            // previous `take(MAX_EXCLUDED_IDS)` bound the *parameters* to 500 and silently dropped the
+            // surplus, so once a library had more than 500 archived/trashed items they reappeared in
+            // the timeline. Interpolating removes that ceiling instead of hiding it.
+            where.append(" AND ").append(MediaStore.MediaColumns._ID).append(" NOT IN (")
+                .append(hidden.joinToString(",") { it.toString() }).append(")")
         }
 
         return where.toString() to args.toTypedArray().takeIf { it.isNotEmpty() }
@@ -140,8 +140,4 @@ class MediaStoreMediaLoader(
     /** Escapes the `LIKE` metacharacters so a literal `%` or `_` in a filename still matches itself. */
     private fun escapeLike(raw: String): String =
         raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-    private companion object {
-        const val MAX_EXCLUDED_IDS = 500
-    }
 }
