@@ -86,7 +86,10 @@ class OrganizationMigration3To4Test {
 
         // Prior data survives.
         assertNotNull(db.cloudDestinationDao().find("telegram"))
-        assertEquals("deadbeef", db.cloudMediaManifestDao().findByContentHash("deadbeef")?.contentHash)
+        // By primary key, not the recognition query: this row's `sizeBytes` is NULL, so a
+        // size-consistent recognition lookup could never match it — and what the migration promises
+        // is that the row and its hash survived, which is exactly what this asserts.
+        assertEquals("deadbeef", db.cloudMediaManifestDao().get(100L, 7L)?.contentHash)
         val queueRow = db.backupQueueDao().findByLocalId("42")
         assertNotNull(queueRow)
         assertEquals("feedface", queueRow!!.contentHash)

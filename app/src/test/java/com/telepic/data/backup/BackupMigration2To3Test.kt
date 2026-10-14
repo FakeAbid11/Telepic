@@ -90,7 +90,10 @@ class BackupMigration2To3Test {
             val dest = db.cloudDestinationDao().find("telegram")
             assertNotNull(dest)
             assertEquals(100L, dest!!.chatId)
-            assertEquals("deadbeef", db.cloudMediaManifestDao().findByContentHash("deadbeef")?.contentHash)
+            // Looked up by primary key rather than through the recognition query: what this migration
+            // promises is that the row and its hash survived, and the recognition lookup additionally
+            // requires a size-consistent match — a different question from "did the column survive".
+            assertEquals("deadbeef", db.cloudMediaManifestDao().get(100L, 7L)?.contentHash)
 
             // Assert: Phase 6 queue row survives with its state, retries, remote ids and hash.
             val q = db.backupQueueDao().findByLocalId("42")
