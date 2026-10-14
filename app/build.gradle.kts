@@ -142,6 +142,14 @@ composeCompiler {
     reportsDestination = layout.buildDirectory.dir("compose-reports")
 }
 
+// Room writes a schema JSON per version here during compilation, and those files are committed. That
+// is what turns migrations from "hand-written SQL we hope is right" into something the build can
+// check: with a schema on disk, Room's migration validation and `MigrationTestHelper` both work, and
+// a migration that does not reproduce the entity schema fails rather than shipping.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

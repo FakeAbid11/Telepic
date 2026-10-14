@@ -47,7 +47,10 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         CustomAlbumMediaEntity::class,
     ],
     version = 9,
-    exportSchema = false,
+    // Schema JSON is exported to app/schemas (see the `ksp` block in app/build.gradle.kts) and
+    // committed, so Room's migration checker can verify each migration against the real schema
+    // instead of trusting the hand-written SQL in this file.
+    exportSchema = true,
 )
 abstract class TelepicDatabase : RoomDatabase() {
     abstract fun cloudDestinationDao(): CloudDestinationDao

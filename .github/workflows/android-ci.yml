@@ -55,9 +55,9 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      # Still no *shipping* release job: only debug APKs are published. The release configuration is
-      # compiled by the `release-smoke` job below purely so R8 cannot rot unnoticed; its artifact is
-      # never uploaded as a deliverable.
+      # Still no *publishing* step: nothing here reaches Play. The `release-smoke` job below compiles
+      # the release configuration and builds an AAB so R8 and the bundle path cannot rot unnoticed;
+      # those artifacts are for inspection, not distribution.
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -78,10 +78,22 @@ jobs:
             app/build/compose-metrics/
           if-no-files-found: ignore
 
+      # Room exports one schema JSON per database version into app/schemas. Those files are meant to be
+      # committed; this artifact is how they get out of CI without a local build. If the job fails on a
+      # missing schema, that is a signal a migration was added without bumping the version.
+      - name: Upload Room schemas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telepic-room-schemas
+          path: app/schemas/
+          if-no-files-found: warn
+
   # R8 (minify + resource shrinking) only ever runs on a release build, and nothing used to build one
   # — so `isMinifyEnabled`/`isShrinkResources` and every rule in proguard-rules.pro were unverified,
-  # including a dependency (osmdroid) that ships no consumer rules at all. This job exists purely to
-  # compile that configuration. It runs in parallel with the job above so it costs no extra wall-clock.
+  # including a dependency (osmdroid) that ships no consumer rules at all. This job compiles that
+  # configuration *and* builds the AAB that Play actually consumes, so the release path is exercised
+  # rather than assumed. It runs in parallel with the job above so it costs no extra wall-clock.
   release-smoke:
     name: Release build (R8 & resource shrinking)
     runs-on: ubuntu-latest
@@ -112,6 +124,25 @@ jobs:
       - name: Assemble release (R8 + resource shrinking)
         run: ./gradlew assembleRelease --stacktrace
 
+      # The APK above proves R8 runs; the AAB is the artifact Play actually ingests, and it exercises a
+      # different packaging path (bundle splits, resource shrinking inside a bundle). Building only the
+      # APK left "release" as a compile smoke test.
+      - name: Assemble release bundle (AAB)
+        run: ./gradlew bundleRelease --stacktrace
+
+      # Signing comes from RELEASE_KEYSTORE_BASE64. When it is absent the AAB is still produced but
+      # unsigned, and this step says so rather than letting a green run imply a shippable artifact.
+      - name: Verify the release AAB is signed
+        run: |
+          set -euo pipefail
+          AAB=$(ls app/build/outputs/bundle/release/*.aab)
+          echo "AAB: $AAB ($(stat -c%s "$AAB") bytes)"
+          if jarsigner -verify "$AAB" 2>&1 | grep -q "jar verified"; then
+            echo "::notice::release AAB signature verified"
+          else
+            echo "::warning::release AAB is UNSIGNED — RELEASE_KEYSTORE_BASE64 is not configured, so this run proves the bundle compiles but not that it is shippable"
+          fi
+
       - name: Upload R8 mapping & release report
         if: always()
         uses: actions/upload-artifact@v4
@@ -121,3 +152,11 @@ jobs:
             app/build/outputs/mapping/release/
             app/build/reports/lint-results-release.html
           if-no-files-found: ignore
+
+      - name: Upload release AAB
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telepic-release-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
