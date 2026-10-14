@@ -13,6 +13,7 @@ import com.telepic.data.cloud.CloudMessagePendingException
 import com.telepic.data.cloud.CloudNetworkException
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.cloud.CloudUploadRejectedException
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.BackupState
@@ -121,21 +122,23 @@ class DefaultBackupRepository(
                 var failed = 0
                 var processed = 0
                 var waitingForAuth = 0
-                // Attempt each actionable item at most once per call. A transiently failing item is
-                // parked in WAITING_FOR_NETWORK (still "actionable"), so without this guard the same
-                // item would be re-selected in the same run and burn its whole retry budget in one
-                // invocation; WorkManager's backoff, not this loop, provides the retry delay.
-                val attempted = HashSet<Long>()
-                while (processed < maxItems) {
-                    val item = dao.fetchActionable(maxRetries, maxItems).firstOrNull { it.id !in attempted }
-                        ?: break
-                    attempted += item.id
+                var superseded = 0
+                // One fetch for the whole pass. The previous shape re-issued this query on every
+                // iteration — up to `maxItems` (100 at BackupWorker's batch size) identical SELECTs
+                // per run, each re-materialising up to 100 rows — even though the only rows that
+                // change are the ones this loop itself writes, and a write can only ever *remove* an
+                // item from the actionable set. A single batch is therefore equivalent, and it makes
+                // the `attempted` bookkeeping that guarded against re-selecting the same row
+                // unnecessary.
+                val batch = dao.fetchActionable(maxRetries, maxItems)
+                for (item in batch) {
                     processed++
                     when (processOne(item)) {
                         ProcessOutcome.Uploaded -> uploaded++
                         ProcessOutcome.Waiting -> waiting++
                         ProcessOutcome.WaitingForAuth -> waitingForAuth++
                         ProcessOutcome.PermanentFailure -> failed++
+                        ProcessOutcome.Superseded -> superseded++
                     }
                 }
                 BackupProcessSummary(
@@ -144,6 +147,7 @@ class DefaultBackupRepository(
                     failed = failed,
                     processed = processed,
                     waitingForAuth = waitingForAuth,
+                    superseded = superseded,
                 )
             }
         }
@@ -167,8 +171,24 @@ class DefaultBackupRepository(
                     contentHash = item.contentHash,
                     contentSizeBytes = item.contentSizeBytes ?: item.sizeBytes.takeIf { it > 0 },
                 )
-                dao.markBackedUp(item.id, confirmed.chatId, confirmed.messageId, confirmed.telegramFileId, clock())
-                ProcessOutcome.Uploaded
+                val recorded = dao.markBackedUp(
+                    item.id,
+                    confirmed.chatId,
+                    confirmed.messageId,
+                    confirmed.telegramFileId,
+                    clock(),
+                )
+                // Same guard as the send path: a row cancelled while this confirmation was in flight
+                // keeps its CANCELLED state and must not be reported as an upload.
+                if (recorded > 0) {
+                    ProcessOutcome.Uploaded
+                } else {
+                    TelepicLog.warn(
+                        "BackupRepository",
+                        "confirmation landed but the queue row was already terminal; not counted as uploaded",
+                    )
+                    ProcessOutcome.Superseded
+                }
             } catch (pending: CloudMessagePendingException) {
                 // Still delivering on Telegram's side: wait WITHOUT burning the retry budget — a
                 // large video may legitimately spend a long time in TDLib's send queue.
@@ -238,8 +258,26 @@ class DefaultBackupRepository(
                 // stays CANCELLED and this write no-ops. The delivered message then exists without a
                 // queue claim — content-addressed recognition dedups it on the next manifest refresh
                 // instead of the queue ever overwriting the user's cancel.
-                dao.markBackedUp(item.id, result.chatId, result.messageId, result.telegramFileId, clock())
-                ProcessOutcome.Uploaded
+                //
+                // The affected-row count is checked rather than discarded: reporting a no-oped write
+                // as an upload overstated the run's progress, and that count is exactly what the
+                // foreground notification shows the user.
+                val recorded = dao.markBackedUp(
+                    item.id,
+                    result.chatId,
+                    result.messageId,
+                    result.telegramFileId,
+                    clock(),
+                )
+                if (recorded > 0) {
+                    ProcessOutcome.Uploaded
+                } else {
+                    TelepicLog.warn(
+                        "BackupRepository",
+                        "upload landed but the queue row was already terminal; not counted as uploaded",
+                    )
+                    ProcessOutcome.Superseded
+                }
             }
         } catch (network: CloudNetworkException) {
             dao.recordTransientFailure(item.id, safeError(network), clock())
@@ -279,6 +317,12 @@ class DefaultBackupRepository(
         /** Parked because the account is not signed in — not a network condition to retry against. */
         data object WaitingForAuth : ProcessOutcome
         data object PermanentFailure : ProcessOutcome
+
+        /**
+         * The remote work succeeded but the queue refused to record it, because the row was already
+         * terminal (the user cancelled mid-flight). Neither an upload nor something to retry.
+         */
+        data object Superseded : ProcessOutcome
     }
 
     companion object {

@@ -49,6 +49,14 @@ data class BackupProcessSummary(
     val processed: Int = 0,
     /** Items parked only because no Telegram session exists — a condition this worker cannot fix. */
     val waitingForAuth: Int = 0,
+    /**
+     * Uploads that reached Telegram but were **not** recorded on the queue row, because the row was
+     * already terminal — a user cancel that arrived while the upload was in flight. Counted apart
+     * from [uploaded] so the run's reported progress never claims work the queue refused to record;
+     * it deliberately counts toward neither [hasRetryableWork] nor [blockedOnAuth], because there is
+     * nothing left to retry and nothing parked on a missing session.
+     */
+    val superseded: Int = 0,
 ) {
     val hasRetryableWork: Boolean get() = waiting > 0
 

@@ -69,6 +69,11 @@ class DefaultBackupRepositoryTest {
         var sentIdentity: Pair<Long, Long>? = null,
         var confirmResult: CloudUploadResult? = null,
         var confirmError: Throwable? = null,
+        /**
+         * Runs inside [uploadMedia] just before it returns, so a test can mutate the queue while an
+         * upload is "in flight" — the mid-flight user cancel the repository has to report honestly.
+         */
+        var beforeUploadReturn: (suspend () -> Unit)? = null,
     ) : CloudRepository {
         override val status = MutableStateFlow<CloudStatus>(CloudStatus.Ready)
         override val media = kotlinx.coroutines.flow.flowOf<List<CloudMedia>>(emptyList())
@@ -91,6 +96,7 @@ class DefaultBackupRepositoryTest {
             uploadCalls++
             sentIdentity?.let { onSent(it.first, it.second) }
             uploadError?.let { throw it }
+            beforeUploadReturn?.invoke()
             return uploadResult
         }
         override suspend fun confirmUpload(
@@ -319,8 +325,29 @@ class DefaultBackupRepositoryTest {
     }
 
     @Test
-    fun `staging file is cleaned up after a successful upload`() = runBlocking {
-        val stagingDir = java.io.File(System.getProperty("java.io.tmpdir"), "telepic-stage-${System.nanoTime()}")
+    fun `an upload that lands after the user cancelled is not counted as uploaded`() = runBlocking {
+        // The row is cancelled while the upload is in flight, so `markBackedUp` is a SQL no-op: the
+        // message still reached Telegram, but the queue refused to record it. Reporting that as an
+        // upload overstated the run's progress — and that count is what the foreground notification
+        // shows the user — so it is counted separately and as something with nothing left to retry.
+        val cloud = FakeCloud()
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        val itemId = db.backupQueueDao().observeAll().first().single().id
+        cloud.beforeUploadReturn = { r.cancel(itemId) }
+
+        val summary = r.processPendingWork(maxItems = 1)
+
+        assertEquals(0, summary.uploaded)
+        assertEquals(1, summary.superseded)
+        // Not retryable work either: the row is terminal and must not ask WorkManager to run again.
+        assertEquals(false, summary.hasRetryableWork)
+        val stored = db.backupQueueDao().observeAll().first().single()
+        assertEquals(BackupState.CANCELLED, BackupState.fromName(stored.state))
+    }
+
+    @Test
+    fun `staging file is cleaned up after a successful upload`() = runBlocking {        val stagingDir = java.io.File(System.getProperty("java.io.tmpdir"), "telepic-stage-${System.nanoTime()}")
             .apply { mkdirs() }
         try {
             val r = DefaultBackupRepository(

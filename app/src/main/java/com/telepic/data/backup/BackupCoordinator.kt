@@ -67,14 +67,14 @@ interface BackupCoordinator {
  * whole-library scan into memory). Recognition runs **before** enqueueing, so a repeated scan
  * recognizes existing content instead of uploading a second copy.
  *
- * What that dedup can and cannot do: the manifest's `contentHash` is written only by the upload path
- * (`TelegramCloudRepository`), and the manifest lives in Room — so after a reinstall, or on a second
- * device, it is rebuilt from the channel's history with **no hashes**, `findByContentHashAndSize`
- * matches nothing, and everything re-uploads. (This comment used to claim the opposite: "a reinstall
- * (new MediaStore id, same bytes → same hash) recognizes existing content". Making that true needs the
- * hash carried remotely, which Telegram has no metadata slot for.) Within one install, dedup is by
- * content hash, and identical bytes reached through a different local id are caught by
- * `BackupQueueDao.findActiveByContentHash`.
+ * What that dedup can and cannot do: the manifest's `contentHash` is written by the upload path
+ * (`TelegramCloudRepository`) and, for a manifest rebuilt from the channel's history, recovered from
+ * the message caption (`CloudBackupMarker`) — so after a reinstall recognition still matches, because
+ * `refreshLocked` walks the whole history rather than only its newest page. What it cannot do is
+ * recognise media backed up by a build that predates the caption marker: those rows carry no hash, and
+ * `findHashlessByNameAndSize` only recovers the kinds Telegram gives a filename to (videos, GIFs and
+ * documents — never a photo). Within one install, dedup is by content hash, and identical bytes
+ * reached through a different local id are caught by `BackupQueueDao.findActiveByContentHash`.
  *
  * Discovery excludes **trashed** media only, never archived: see `AppContainer.backupDiscoveryLoader`.
  *
