@@ -55,6 +55,12 @@ val TelepicDarkColorScheme = darkColorScheme(
     surfaceContainerHigh = Color(0xFF171B21),
     outline = TelepicBrand.OutlineDark,
     outlineVariant = Color(0xFF20242B),
+    // The TransientMessageBar (the "Moved to trash · Undo" bar) paints its action label in
+    // `inversePrimary`. Neither scheme set it, so it fell back to the Material baseline purple
+    // (#D0BCFF / #6750A4) — a violet Undo in a blue-and-black app. The dark scheme's inverseSurface
+    // is a *light* surface, so its action tone has to be dark to read on it; the light scheme is the
+    // mirror. Both measure >4.5:1 against their inverse surface.
+    inversePrimary = Color(0xFF1B4FD8),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF3B0907),
 )
@@ -81,6 +87,9 @@ val TelepicLightColorScheme = lightColorScheme(
     surfaceContainerHigh = Color(0xFFEFF2F7),
     outline = TelepicBrand.OutlineLight,
     outlineVariant = Color(0xFFE0E3E9),
+    // Mirror of the dark scheme's choice: this scheme's inverseSurface is *dark*, so the
+    // TransientMessageBar's action label has to be a light tone. See the note above.
+    inversePrimary = TelepicBrand.BlueLight,
     error = Color(0xFFBA1A1A),
     onError = TelepicBrand.White,
 )

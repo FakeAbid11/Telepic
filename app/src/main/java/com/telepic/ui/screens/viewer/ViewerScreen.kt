@@ -813,7 +813,10 @@ private fun BackupControl(
                     ),
                     tint = when (state) {
                         MediaBackupVisualState.FAILED -> TelepicTokens.colors.mediaErrorText
-                        MediaBackupVisualState.STALLED -> MaterialTheme.colorScheme.tertiary
+                        // An on-media tone, not `colorScheme.tertiary`: the backdrop here is black in
+                        // both schemes, so the light scheme's mid-blue tertiary measured ~2.5:1 and
+                        // the warning marker was effectively invisible.
+                        MediaBackupVisualState.STALLED -> TelepicTokens.colors.mediaWarningText
                         else -> Color.White
                     },
                 )

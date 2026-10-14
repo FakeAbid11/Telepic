@@ -143,7 +143,7 @@ fun OrganizationScreen(
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = spacing.xs, top = spacing.sm)) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.albums_back))
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.nav_back))
                         }
                         // Unified with ScreenHeader's default so every screen's title is 22sp.
                         Text(stringResource(titleRes(viewModel.kind)), style = MaterialTheme.typography.headlineMedium)

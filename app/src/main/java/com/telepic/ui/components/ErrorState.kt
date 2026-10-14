@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.Button
@@ -51,6 +53,12 @@ fun ErrorState(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // Same guarantee as EmptyState: a long explanation must never push the Retry button
+                // out of reach. At a large font scale or on a short screen the button was laid out
+                // below the window and could not be tapped — the retry affordance lost exactly when
+                // it was needed. When the content fits, the scroll measures to it and the Box still
+                // centres, so short error states render unchanged.
+                .verticalScroll(rememberScrollState())
                 .semantics(mergeDescendants = true) {},
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(spacing.sm, Alignment.CenterVertically),

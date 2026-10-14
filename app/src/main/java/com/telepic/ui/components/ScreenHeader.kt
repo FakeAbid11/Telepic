@@ -70,7 +70,7 @@ fun ScreenHeader(
                 IconButton(onClick = onBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.albums_back),
+                        contentDescription = stringResource(R.string.nav_back),
                     )
                 }
             }

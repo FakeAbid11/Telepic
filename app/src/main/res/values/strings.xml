@@ -8,6 +8,10 @@
     <string name="nav_albums">Albums</string>
     <string name="nav_map">Map</string>
     <string name="nav_settings">Settings</string>
+    <!-- Neutral label for a pushed screen's back affordance. `albums_back` ("Back to albums") is
+         only correct on the album screens; the shared ScreenHeader is also used by Settings, Map,
+         Cloud and Backup Center, where announcing "Back to albums" is simply wrong. -->
+    <string name="nav_back">Back</string>
 
     <!-- Photos -->
     <string name="photos_title">Telepic</string>

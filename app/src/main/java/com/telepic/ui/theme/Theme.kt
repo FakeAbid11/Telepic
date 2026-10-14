@@ -55,6 +55,12 @@ data class TelepicExtendedColors(
      * Measures 13.1:1 on black, comfortably clear of the AA floor even over the 70% chrome scrim.
      * Used for "Backed up", which must read as *done* rather than as another thing to tap. */
     val mediaSuccessText: Color,
+    /** Warning text/glyph drawn directly on the viewer's black backdrop — the same constraint as
+     * [mediaErrorText], for the "stalled / retry-exhausted" backup state. Without it that state used
+     * `colorScheme.tertiary`, which in the light scheme is a mid-blue (#3F6C99) measuring ~2.5:1 on
+     * black — under the 3:1 floor for a graphical marker, so the warning was invisible in light mode
+     * even though the backdrop is identical in both schemes. Measures ~12:1 on black. */
+    val mediaWarningText: Color,
 )
 
 private val DarkExtended = TelepicExtendedColors(
@@ -65,6 +71,7 @@ private val DarkExtended = TelepicExtendedColors(
     favoriteAmber = Color(0xFFFFC53D),
     mediaErrorText = Color(0xFFFF8A80),
     mediaSuccessText = Color(0xFF7FE0A6),
+    mediaWarningText = Color(0xFFFFB74D),
 )
 
 private val LightExtended = TelepicExtendedColors(
@@ -75,6 +82,7 @@ private val LightExtended = TelepicExtendedColors(
     favoriteAmber = Color(0xFFFFC53D),
     mediaErrorText = Color(0xFFFF8A80),
     mediaSuccessText = Color(0xFF7FE0A6),
+    mediaWarningText = Color(0xFFFFB74D),
 )
 
 val LocalTelepicColors = staticCompositionLocalOf { DarkExtended }
