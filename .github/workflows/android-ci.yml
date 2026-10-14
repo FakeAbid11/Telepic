@@ -78,9 +78,37 @@ jobs:
             app/build/compose-metrics/
           if-no-files-found: ignore
 
+      # `app/schemas/` lives in the source tree, not under `build/`, so it is NOT a declared Gradle
+      # task output — and a build-cache hit for `kspDebugKotlin` therefore restores nothing into it
+      # and skips the export entirely. That is how the version-10 schema went missing while this job
+      # still reported success and uploaded a "Room schemas" artifact containing only version 9:
+      # `kspDebugKotlin FROM-CACHE` appeared in the log, and the upload step saw one file.
+      #
+      # Forcing an uncached re-run makes the artifact always carry the schema for the version the
+      # code currently declares, which is the whole point of publishing it — the committed baseline
+      # is what a hand-written future migration is checked against.
+      - name: Export Room schemas (uncached)
+        run: ./gradlew :app:kspDebugKotlin --no-build-cache --rerun-tasks --stacktrace
+
+      # Turn a silent export failure into a loud one. Without this, the artifact upload below is
+      # `if-no-files-found: warn`, so a run that exported nothing still goes green and the drift is
+      # only noticed when someone hand-writes the next migration against a baseline that is not there.
+      - name: Verify the current Room schema was exported
+        run: |
+          set -euo pipefail
+          DB=app/src/main/java/com/telepic/data/cloud/db/TelepicDatabase.kt
+          VERSION=$(grep -oE '^[[:space:]]*version[[:space:]]*=[[:space:]]*[0-9]+' "$DB" | grep -oE '[0-9]+' | head -1)
+          FILE="app/schemas/com.telepic.data.cloud.db.TelepicDatabase/${VERSION}.json"
+          echo "declared database version: $VERSION"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::$FILE was not exported. Room writes one schema JSON per version; it must be committed, because it is the baseline a future migration is validated against."
+            ls -la app/schemas/com.telepic.data.cloud.db.TelepicDatabase/ || true
+            exit 1
+          fi
+          echo "exported: $FILE"
+
       # Room exports one schema JSON per database version into app/schemas. Those files are meant to be
-      # committed; this artifact is how they get out of CI without a local build. If the job fails on a
-      # missing schema, that is a signal a migration was added without bumping the version.
+      # committed; this artifact is how they get out of CI without a local build.
       - name: Upload Room schemas
         if: always()
         uses: actions/upload-artifact@v4
