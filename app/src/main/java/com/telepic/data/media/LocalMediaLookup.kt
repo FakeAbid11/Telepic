@@ -14,8 +14,9 @@ enum class NeighborDirection { OLDER, NEWER }
 /**
  * Single-item + neighbor lookups the Viewer needs, kept separate from the paged [MediaPageLoader]
  * so the paging contract (and its fakes) stay unchanged. Cheap, bounded, provider-side queries —
- * never a full-library scan — and identity/order follow the same MediaStore `_ID` chronology the
- * grid uses, so a resolved neighbor is always the genuinely adjacent item.
+ * never a full-library scan — and the neighbour walk follows the *same* coalesced `(date, _ID)`
+ * ordering the grid displays ([MediaSortOrder.TIMELINE_DESC]), so a resolved neighbor is always the
+ * item the user would see adjacent in the grid, not merely the nearest `_ID`.
  */
 interface LocalMediaLookup {
     /** Resolve a single item by its stable MediaStore id, or null when it is gone/inaccessible. */
@@ -93,30 +94,50 @@ class MediaStoreLocalLookup(
             // land on a kind the grid refuses to show. byId/byIdList deliberately do NOT: an item
             // opened by id, or listed in a Favorites/Trash collection, must still resolve.
             val filter = typeFilterProvider()
+            // The anchor's coalesced date is cached across the walk: each neighbour query already
+            // returns the next anchor's date, so the walk costs N+1 queries in total (2 typically),
+            // not 2N — the extra read only seeds the very first step.
+            val dateCache = HashMap<Long, Long>()
             walkToVisibleNeighbor(id, hidden) { cursor ->
-                queryNeighbor(cursor, direction, bucketId, filter)
+                queryNeighbor(cursor, direction, bucketId, filter, dateCache)
             }
         }
 
-    /** The nearest neighbour of [id] in [direction], ignoring hidden state; null at the collection end. */
+    /**
+     * The next neighbour of [id] in [direction] along the timeline order, ignoring hidden state; null
+     * at the collection end.
+     *
+     * Seeks on the same composite key the grid sorts by — a keyset comparison on
+     * `(coalescedDate, _ID)` — so the neighbour is the item the grid shows adjacent to [id] even when
+     * a row's `_ID` order disagrees with its date order (side-loaded/imported media). Ordering by
+     * `_ID` alone used to skip such items or land on the wrong one.
+     */
     private fun queryNeighbor(
         id: Long,
         direction: NeighborDirection,
         bucketId: Long?,
         filter: TimelineMediaFilter,
+        dateCache: MutableMap<Long, Long>,
     ): Long? {
-        val cmp = if (direction == NeighborDirection.OLDER) "<" else ">"
-        val order = if (direction == NeighborDirection.OLDER) "_ID DESC" else "_ID ASC"
-        val sb = StringBuilder("$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} $cmp ?")
-        val args = ArrayList<String>()
-        args += id.toString()
-        if (bucketId != null) {
-            sb.append(" AND ${MediaStore.MediaColumns.BUCKET_ID} = ?")
-            args += bucketId.toString()
+        val anchorDate = dateCache[id] ?: run {
+            // One bounded read for the anchor's coalesced date — the same value the sort expression
+            // orders by. A gone/inaccessible anchor yields null: an honest "no neighbour".
+            val anchor = queryOne(
+                selection = "$mediaTypeSelection AND ${MediaStore.MediaColumns._ID} = ?",
+                args = arrayOf(id.toString()),
+                sortOrder = null,
+            ) ?: return null
+            anchor.dateMillis.also { dateCache[id] = it }
         }
-        // No bound arguments (a constant MIME literal), so appending cannot disturb the arg order.
-        sb.append(filter.selectionSuffix())
-        return queryOne(selection = sb.toString(), args = args.toTypedArray(), sortOrder = order)?.id
+        val keyset = neighborKeyset(anchorDate, id, direction, bucketId, filter, mediaTypeSelection)
+        val order = if (direction == NeighborDirection.OLDER) {
+            MediaSortOrder.TIMELINE_DESC
+        } else {
+            MediaSortOrder.TIMELINE_ASC
+        }
+        return queryOne(selection = keyset.selection, args = keyset.args.toTypedArray(), sortOrder = order)
+            ?.also { dateCache[it.id] = it.dateMillis }
+            ?.id
     }
 
     override suspend fun byIdList(ids: Collection<Long>): List<LocalMedia> = withContext(Dispatchers.IO) {
@@ -176,16 +197,61 @@ class MediaStoreLocalLookup(
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (throwable: Throwable) {
-            // The caller reports the item as missing either way; the log is what separates "the row is
-            // gone" from "the provider refused to answer".
-            TelepicLog.warn("MediaLookup", "could not read the requested ids", throwable)
+        } catch (exception: Exception) {
+            // Only recoverable failures are swallowed; an `Error` (OOM, StackOverflow) must propagate
+            // rather than be reported as "the item is gone". The caller reports the item as missing
+            // either way; the log is what separates "the row is gone" from "the provider refused to
+            // answer".
+            TelepicLog.warn("MediaLookup", "could not read the requested ids", exception)
             null
         }
 
     private companion object {
         const val MAX_LOOKUP_IDS = 500
     }
+}
+
+/** The SQL selection and bound arguments for one neighbour seek, produced by [neighborKeyset]. */
+internal data class NeighborKeyset(val selection: String, val args: List<String>)
+
+/**
+ * The keyset predicate that finds the neighbour adjacent to an anchor along [MediaSortOrder]'s
+ * composite `(coalescedDate, _ID)` ordering.
+ *
+ * Pulled out of [MediaStoreLocalLookup] as a pure function — no `ContentResolver` — so the exact SQL
+ * and, more importantly, the bound-argument order can be pinned by a unit test. The arg order
+ * (`anchorDate, anchorDate, anchorId`, then `bucketId`) is load-bearing: the predicate reuses the
+ * anchor date twice (the `<`/`>` arm and the tie-break equality arm), so a mis-ordered arg list would
+ * silently return no neighbour rather than fail loudly.
+ *
+ * The coalesced-date expression matches [MediaSortOrder.TIMELINE_DESC] exactly, so a row whose
+ * `DATE_TAKEN` is 0/NULL is sought by its `DATE_MODIFIED`-derived day — the same value the grid
+ * shows. [filter]'s suffix is a constant MIME literal carrying no bound arguments, so appending it
+ * last cannot disturb the argument order.
+ */
+internal fun neighborKeyset(
+    anchorDate: Long,
+    anchorId: Long,
+    direction: NeighborDirection,
+    bucketId: Long?,
+    filter: TimelineMediaFilter,
+    mediaTypeSelection: String,
+): NeighborKeyset {
+    val coalesced =
+        "COALESCE(NULLIF(${MediaStore.MediaColumns.DATE_TAKEN}, 0), " +
+            "${MediaStore.MediaColumns.DATE_MODIFIED} * 1000)"
+    val cmp = if (direction == NeighborDirection.OLDER) "<" else ">"
+    val sb = StringBuilder(
+        "$mediaTypeSelection AND ($coalesced $cmp ? " +
+            "OR ($coalesced = ? AND ${MediaStore.MediaColumns._ID} $cmp ?))",
+    )
+    val args = arrayListOf(anchorDate.toString(), anchorDate.toString(), anchorId.toString())
+    if (bucketId != null) {
+        sb.append(" AND ${MediaStore.MediaColumns.BUCKET_ID} = ?")
+        args += bucketId.toString()
+    }
+    sb.append(filter.selectionSuffix())
+    return NeighborKeyset(sb.toString(), args)
 }
 
 /**

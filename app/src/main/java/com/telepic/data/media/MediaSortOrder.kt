@@ -21,6 +21,19 @@ object MediaSortOrder {
             "${MediaStore.MediaColumns._ID} DESC"
 
     /**
+     * The ascending twin of [TIMELINE_DESC], for the Viewer's neighbour seek.
+     *
+     * A keyset seek for the *newer* neighbour has to walk the same composite key in the opposite
+     * direction — `(coalescedDate, _ID) > (anchorDate, anchorId)`, ordered ascending — so it lands on
+     * the item the grid shows immediately above the anchor rather than on the nearest `_ID`. Kept
+     * beside [TIMELINE_DESC] so the two directions cannot drift apart.
+     */
+    val TIMELINE_ASC =
+        "COALESCE(NULLIF(${MediaStore.MediaColumns.DATE_TAKEN}, 0), " +
+            "${MediaStore.MediaColumns.DATE_MODIFIED} * 1000) ASC, " +
+            "${MediaStore.MediaColumns._ID} ASC"
+
+    /**
      * The Kotlin mirror of [TIMELINE_DESC], for the one case SQLite cannot be left to do it alone.
      *
      * A custom album's members are read in chunks, because SQLite bounds how many `?` placeholders a

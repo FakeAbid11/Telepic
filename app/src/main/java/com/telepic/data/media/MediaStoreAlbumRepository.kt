@@ -12,6 +12,8 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -84,7 +86,10 @@ class MediaStoreAlbumRepository(
         // No bound arguments remain: every value (kind literals, hidden ids) is inlined, so the query
         // carries a null arg array.
         val args: Array<String>? = null
+        // Link the signal to the coroutine so a cancelled album scan aborts the provider-side query,
+        // not just the cursor walk; `finally` cancels on the normal path too.
         val cancellation = CancellationSignal()
+        currentCoroutineContext()[Job]?.invokeOnCompletion { cancellation.cancel() }
         // Grouped as the cursor streams rather than into a `List<Row>` of every media item first. The
         // grouping only ever needs per-bucket aggregates, so this holds one entry per *album* instead
         // of one per file — on a large library that is the difference between a few dozen objects and
@@ -92,40 +97,44 @@ class MediaStoreAlbumRepository(
         val accumulator = AlbumGrouper.Accumulator(appContext.getString(R.string.albums_untitled)) { id, mime ->
             MediaStoreMediaMapper.contentUriFor(id, mime)
         }
-        contentResolver.query(
-            MediaStore.Files.getContentUri("external"),
-            albumProjection,
-            realSelection,
-            args,
-            order,
-            cancellation,
-        )?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-            val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
-            val takenCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
-            val modCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
-            val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_ID)
-            val bucketNameCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
-            // RELATIVE_PATH arrived in API 29; on 26–28 the provider does not offer it, so the index
-            // is -1 and every album simply has no path (callers fall back to the display name).
-            val pathCol = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
-            if (bucketCol < 0) return@use
-            while (cursor.moveToNext()) {
-                scope.ensureActive()
-                val bucketId = if (cursor.isNull(bucketCol)) null else cursor.getLong(bucketCol)
-                val taken = if (takenCol >= 0 && !cursor.isNull(takenCol)) cursor.getLong(takenCol) else 0L
-                val mod = if (modCol >= 0 && !cursor.isNull(modCol)) cursor.getLong(modCol) else 0L
-                accumulator.add(
-                    AlbumGrouper.Row(
-                        id = cursor.getLong(idCol),
-                        bucketId = bucketId,
-                        bucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol) else null,
-                        relativePath = if (pathCol >= 0) cursor.getString(pathCol) else null,
-                        mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null,
-                        whenMillis = if (taken > 0L) taken else mod * 1000L,
-                    ),
-                )
+        try {
+            contentResolver.query(
+                MediaStore.Files.getContentUri("external"),
+                albumProjection,
+                realSelection,
+                args,
+                order,
+                cancellation,
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
+                val takenCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
+                val modCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                val bucketCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_ID)
+                val bucketNameCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+                // RELATIVE_PATH arrived in API 29; on 26–28 the provider does not offer it, so the index
+                // is -1 and every album simply has no path (callers fall back to the display name).
+                val pathCol = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                if (bucketCol < 0) return@use
+                while (cursor.moveToNext()) {
+                    scope.ensureActive()
+                    val bucketId = if (cursor.isNull(bucketCol)) null else cursor.getLong(bucketCol)
+                    val taken = if (takenCol >= 0 && !cursor.isNull(takenCol)) cursor.getLong(takenCol) else 0L
+                    val mod = if (modCol >= 0 && !cursor.isNull(modCol)) cursor.getLong(modCol) else 0L
+                    accumulator.add(
+                        AlbumGrouper.Row(
+                            id = cursor.getLong(idCol),
+                            bucketId = bucketId,
+                            bucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol) else null,
+                            relativePath = if (pathCol >= 0) cursor.getString(pathCol) else null,
+                            mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) else null,
+                            whenMillis = if (taken > 0L) taken else mod * 1000L,
+                        ),
+                    )
+                }
             }
+        } finally {
+            cancellation.cancel()
         }
         accumulator.build()
     }
@@ -200,26 +209,35 @@ class MediaStoreBucketLoader(
         // inlined, so `bucketId` is the only bound parameter and its position is unambiguous.
         val realSelection = base + typeFilterProvider().selectionSuffix() + exclusion
         val args = arrayOf(bucketId.toString())
+        // Unlike the previous 5-arg query, this passes a CancellationSignal so a cancelled album
+        // contents load aborts the provider-side query instead of merely stopping the cursor walk.
+        val cancellation = CancellationSignal()
+        currentCoroutineContext()[Job]?.invokeOnCompletion { cancellation.cancel() }
         val results = ArrayList<LocalMedia>(limit)
-        contentResolver.query(
-            MediaStore.Files.getContentUri("external"),
-            projection,
-            realSelection,
-            args,
-            MediaSortOrder.TIMELINE_DESC,
-        )?.use { cursor ->
-            // offset 0 is the newest page read directly via moveToNext(); only a positive offset
-            // seeks, and an offset at/past the end yields an empty page (end of the bucket).
-            if (!cursor.seekToPageStart(offset)) return@use
-            var count = 0
-            while (count < limit && cursor.moveToNext()) {
-                scope.ensureActive()
-                val row = CursorMediaRow(cursor)
-                val id = row.long(MediaStore.MediaColumns._ID) ?: continue
-                val mime = row.string(MediaStore.MediaColumns.MIME_TYPE)
-                results += MediaStoreMediaMapper.map(row, MediaStoreMediaMapper.contentUriFor(id, mime))
-                count++
+        try {
+            contentResolver.query(
+                MediaStore.Files.getContentUri("external"),
+                projection,
+                realSelection,
+                args,
+                MediaSortOrder.TIMELINE_DESC,
+                cancellation,
+            )?.use { cursor ->
+                // offset 0 is the newest page read directly via moveToNext(); only a positive offset
+                // seeks, and an offset at/past the end yields an empty page (end of the bucket).
+                if (!cursor.seekToPageStart(offset)) return@use
+                var count = 0
+                while (count < limit && cursor.moveToNext()) {
+                    scope.ensureActive()
+                    val row = CursorMediaRow(cursor)
+                    val id = row.long(MediaStore.MediaColumns._ID) ?: continue
+                    val mime = row.string(MediaStore.MediaColumns.MIME_TYPE)
+                    results += MediaStoreMediaMapper.map(row, MediaStoreMediaMapper.contentUriFor(id, mime))
+                    count++
+                }
             }
+        } finally {
+            cancellation.cancel()
         }
         results
     }

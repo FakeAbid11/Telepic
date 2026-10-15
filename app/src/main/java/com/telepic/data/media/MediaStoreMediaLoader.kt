@@ -5,6 +5,8 @@ import android.os.CancellationSignal
 import android.provider.MediaStore
 import com.telepic.domain.media.LocalMedia
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
@@ -63,30 +65,38 @@ class MediaStoreMediaLoader(
             val hidden = hiddenIdsProvider()
             val (where, args) = MediaSelectionBuilder.build(typeFilterProvider(), searchQueryProvider(), hidden)
             val collection = MediaStore.Files.getContentUri("external")
+            // Link the signal to the coroutine so a cancelled load (the user left the grid) aborts the
+            // provider-side query, not just the cursor walk. The `finally` cancels on the normal path
+            // too — harmless, and it stops the signal outliving the read.
             val cancellation = CancellationSignal()
+            currentCoroutineContext()[Job]?.invokeOnCompletion { cancellation.cancel() }
             val results = ArrayList<LocalMedia>(limit)
 
-            contentResolver.query(
-                collection,
-                projection,
-                where,
-                args,
-                sortOrder,
-                cancellation,
-            )?.use { cursor ->
-                // The cursor starts before the first row, so the newest-first first page (offset 0)
-                // is read directly with moveToNext(); only a positive offset seeks (see seekToPageStart).
-                if (!cursor.seekToPageStart(offset)) return@use
-                var count = 0
-                while (count < limit && cursor.moveToNext()) {
-                    scope.ensureActive()
-                    val row = CursorMediaRow(cursor)
-                    val id = row.long(MediaStore.MediaColumns._ID) ?: continue
-                    val mimeType = row.string(MediaStore.MediaColumns.MIME_TYPE)
-                    val uri = MediaStoreMediaMapper.contentUriFor(id, mimeType)
-                    results += MediaStoreMediaMapper.map(row, uri)
-                    count++
+            try {
+                contentResolver.query(
+                    collection,
+                    projection,
+                    where,
+                    args,
+                    sortOrder,
+                    cancellation,
+                )?.use { cursor ->
+                    // The cursor starts before the first row, so the newest-first first page (offset 0)
+                    // is read directly with moveToNext(); only a positive offset seeks (see seekToPageStart).
+                    if (!cursor.seekToPageStart(offset)) return@use
+                    var count = 0
+                    while (count < limit && cursor.moveToNext()) {
+                        scope.ensureActive()
+                        val row = CursorMediaRow(cursor)
+                        val id = row.long(MediaStore.MediaColumns._ID) ?: continue
+                        val mimeType = row.string(MediaStore.MediaColumns.MIME_TYPE)
+                        val uri = MediaStoreMediaMapper.contentUriFor(id, mimeType)
+                        results += MediaStoreMediaMapper.map(row, uri)
+                        count++
+                    }
                 }
+            } finally {
+                cancellation.cancel()
             }
             results
         }
