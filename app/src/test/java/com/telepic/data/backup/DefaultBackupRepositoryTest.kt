@@ -470,4 +470,29 @@ class DefaultBackupRepositoryTest {
         assertEquals(501L, row.telegramMessageId)
         assertNull(row.pendingTelegramMessageId)
     }
+
+    @Test
+    fun `an unexpected confirm failure is recorded as transient instead of crashing the batch`() = runBlocking {
+        // Run 1: the send is accepted, then confirmation times out, so the pending remote identity is
+        // persisted and the row parks in WAITING_FOR_NETWORK.
+        val cloud = FakeCloud(sentIdentity = 100L to 500L, uploadError = CloudNetworkException("timeout"))
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        r.processPendingWork(maxItems = 1)
+        assertEquals(500L, db.backupQueueDao().observeAll().first().first().pendingTelegramMessageId)
+
+        // Run 2: confirmUpload throws something no branch models (e.g. a Room/SQLite error out of
+        // manifestDao.upsertAll). Before the fix this escaped processOne() and killed the whole batch.
+        cloud.uploadError = null
+        cloud.confirmError = RuntimeException("SQLiteException: disk I/O error")
+        val summary = r.processPendingWork(maxItems = 1)
+
+        assertEquals(1, summary.waiting)
+        val row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(BackupState.WAITING_FOR_NETWORK.name, row.state)
+        assertEquals(2, row.retryCount) // run 1's network timeout + run 2's unclassified failure
+        // The pending identity survives, so the item is still confirmable and is never re-sent.
+        assertEquals(500L, row.pendingTelegramMessageId)
+        assertEquals(1, cloud.uploadCalls)
+    }
 }

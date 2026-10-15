@@ -206,6 +206,15 @@ class DefaultBackupRepository(
                 ProcessOutcome.PermanentFailure
             } catch (cancellation: kotlinx.coroutines.CancellationException) {
                 throw cancellation
+            } catch (throwable: Throwable) {
+                // An unclassified confirm failure is not provably permanent. This mirrors the upload
+                // path's own Throwable handler: without it, one unexpected throwable out of
+                // confirmUpload (a Room/SQLite error from manifestDao.upsertAll, say) escaped
+                // processOne() and killed the whole worker batch, leaving every mid-flight row
+                // unrecovered until the next WorkManager backoff. Recording it as transient instead
+                // parks the row in WAITING_FOR_NETWORK for the normal bounded retries.
+                dao.recordTransientFailure(item.id, safeError(throwable), clock())
+                ProcessOutcome.Waiting
             }
             if (confirmation != null) return confirmation
         }

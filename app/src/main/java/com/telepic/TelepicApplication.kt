@@ -93,8 +93,13 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
         }
     }
 
-    override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
+    // `by lazy`, not a `get()` accessor: WorkManager reads this configuration during its own lazy
+    // init, and a fresh `Configuration`/factory/lambda set was being built on every access. A single
+    // instance is also the honest contract — WorkManager expects one stable configuration, and a
+    // re-read (after a process restart or configuration change) must not observe a different object
+    // whose lambdas capture a not-yet-initialised container.
+    override val workManagerConfiguration: Configuration by lazy {
+        Configuration.Builder()
             .setWorkerFactory(
                 TelepicWorkerFactory(
                     backupRepository = { container.backupRepository },
@@ -102,6 +107,7 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
                 ),
             )
             .build()
+    }
 
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
