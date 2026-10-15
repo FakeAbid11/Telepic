@@ -22,9 +22,13 @@ val telegramApiHash = System.getenv("TELEGRAM_API_HASH").orEmpty()
 // fine but leave login permanently dead. Fail the moment a release/bundle task is actually requested
 // (debug builds and CI test runs stay green on the placeholder).
 gradle.taskGraph.whenReady {
-    // Case-sensitive "Release" is the variant suffix (assembleRelease, bundleRelease, lintRelease,
-    // minifyReleaseWithR8…); "bundleDebugClassesToCompileJar" and friends must not false-positive.
-    val releaseRequested = allTasks.any { it.name.contains("Release") && !it.name.contains("Debug") }
+    // Match the "release"/"debug" variant suffix case-insensitively (assembleRelease, bundleRelease,
+    // lintRelease, minifyReleaseWithR8…), while still excluding "bundleDebugClassesToCompileJar" and
+    // friends. A case-sensitive check would miss a task whose name uses a different casing and let a
+    // credential-less release slip through the gate below.
+    val releaseRequested = allTasks.any {
+        it.name.contains("release", ignoreCase = true) && !it.name.contains("debug", ignoreCase = true)
+    }
     if (releaseRequested) {
         require(telegramApiId != 0 && telegramApiHash.isNotBlank()) {
             "TELEGRAM_API_ID and TELEGRAM_API_HASH must be provided for release builds"
