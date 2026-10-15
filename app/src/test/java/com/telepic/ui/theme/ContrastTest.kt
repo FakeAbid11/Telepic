@@ -111,7 +111,7 @@ class ContrastTest {
 
     private fun relativeLuminance(c: Color): Double {
         fun channel(v: Float): Double {
-            return if (v <= 0.03928f) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
+            return if (v <= 0.03928f) v / 12.92 else Math.pow(((v + 0.055) / 1.055).toDouble(), 2.4)
         }
         return 0.2126 * channel(c.red) + 0.7152 * channel(c.green) + 0.0722 * channel(c.blue)
     }
@@ -124,5 +124,3 @@ class ContrastTest {
         )
     }
 }
-
-private fun Double.pow(exp: Double): Double = kotlin.math.pow(this, exp)
