@@ -500,11 +500,11 @@
     <string name="organization_restore">Restore</string>
     <string name="organization_delete_forever">Delete forever</string>
     <string name="organization_cancel">Cancel</string>
-    <string name="organization_item_description">Photo or video %1$s</string>
     <!-- TalkBack's name for the long press that starts a multi-item selection. The gesture itself is
          invisible, so without this the only way into selection mode is one a screen-reader user
-         cannot discover. -->
-    <string name="organization_long_press_select">Select</string>
+         cannot discover. Shared by every media grid — the timeline, album contents and the
+         Favorites/Archive/Trash collections all select the same way, so they say the same word. -->
+    <string name="media_long_press_select">Select</string>
     <!-- A failed read is its own state. The wording has to say what is *not* being claimed: the items
          are still on the device, and this is a problem reading them. -->
     <string name="organization_error_title">Couldn\'t read this collection</string>

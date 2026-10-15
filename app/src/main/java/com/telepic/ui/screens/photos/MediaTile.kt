@@ -71,6 +71,7 @@ fun MediaTile(
     selectionActive: Boolean = false,
     isFavorite: Boolean = false,
     onLongClick: () -> Unit = onClick,
+    onLongClickLabel: String? = null,
 ) {
     val spacing = TelepicTokens.spacing
     val context = LocalContext.current
@@ -105,6 +106,10 @@ fun MediaTile(
             // since the check badge only appears afterwards.
             .combinedClickable(
                 onClick = onClick,
+                // Announced to a screen reader so long-press-to-select is reachable by someone who
+                // cannot discover a gesture. Null for a caller whose long press means something else
+                // (or nothing), so no label is invented for it.
+                onLongClickLabel = onLongClickLabel,
                 onLongClick = {
                     haptics.selectionStart()
                     onLongClick()
@@ -173,7 +178,13 @@ fun MediaTile(
  */
 @Composable
 internal fun SelectionCheck(selected: Boolean, modifier: Modifier = Modifier) {
-    val scrim = TelepicTokens.colors.scrim
+    // `chromeScrim` (70% black), not `scrim`. In light mode `scrim` is only 40% black, so over a
+    // bright photo the composite backdrop is ~#999999, where this badge's white ring measures
+    // **2.85:1** — under the 3:1 floor WCAG 1.4.11 sets for a graphical object, and the ring is the
+    // only thing telling the user that selection mode is on and nothing is picked yet. At 70% the
+    // same ring measures 8.59:1. `BackupBadge` below was moved to this scrim for the identical
+    // reason; this badge was simply missed.
+    val scrim = TelepicTokens.colors.chromeScrim
     Box(
         modifier = modifier
             .size(24.dp)
@@ -230,20 +241,30 @@ private fun GifOverlay(modifier: Modifier = Modifier) {
         text = stringResource(R.string.media_gif_badge),
         style = MaterialTheme.typography.labelSmall,
         color = Color.White,
+        // `chromeScrim`, not `scrim`: this is white text on a badge over a photo. In light mode the
+        // 40%-black `scrim` over a bright photo left it at 2.85:1 — under the 4.5:1 AA floor for
+        // text. At 70% it measures 8.59:1. Same rule as the badges above and below.
         modifier = modifier
-            .background(TelepicTokens.colors.scrim, RoundedCornerShape(4.dp))
+            .background(TelepicTokens.colors.chromeScrim, RoundedCornerShape(4.dp))
             .padding(horizontal = spacing.xs, vertical = 1.dp),
     )
 }
 
-/** Bottom-right star shown on favorite tiles; the screen-level a11y label carries the state verbally. */
+/**
+ * Bottom-right star shown on favorite tiles; the screen-level a11y label carries the state verbally.
+ *
+ * `chromeScrim` rather than `scrim` for the same reason as [SelectionCheck] — and it matters more
+ * here, because the amber is a low-luminance tone: over a bright photo in light mode it measured
+ * **1.81:1** against the 40%-black disc, well under the 3:1 floor for a graphical object. On the
+ * 70% disc it measures 5.44:1.
+ */
 @Composable
 private fun FavoriteBadge(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(20.dp)
             .clip(CircleShape)
-            .background(TelepicTokens.colors.scrim),
+            .background(TelepicTokens.colors.chromeScrim),
         contentAlignment = Alignment.Center,
     ) {
         Icon(

@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import com.telepic.ui.theme.LocalReduceMotion
 
 /**
  * The two scopes `Modifier.sharedElement` needs, carried by composition local rather than threaded
@@ -74,6 +75,9 @@ internal fun ProvideSharedElementScopes(
 internal fun rememberSharedMediaModifier(mediaId: Long?): Modifier {
     val sharedTransitionScope = LocalSharedTransitionScope.current
     val animatedVisibilityScope = LocalSharedElementVisibilityScope.current
+    // Users who prefer reduced motion often find the long spring-based shared-element zoom
+    // disorienting; fall back to a plain cross-fade by not registering the shared element.
+    if (LocalReduceMotion.current) return Modifier
     return if (mediaId != null && sharedTransitionScope != null && animatedVisibilityScope != null) {
         with(sharedTransitionScope) {
             Modifier.sharedElement(

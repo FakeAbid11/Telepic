@@ -41,6 +41,7 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.MediaGridSkeleton
+import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.TransientMessageBar
@@ -98,60 +99,49 @@ fun AlbumContentsScreen(
                         onCancel = viewModel::clearSelection,
                     )
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(start = spacing.xs, top = spacing.sm),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.nav_back),
-                            )
-                        }
-                        Text(
-                            text = title,
-                            // Unified with ScreenHeader's default so every screen's title is 22sp.
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            // Clamped so a long album name cannot grow the header past its 48dp row.
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (customAlbumId != null) {
-                            // Boxed so the menu anchors to the *button*. As a direct child of this
-                            // full-width Row it anchored to the Row, so it opened at the far left —
-                            // under the back arrow — while the user's thumb was at the right.
-                            // `ViewerScreen`'s overflow uses the same wrapper for the same reason.
-                            Box {
-                                IconButton(onClick = { showActions = true }) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.MoreVert,
-                                        contentDescription = stringResource(R.string.album_more_actions),
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showActions,
-                                    onDismissRequest = { showActions = false },
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.album_rename)) },
-                                        onClick = {
-                                            showActions = false
-                                            showRename = true
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.album_delete)) },
-                                        onClick = {
-                                            showActions = false
-                                            showDeleteConfirm = true
-                                        },
-                                    )
+                    // The shared header, not a hand-rolled row: this screen needs a trailing menu
+                    // rather than a single control, which is the only reason it used to duplicate the
+                    // title row — and the duplicate silently lost the heading semantics. See
+                    // ScreenHeader.
+                    ScreenHeader(
+                        title = title,
+                        onBack = onBack,
+                        trailing = customAlbumId?.let {
+                            {
+                                // Boxed so the menu anchors to the *button*. As a direct child of a
+                                // full-width Row it anchored to the Row, so it opened at the far left —
+                                // under the back arrow — while the user's thumb was at the right.
+                                // `ViewerScreen`'s overflow uses the same wrapper for the same reason.
+                                Box {
+                                    IconButton(onClick = { showActions = true }) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.MoreVert,
+                                            contentDescription = stringResource(R.string.album_more_actions),
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showActions,
+                                        onDismissRequest = { showActions = false },
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.album_rename)) },
+                                            onClick = {
+                                                showActions = false
+                                                showRename = true
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.album_delete)) },
+                                            onClick = {
+                                                showActions = false
+                                                showDeleteConfirm = true
+                                            },
+                                        )
+                                    }
                                 }
                             }
-                        }
-                    }
+                        },
+                    )
                 }
                 // Mirror the Photos timeline: an in-flight load, a genuine failure, and an empty album are
                 // three distinct states. Because archived/trashed items are hidden here too, a blank grid

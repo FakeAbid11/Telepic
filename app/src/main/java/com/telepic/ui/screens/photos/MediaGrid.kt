@@ -138,6 +138,10 @@ fun MediaGrid(
     // for a session that crossed midnight. LocalDate.now() is cheap (no I/O), so staleness
     // only lasts until the next recomposition instead of forever.
     val today = LocalDate.now()
+    // Announced so long-press-to-select is reachable by a screen reader, which cannot discover a
+    // bare gesture. Resolved here rather than threaded through the callers: it is the same words on
+    // every grid, and a caller that had to remember to pass it is a caller that could forget.
+    val longPressLabel = stringResource(R.string.media_long_press_select)
 
     // Scrubber anchors grow incrementally as pages append: only items past the last examined index
     // are scanned per change, instead of re-walking the whole loaded list. The head cell's key carries
@@ -195,6 +199,7 @@ fun MediaGrid(
                             backupState = backupStates[cell.id] ?: MediaBackupVisualState.NONE,
                             onClick = onClick,
                             onLongClick = onLongClick,
+                            onLongClickLabel = longPressLabel,
                             selected = cell.id in selectedIds,
                             selectionActive = selectionActive,
                             isFavorite = cell.id in favoriteIds,

@@ -25,10 +25,13 @@ object MapPinBadge {
         textColor: Int,
     ): Drawable {
         val density = context.resources.displayMetrics.density
-        val radius = (if (count < 100) 15f else 18f) * density
-        val textSize = (if (count < 100) 12f else 11f) * density
+        // `fontScale` as well as `density`: this is a number the user has to read, so it follows their
+        // font-size setting like every other number in the app. Scaling on density alone left the
+        // count at 12dp while the rest of the UI doubled at a 200% font scale — the same mistake
+        // `TelegramStep` documents avoiding for its country field.
+        val fontScale = context.resources.configuration.fontScale
+        val textSize = (if (count < 100) 12f else 11f) * density * fontScale
         val pad = 4f * density
-        val size = (2f * radius + 2f * pad).toInt().coerceAtLeast(1)
 
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = textColor
@@ -36,6 +39,14 @@ object MapPinBadge {
             this.textSize = textSize
             isFakeBoldText = true
         }
+        // The circle has to grow with its own digits or a 3-digit count spills over the edge, and
+        // growing the text without the circle is exactly what a larger font scale would do. Measuring
+        // the real string is cheaper than guessing a per-digit width, and it stays correct for a
+        // 4-digit count.
+        val baseRadius = (if (count < 100) 15f else 18f) * density
+        val radius = maxOf(baseRadius, textPaint.measureText(count.toString()) / 2f + pad)
+        val size = (2f * radius + 2f * pad).toInt().coerceAtLeast(1)
+
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawCircle(size / 2f, size / 2f, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = fillColor })

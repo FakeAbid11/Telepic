@@ -5,9 +5,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,7 +12,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,9 +21,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -35,8 +29,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,25 +42,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.telepic.R
+import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.navigation.OrganizationKind
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.MediaGridSkeleton
+import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SelectAllAction
 import com.telepic.ui.components.SelectionTopBar
 import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.components.rememberTelepicHaptics
-import com.telepic.ui.screens.photos.SelectionCheck
+import com.telepic.ui.screens.photos.MediaTile
 import com.telepic.ui.theme.TelepicTokens
 
 /**
@@ -85,7 +74,7 @@ import com.telepic.ui.theme.TelepicTokens
  * Because the whole collection is already resolved in memory (a Room id-set read in one batched
  * lookup, not a pager), "Select all" here is exact and carries a real total.
  */
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrganizationScreen(
     viewModel: OrganizationViewModel,
@@ -141,13 +130,10 @@ fun OrganizationScreen(
                         ),
                     )
                 } else {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = spacing.xs, top = spacing.sm)) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.nav_back))
-                        }
-                        // Unified with ScreenHeader's default so every screen's title is 22sp.
-                        Text(stringResource(titleRes(viewModel.kind)), style = MaterialTheme.typography.headlineMedium)
-                    }
+                    ScreenHeader(
+                        title = stringResource(titleRes(viewModel.kind)),
+                        onBack = onBack,
+                    )
                 }
 
                 // The collection's data is a Room id-set, not a pager, so the only thing a refresh can
@@ -174,7 +160,7 @@ fun OrganizationScreen(
                                 description = stringResource(emptyDescRes(viewModel.kind)),
                             )
                         } else {
-                            val longPressLabel = stringResource(R.string.organization_long_press_select)
+                            val longPressLabel = stringResource(R.string.media_long_press_select)
                             LazyVerticalGrid(
                                 columns = GridCells.Adaptive(minSize = spacing.gridTileMinSize),
                                 contentPadding = PaddingValues(spacing.gridGutter),
@@ -183,57 +169,35 @@ fun OrganizationScreen(
                                 modifier = Modifier.fillMaxSize(),
                             ) {
                                 items(state.items, key = { it.id }) { media ->
-                                    val isSelected = media.id in selectedItems
-                                    Box(
-                                        modifier = Modifier
-                                            .aspectRatio(1f)
-                                            .clip(RoundedCornerShape(spacing.gridItemRadius))
-                                            .background(
-                                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                                else MaterialTheme.colorScheme.surfaceVariant,
-                                            )
-                                            .semantics {
-                                                // Only meaningful while selecting: outside selection mode
-                                                // the tile is a plain "open this" cell, and announcing
-                                                // "not selected" on every one of them would be noise.
-                                                if (selectionActive) this.selected = isSelected
+                                    // The same tile the timeline and album grids use, rather than a
+                                    // second copy of it. The inline version had already drifted: a
+                                    // 0.25f selection scrim against the shared tile's 0.28f, no
+                                    // backup or favourite badge, and an accessibility label that read
+                                    // a *filename* ("Photo or video IMG_2026…") where every other grid
+                                    // reads the type and date. Delegating makes "selecting looks and
+                                    // sounds identical everywhere" true by construction.
+                                    //
+                                    // backupState is NONE on purpose: this collection is a Room
+                                    // id-set, not the backup queue, so there is no status to read and
+                                    // MediaTile draws no badge for NONE. Favourites are likewise not
+                                    // read here — every item in the Favorites collection is one.
+                                    MediaTile(
+                                        media = media,
+                                        backupState = MediaBackupVisualState.NONE,
+                                        onClick = {
+                                            if (selectionActive) {
+                                                viewModel.toggleSelection(media)
+                                            } else {
+                                                onOpenMedia(media.id)
                                             }
-                                            .combinedClickable(
-                                                onClick = {
-                                                    if (selectionActive) {
-                                                        viewModel.toggleSelection(media)
-                                                    } else {
-                                                        onOpenMedia(media.id)
-                                                    }
-                                                },
-                                                // TalkBack reachability for the gesture that starts selection.
-                                                onLongClickLabel = longPressLabel,
-                                                onLongClick = {
-                                                    haptics.selectionStart()
-                                                    viewModel.beginSelection(media)
-                                                },
-                                            ),
-                                    ) {
-                                        AsyncImage(
-                                            model = media.contentUri,
-                                            contentDescription = stringResource(
-                                                R.string.organization_item_description,
-                                                media.displayName ?: media.id.toString(),
-                                            ),
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.matchParentSize(),
-                                        )
-                                        if (selectionActive) {
-                                            // The same check badge the media grids use, so selecting looks
-                                            // identical everywhere it can be done.
-                                            SelectionCheck(
-                                                selected = isSelected,
-                                                modifier = Modifier
-                                                    .align(Alignment.TopStart)
-                                                    .padding(spacing.xs),
-                                            )
-                                        }
-                                    }
+                                        },
+                                        // MediaTile fires the selection-start haptic itself, so this
+                                        // must not buzz a second time.
+                                        onLongClick = { viewModel.beginSelection(media) },
+                                        onLongClickLabel = longPressLabel,
+                                        selected = media.id in selectedItems,
+                                        selectionActive = selectionActive,
+                                    )
                                 }
                             }
                         }

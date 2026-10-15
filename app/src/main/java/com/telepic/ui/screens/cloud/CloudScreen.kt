@@ -348,10 +348,13 @@ private fun CloudTile(
                 text = stringResource(R.string.cloud_gif_badge),
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White,
+                // `chromeScrim`, not `scrim`: white text on a badge over a *preview image*. In light
+                // mode the 40%-black `scrim` over a bright preview measured 2.85:1, under the 4.5:1
+                // AA floor for text; at 70% it measures 8.59:1. Same rule as the tile badges.
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(spacing.xs)
-                    .background(TelepicTokens.colors.scrim, RoundedCornerShape(4.dp))
+                    .background(TelepicTokens.colors.chromeScrim, RoundedCornerShape(4.dp))
                     .padding(horizontal = spacing.xs, vertical = 1.dp),
             )
             CloudMediaType.IMAGE -> Unit
@@ -395,10 +398,12 @@ private fun CloudBadge(modifier: Modifier = Modifier) {
         imageVector = Icons.Outlined.Cloud,
         contentDescription = null,
         tint = Color.White,
+        // `chromeScrim` for the same reason as the GIF badge below: a white glyph on a disc over a
+        // preview image, which the 40%-black `scrim` left at 2.85:1 in light mode.
         modifier = modifier
             .size(22.dp)
             .clip(CircleShape)
-            .background(TelepicTokens.colors.scrim)
+            .background(TelepicTokens.colors.chromeScrim)
             .padding(4.dp),
     )
 }

@@ -52,6 +52,7 @@ import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.MediaGridSkeleton
+import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SelectAllAction
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
@@ -152,27 +153,11 @@ fun PhotosScreen(
                             ),
                         )
                     }
-                    else -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    start = TelepicTokens.spacing.screenMargin,
-                                    end = TelepicTokens.spacing.xs,
-                                    top = TelepicTokens.spacing.lg,
-                                    bottom = TelepicTokens.spacing.md,
-                                ),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.photos_title),
-                                // headlineMedium is the shared screen-title size (ScreenHeader's default).
-                                // displaySmall made Photos the only destination at 28sp, against 19-22sp
-                                // everywhere else — the same "title" role read as three different things.
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
+                    else -> ScreenHeader(
+                        title = stringResource(R.string.photos_title),
+                        // Any composable, so the header can carry this screen's whole control row
+                        // rather than being re-implemented to fit it (see ScreenHeader's KDoc).
+                        trailing = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 // Offered only with media access: searching a library you have not
                                 // granted access to can only ever return nothing.
@@ -188,8 +173,8 @@ fun PhotosScreen(
                                 // it is the only way into Settings, which is no longer a bottom-bar tab.
                                 SettingsAction(onClick = onOpenSettings)
                             }
-                        }
-                    }
+                        },
+                    )
                 }
 
                 // Partial access honesty (§31): shown as soon as limited access is in effect — it never

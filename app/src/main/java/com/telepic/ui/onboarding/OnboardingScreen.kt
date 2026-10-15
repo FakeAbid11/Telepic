@@ -10,6 +10,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import com.telepic.ui.theme.LocalReduceMotion
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -150,18 +151,25 @@ fun OnboardingScreen(
             // progress header and the action row anchored while the step changes, instead of the
             // entire frame sliding out from under the finger that just tapped it. fillMaxSize also
             // pins the body region, so AnimatedContent never animates its own height between steps.
+            val reduceMotion = LocalReduceMotion.current
             AnimatedContent(
                 targetState = step,
                 transitionSpec = {
-                    val forward = targetState > initialState
-                    val dir = if (forward) 1 else -1
-                    (
-                        slideInHorizontally(tween(300)) { width -> dir * width / 5 } +
-                            fadeIn(tween(300))
-                        ) togetherWith (
-                        slideOutHorizontally(tween(300)) { width -> -dir * width / 5 } +
-                            fadeOut(tween(200))
-                        )
+                    if (reduceMotion) {
+                        // No lateral motion when the user asked for less — just a quick fade so the
+                        // content change is still perceptible without vestibular load.
+                        fadeIn(tween(150)) togetherWith fadeOut(tween(150))
+                    } else {
+                        val forward = targetState > initialState
+                        val dir = if (forward) 1 else -1
+                        (
+                            slideInHorizontally(tween(300)) { width -> dir * width / 5 } +
+                                fadeIn(tween(300))
+                            ) togetherWith (
+                            slideOutHorizontally(tween(300)) { width -> -dir * width / 5 } +
+                                fadeOut(tween(200))
+                            )
+                    }
                 },
                 label = "onboardingStep",
                 modifier = Modifier.fillMaxSize(),

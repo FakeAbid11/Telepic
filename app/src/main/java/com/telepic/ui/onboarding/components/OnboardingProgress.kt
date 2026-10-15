@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.telepic.ui.theme.telepicMotionSpec
 
 /**
  * Subtle six-dot progress indicator for onboarding. The active step animates into a short pill
@@ -45,7 +46,7 @@ fun OnboardingProgress(
             val isCompleted = index < stepIndex
             val width by animateDpAsState(
                 targetValue = if (isActive) 22.dp else 8.dp,
-                animationSpec = tween(durationMillis = 250),
+                animationSpec = telepicMotionSpec(),
                 label = "dotWidth",
             )
             val color by animateColorAsState(
@@ -54,7 +55,7 @@ fun OnboardingProgress(
                     isCompleted -> completedColor
                     else -> inactiveColor
                 },
-                animationSpec = tween(durationMillis = 250),
+                animationSpec = telepicMotionSpec(),
                 label = "dotColor",
             )
             Box(

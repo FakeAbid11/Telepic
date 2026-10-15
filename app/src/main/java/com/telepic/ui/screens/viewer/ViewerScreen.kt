@@ -375,6 +375,16 @@ private fun ViewerContent(
         return
     }
 
+    // Name the item specifically so a screen-reader user knows which photo they are viewing,
+    // rather than hearing the generic "Media viewer image" on every single one.
+    val itemName = when (val item = state.item) {
+        is ViewerItem.Local -> item.media.displayName
+        is ViewerItem.Cloud -> item.media.fileName
+        null -> null
+    }
+    val imageDescription = itemName
+        ?: stringResource(R.string.viewer_content_description)
+
     // The *target* end of the shared-element transition, keyed on the same MediaStore id the tile the
     // user tapped used. Null for a cloud item — it has no tile in a local grid, so there is nothing
     // for it to grow out of and the Viewer simply appears (see rememberSharedMediaModifier).
@@ -407,7 +417,7 @@ private fun ViewerContent(
         key(retryToken) {
             AsyncImage(
                 model = model,
-                contentDescription = stringResource(R.string.viewer_content_description),
+                contentDescription = imageDescription,
                 contentScale = ContentScale.Fit,
                 alignment = Alignment.Center,
                 // The one line that turns the spinner below into a truthful indicator.

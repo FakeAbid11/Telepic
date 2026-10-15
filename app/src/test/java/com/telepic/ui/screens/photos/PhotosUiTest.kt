@@ -1,6 +1,9 @@
 package com.telepic.ui.screens.photos
 
 import android.net.Uri
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -190,6 +193,8 @@ class PhotosUiTest {
         photosScreen(PhotosViewModel(repository, NoopWatcher), MediaPermissionState.Granted, onOpenSettings = { opened = true })
 
         composeRule.onNodeWithText("Telepic").assertIsDisplayed()
+        val isHeading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
+        composeRule.onNodeWithText("Telepic").assert(isHeading)
         composeRule.onNodeWithContentDescription("Settings").performClick()
         assertTrue(opened)
     }
