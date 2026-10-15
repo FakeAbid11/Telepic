@@ -7,6 +7,8 @@ import android.provider.MediaStore
 import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.LocalMedia
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** The outcome of asking to permanently delete a local file. Never claims success it did not get. */
 sealed interface DeleteRequest {
@@ -64,31 +66,36 @@ class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
 
     override suspend fun requestDeleteAll(media: List<LocalMedia>): DeleteRequest {
         if (media.isEmpty()) return DeleteRequest.Failed
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // One consent prompt covers the whole list — the platform accepts a list of uris here.
-                val pending = MediaStore.createDeleteRequest(resolver, media.map { it.contentUri })
-                DeleteRequest.NeedsConsent(pending.intentSender)
-            } else {
-                // Pre-R has no batch consent, so the files go one at a time and all of them must go for
-                // this to be reported as a success. A partial delete is Failed, never a success: see
-                // the contract on [LocalMediaDeleter.requestDeleteAll].
-                var deleted = 0
-                media.forEach { if (resolver.delete(it.contentUri, null, null) > 0) deleted++ }
-                if (deleted == media.size) DeleteRequest.Deleted else DeleteRequest.Failed
+        // MediaStore is a binder-backed provider: `createDeleteRequest` and `delete` are synchronous IPC,
+        // so running them on the caller's dispatcher blocked the main thread (the UI calls this from
+        // `viewModelScope`). Move the whole exchange to IO so a slow provider cannot jank or ANR.
+        return withContext(Dispatchers.IO) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // One consent prompt covers the whole list — the platform accepts a list of uris here.
+                    val pending = MediaStore.createDeleteRequest(resolver, media.map { it.contentUri })
+                    DeleteRequest.NeedsConsent(pending.intentSender)
+                } else {
+                    // Pre-R has no batch consent, so the files go one at a time and all of them must go for
+                    // this to be reported as a success. A partial delete is Failed, never a success: see
+                    // the contract on [LocalMediaDeleter.requestDeleteAll].
+                    var deleted = 0
+                    media.forEach { if (resolver.delete(it.contentUri, null, null) > 0) deleted++ }
+                    if (deleted == media.size) DeleteRequest.Deleted else DeleteRequest.Failed
+                }
+            } catch (security: SecurityException) {
+                // Includes `RecoverableSecurityException` below API 30 for media this app did not create:
+                // the item stays in trash, and the reason now leaves a trace instead of vanishing.
+                TelepicLog.warn("MediaDelete", "the provider refused the delete; the item stays in trash", security)
+                DeleteRequest.Failed
+            } catch (cancellation: CancellationException) {
+                // Cancellation is control flow, not a failed delete: reporting Failed would leave the
+                // caller believing the provider refused, when the caller's own scope simply went away.
+                throw cancellation
+            } catch (throwable: Throwable) {
+                TelepicLog.error("MediaDelete", "delete request failed", throwable)
+                DeleteRequest.Failed
             }
-        } catch (security: SecurityException) {
-            // Includes `RecoverableSecurityException` below API 30 for media this app did not create:
-            // the item stays in trash, and the reason now leaves a trace instead of vanishing.
-            TelepicLog.warn("MediaDelete", "the provider refused the delete; the item stays in trash", security)
-            DeleteRequest.Failed
-        } catch (cancellation: CancellationException) {
-            // Cancellation is control flow, not a failed delete: reporting Failed would leave the
-            // caller believing the provider refused, when the caller's own scope simply went away.
-            throw cancellation
-        } catch (throwable: Throwable) {
-            TelepicLog.error("MediaDelete", "delete request failed", throwable)
-            DeleteRequest.Failed
         }
     }
 }

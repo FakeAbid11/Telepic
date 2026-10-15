@@ -10,6 +10,7 @@ import com.telepic.data.media.CustomAlbumRepository
 import com.telepic.data.media.LocalMediaRepository
 import com.telepic.data.media.MediaChangeWatcher
 import com.telepic.data.organization.MediaOrganizationRepository
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.CustomAlbum
 import com.telepic.domain.media.LocalMedia
@@ -172,8 +173,9 @@ class PhotosViewModel(
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // See the KDoc: the untouched selection is the honest state.
+                TelepicLog.warn("PhotosViewModel", "select-all could not read the library; selection unchanged", throwable)
             } finally {
                 _isSelectingAll.value = false
             }
@@ -201,10 +203,11 @@ class PhotosViewModel(
                 clearSelection()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // No report and no clearSelection: nothing is claimed about work that did not happen,
                 // and the selection survives so the user can simply tap again. An escaping exception
                 // here would be an uncaught main-thread exception — the app closing on a tap.
+                TelepicLog.warn("PhotosViewModel", "the selected items could not be backed up", throwable)
             } finally {
                 _isBackingUp.value = false
             }
@@ -274,8 +277,9 @@ class PhotosViewModel(
                 clearSelection()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // The selection survives so the user can retry; nothing is claimed about the album.
+                TelepicLog.warn("PhotosViewModel", "adding the selection to the album failed", throwable)
             } finally {
                 _isAddingToAlbum.value = false
             }
@@ -307,8 +311,9 @@ class PhotosViewModel(
                 clearSelection()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // See addSelectionToAlbum: the album list is the report.
+                TelepicLog.warn("PhotosViewModel", "creating the album and adding the selection failed", throwable)
             } finally {
                 _isAddingToAlbum.value = false
             }
@@ -348,10 +353,11 @@ class PhotosViewModel(
                 coordinator.syncFromPreference()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // A failed automatic pass leaves the queue unchanged and is retried by the periodic
                 // worker. It must never escape `viewModelScope`: an uncaught main-thread exception
                 // here would close the app while the user is simply looking at their photos.
+                TelepicLog.warn("PhotosViewModel", "the automatic backup pass failed; the periodic worker will retry", throwable)
             }
         }
     }

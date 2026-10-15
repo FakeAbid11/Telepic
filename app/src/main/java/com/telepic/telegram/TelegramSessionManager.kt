@@ -361,7 +361,7 @@ class TelegramSessionManager(
     }
 
     /**
-     * Sends a request and reports a *failure* as `null` — but never a cancellation.
+     * Sends a request and reports a *failure* as a `TdApi.Error` — but never a cancellation.
      *
      * The blanket `catch (Throwable)` used to swallow [CancellationException] as well, which silently
      * downgraded a cancelled scope to "an empty response arrived": [sendParameters] then matched its
@@ -372,6 +372,13 @@ class TelegramSessionManager(
      * A [TdLibRequestTimeoutException] is the opposite case: a real outcome that must *not* propagate as
      * control flow. It is converted into a [TdApi.Error] so each caller's existing `is TdApi.Error`
      * branch fires and the failure becomes visible, instead of the silent no-op a `null` would produce.
+     *
+     * A leftover, unclassified `Throwable` is folded into the **same** shape for the same reason: a
+     * bare `null` made each caller's `else -> Unit` branch swallow it, so an unexpected failure (a
+     * native crash inside `send`, say) again left the UI parked on [TelegramAuthState.Initializing]
+     * with no way forward. As an error it reaches the caller's normal failure path. [GENERIC_ERROR_CODE]
+     * maps through [TelegramError.classify] to [TelegramError.Unknown], which is the honest reading of
+     * "something we did not anticipate went wrong".
      */
     private suspend fun safeRequest(request: TdApi.Function<*>): TdApi.Object? =
         try {
@@ -384,7 +391,10 @@ class TelegramSessionManager(
             TdApi.Error(TIMEOUT_ERROR_CODE, timeout.message ?: "Telegram did not respond in time.")
         } catch (throwable: Throwable) {
             TelepicLog.warn("TelegramAuth", "${request.javaClass.simpleName} failed", throwable)
-            null
+            TdApi.Error(
+                GENERIC_ERROR_CODE,
+                throwable.message ?: "Telegram did not complete the request.",
+            )
         }
 
     private fun fail(error: TelegramError) {
@@ -425,5 +435,13 @@ class TelegramSessionManager(
          * than an unexplained failure.
          */
         const val TIMEOUT_ERROR_CODE = 499
+
+        /**
+         * Reported in place of a real TDLib code for an unclassified [Throwable] out of a request.
+         * Deliberately not one of the codes [TelegramError.classify] special-cases (400/401/420/499),
+         * so it surfaces as [TelegramError.Unknown] rather than masquerading as a network or auth
+         * problem. The value itself is never shown to the user.
+         */
+        const val GENERIC_ERROR_CODE = 520
     }
 }

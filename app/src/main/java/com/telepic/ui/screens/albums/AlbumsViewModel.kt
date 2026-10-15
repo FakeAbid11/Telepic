@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.media.AlbumRepository
 import com.telepic.data.media.CustomAlbumRepository
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.Album
 import com.telepic.domain.media.CustomAlbum
 import kotlinx.coroutines.CancellationException
@@ -116,8 +117,10 @@ class AlbumsViewModel(
                 action()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
-                // Deliberately silent: the observed album list is the report.
+            } catch (throwable: Throwable) {
+                // The observed album list is still the report, but a failed write now leaves a trace
+                // instead of vanishing.
+                TelepicLog.warn("AlbumsViewModel", "an album change could not be saved", throwable)
             }
         }
     }

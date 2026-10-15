@@ -220,9 +220,10 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
                 _folders.value = foldersRepository?.albums().orEmpty()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // Degrade to the picker's own honest empty state instead of letting a provider
                 // failure escape `viewModelScope` (an uncaught main-thread exception closes the app).
+                TelepicLog.warn("SettingsViewModel", "the folder list could not be loaded; showing the empty state", throwable)
                 _folders.value = emptyList()
             } finally {
                 _foldersLoaded.value = true
@@ -370,7 +371,8 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("SettingsViewModel", "the local library count could not be measured; leaving it unknown", throwable)
                 _localLibraryCount.value = null
             } finally {
                 _localLibraryCountLoaded.value = true
@@ -391,8 +393,10 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
                 action()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
-                // Deliberately silent: the observed preference flow is the honest report.
+            } catch (throwable: Throwable) {
+                // The observed preference flow is still the honest report, but the failure now
+                // leaves a trace instead of vanishing.
+                TelepicLog.warn("SettingsViewModel", "a setting could not be saved", throwable)
             }
         }
     }

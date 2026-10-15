@@ -113,7 +113,8 @@ class OrganizationViewModel(
             OrgItemsState.Ready(localLookup.byIdList(ids))
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (_: Throwable) {
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("OrganizationViewModel", "the collection could not be read; showing the retry state", throwable)
             OrgItemsState.Error
         }
         _isRefreshing.value = false
@@ -184,9 +185,10 @@ class OrganizationViewModel(
                 _message.value = OrgMessage.MembershipChanged(ids.size)
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // The selection survives and the id-set flow re-emits, so a partial undo shows as
                 // exactly what it was rather than as a success.
+                TelepicLog.warn("OrganizationViewModel", "undoing the selection failed part-way", throwable)
             } finally {
                 _isRestoring.value = false
             }

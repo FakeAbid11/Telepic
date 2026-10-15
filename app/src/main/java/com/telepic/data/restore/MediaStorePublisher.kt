@@ -52,18 +52,33 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
      * the same byte count — which makes this a reliable duplicate signal without a schema change.
      * `RELATIVE_PATH` is deliberately not part of the match: the provider normalises it with a
      * trailing slash, so a literal comparison against [relativeDir] would silently never match.
+     *
+     * On API 29+ the match additionally requires `IS_PENDING = 0`: a pending row is exactly the
+     * half-written entry this class creates *before* the bytes are copied, so without the clause a
+     * restore that died mid-write would leave a pending row that every later restore mistook for a
+     * finished copy and reported as `Inserted` — claiming a save for a file that never completed.
+     * `IS_PENDING` does not exist before API 29, so the clause is added only there.
      */
     private fun findPublished(collection: Uri, displayName: String, mime: String, size: Long): Uri? =
-        runCatching {
-            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?" +
+        try {
+            var selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?" +
                 " AND ${MediaStore.MediaColumns.SIZE} = ?" +
                 " AND ${MediaStore.MediaColumns.MIME_TYPE} = ?"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                selection += " AND ${MediaStore.MediaColumns.IS_PENDING} = 0"
+            }
             val args = arrayOf(displayName, size.toString(), mime)
             resolver.query(collection, arrayOf(MediaStore.MediaColumns._ID), selection, args, null)
                 ?.use { cursor ->
                     if (cursor.moveToFirst()) ContentUris.withAppendedId(collection, cursor.getLong(0)) else null
                 }
-        }.getOrNull()
+        } catch (throwable: Throwable) {
+            // A refused probe falls through to a fresh insert, so the publish still works — but a
+            // silent null made a provider that always failed to answer look identical to "no
+            // duplicate", so the reason is recorded.
+            TelepicLog.warn("MediaPublish", "the duplicate probe failed; publishing a new copy", throwable)
+            null
+        }
 
     override suspend fun publish(sourcePath: String, mimeType: String?, displayName: String?): PublishResult =
         withContext(Dispatchers.IO) {

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import com.telepic.data.media.SavedCamera
+import com.telepic.diagnostics.TelepicLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -36,7 +37,10 @@ class MapCameraRepositoryImpl(
 
     override val camera: Flow<SavedCamera?> = dataStore.data
         .map { preferences -> preferences.toSavedCamera() }
-        .catch { emit(null) }
+        .catch { throwable ->
+            TelepicLog.warn("MapCameraRepository", "saved map camera could not be read; starting from the default view", throwable)
+            emit(null)
+        }
 
     override suspend fun save(camera: SavedCamera) {
         if (!camera.centerLat.isFinite() || !camera.centerLon.isFinite() || !camera.zoom.isFinite()) return

@@ -9,6 +9,7 @@ import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.media.AlbumRepository
 import com.telepic.data.media.CustomAlbumRepository
 import com.telepic.data.organization.MediaOrganizationRepository
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
@@ -181,9 +182,10 @@ class AlbumContentsViewModel(
                 clearSelection()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // No report and no clearSelection: nothing is claimed about work that did not happen,
                 // and the selection survives so the user can simply tap again.
+                TelepicLog.warn("AlbumContentsViewModel", "the selected items could not be backed up", throwable)
             } finally {
                 _isBackingUp.value = false
             }
@@ -214,9 +216,10 @@ class AlbumContentsViewModel(
                 _removalReport.value = RemovalReport(ids.size, System.nanoTime())
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // The selection survives and the grid re-reads from Room, so a partial removal shows as
                 // exactly what it was rather than as a success.
+                TelepicLog.warn("AlbumContentsViewModel", "removing the selection from the album failed", throwable)
             } finally {
                 _isRemoving.value = false
             }
@@ -232,8 +235,9 @@ class AlbumContentsViewModel(
                 repository.rename(albumId, name)
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // The observed name is the report: a rename that did not land leaves the old title.
+                TelepicLog.warn("AlbumContentsViewModel", "renaming the album failed", throwable)
             }
         }
     }
@@ -248,8 +252,9 @@ class AlbumContentsViewModel(
                 onDeleted()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // Stay on the album: the delete did not happen, so navigating away would be a lie.
+                TelepicLog.warn("AlbumContentsViewModel", "deleting the album failed", throwable)
             }
         }
     }

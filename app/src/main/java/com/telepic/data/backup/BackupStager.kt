@@ -70,6 +70,10 @@ class MediaStoreBackupStager(
             target.delete()
             throw cancellation
         } catch (throwable: Throwable) {
+            // Source vanished or became unreadable mid-copy. The caller turns this null into a
+            // permanent "local media is no longer available" failure, which is indistinguishable from
+            // a provider fault without this line.
+            TelepicLog.warn("BackupStager", "staging failed; the source could not be copied", throwable)
             target.delete()
             null
         }

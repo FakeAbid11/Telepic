@@ -3,6 +3,7 @@ package com.telepic.onboarding
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.media.AlbumRepository
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.Album
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -95,11 +96,12 @@ class OnboardingViewModel(
                 _folders.value = foldersRepository?.albums().orEmpty()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // A failed bucket query (no media grant, a *limited* grant, a provider error) must
                 // degrade to the picker's own honest empty state — "allow photo access first, then
                 // reopen this picker" — rather than escape `viewModelScope`, where an uncaught
                 // exception on the main thread closes the app.
+                TelepicLog.warn("OnboardingViewModel", "folder list could not be loaded; showing the empty state", throwable)
                 _folders.value = emptyList()
             } finally {
                 _foldersLoaded.value = true
@@ -147,7 +149,8 @@ class OnboardingViewModel(
             persist()
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (_: Throwable) {
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("OnboardingViewModel", "the backup choice could not be persisted", throwable)
             _setupFailed.value = true
             return
         }
@@ -156,7 +159,8 @@ class OnboardingViewModel(
             _setupFailed.value = false
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (_: Throwable) {
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("OnboardingViewModel", "the backup choice was saved but could not be applied", throwable)
             _setupFailed.value = true
         }
     }

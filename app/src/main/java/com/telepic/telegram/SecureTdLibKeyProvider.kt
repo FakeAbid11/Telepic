@@ -3,6 +3,7 @@ package com.telepic.telegram
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import com.telepic.diagnostics.TelepicLog
 import java.io.File
 import java.io.IOException
 import java.security.KeyStore
@@ -30,9 +31,12 @@ class KeystoreTdLibKeyProvider(context: Context) : SecureTdLibKeyProvider {
 
     override suspend fun getOrCreate(): ByteArray = withContext(Dispatchers.IO) {
         if (keyFile.exists()) {
-            runCatching { unwrap(keyFile.readBytes()) }.getOrElse {
+            runCatching { unwrap(keyFile.readBytes()) }.getOrElse { throwable ->
                 // Wrapped blob unreadable — fall through and (re)generate. If the database already
-                // exists with a different key TDLib will report it; surfaced as an init error.
+                // exists with a different key TDLib will report it; surfaced as an init error. Logged
+                // because this is the exact fork that loses an existing session: without the line, a
+                // corrupt blob and a first-ever run are indistinguishable from the outside.
+                TelepicLog.warn("TelegramKey", "the stored TDLib database key was unreadable; regenerating", throwable)
                 generateAndStore()
             }
         } else {

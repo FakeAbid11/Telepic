@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.telepic.diagnostics.TelepicLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -22,7 +23,10 @@ class SettingsRepositoryImpl(
 
     override val themeMode: Flow<ThemeMode> = dataStore.data
         .map { preferences -> ThemeMode.fromKey(preferences[KEY_THEME_MODE]) }
-        .catch { emit(ThemeMode.Default) }
+        .catch { throwable ->
+            TelepicLog.warn("SettingsRepository", "theme mode could not be read; using the default", throwable)
+            emit(ThemeMode.Default)
+        }
 
     override suspend fun setThemeMode(mode: ThemeMode) {
         dataStore.edit { preferences ->
@@ -32,7 +36,10 @@ class SettingsRepositoryImpl(
 
     override val backupNetworkPreference: Flow<BackupNetworkPreference> = dataStore.data
         .map { preferences -> BackupNetworkPreference.fromKey(preferences[KEY_BACKUP_NETWORK]) }
-        .catch { emit(BackupNetworkPreference.Default) }
+        .catch { throwable ->
+            TelepicLog.warn("SettingsRepository", "backup network preference could not be read; using the default", throwable)
+            emit(BackupNetworkPreference.Default)
+        }
 
     override suspend fun setBackupNetworkPreference(preference: BackupNetworkPreference) {
         dataStore.edit { preferences ->
@@ -42,7 +49,10 @@ class SettingsRepositoryImpl(
 
     override val backupRequiresCharging: Flow<Boolean> = dataStore.data
         .map { preferences -> preferences[KEY_BACKUP_REQUIRES_CHARGING] ?: false }
-        .catch { emit(false) }
+        .catch { throwable ->
+            TelepicLog.warn("SettingsRepository", "charging requirement could not be read; defaulting to off", throwable)
+            emit(false)
+        }
 
     override suspend fun setBackupRequiresCharging(required: Boolean) {
         dataStore.edit { preferences ->
@@ -52,7 +62,10 @@ class SettingsRepositoryImpl(
 
     override val backupRequiresBatteryNotLow: Flow<Boolean> = dataStore.data
         .map { preferences -> preferences[KEY_BACKUP_REQUIRES_BATTERY_NOT_LOW] ?: false }
-        .catch { emit(false) }
+        .catch { throwable ->
+            TelepicLog.warn("SettingsRepository", "battery-not-low requirement could not be read; defaulting to off", throwable)
+            emit(false)
+        }
 
     override suspend fun setBackupRequiresBatteryNotLow(required: Boolean) {
         dataStore.edit { preferences ->
@@ -62,7 +75,10 @@ class SettingsRepositoryImpl(
 
     override val showVideosInTimeline: Flow<Boolean> = dataStore.data
         .map { preferences -> preferences[KEY_SHOW_VIDEOS] ?: true }
-        .catch { emit(true) }
+        .catch { throwable ->
+            TelepicLog.warn("SettingsRepository", "show-videos preference could not be read; defaulting to shown", throwable)
+            emit(true)
+        }
 
     override suspend fun setShowVideosInTimeline(show: Boolean) {
         dataStore.edit { preferences ->
@@ -72,7 +88,10 @@ class SettingsRepositoryImpl(
 
     override val showGifsInTimeline: Flow<Boolean> = dataStore.data
         .map { preferences -> preferences[KEY_SHOW_GIFS] ?: true }
-        .catch { emit(true) }
+        .catch { throwable ->
+            TelepicLog.warn("SettingsRepository", "show-gifs preference could not be read; defaulting to shown", throwable)
+            emit(true)
+        }
 
     override suspend fun setShowGifsInTimeline(show: Boolean) {
         dataStore.edit { preferences ->
@@ -82,7 +101,10 @@ class SettingsRepositoryImpl(
 
     override val startVideosMuted: Flow<Boolean> = dataStore.data
         .map { preferences -> preferences[KEY_START_VIDEOS_MUTED] ?: true }
-        .catch { emit(true) }
+        .catch { throwable ->
+            TelepicLog.warn("SettingsRepository", "start-muted preference could not be read; defaulting to muted", throwable)
+            emit(true)
+        }
 
     override suspend fun setStartVideosMuted(muted: Boolean) {
         dataStore.edit { preferences ->
@@ -92,7 +114,10 @@ class SettingsRepositoryImpl(
 
     override val appLockEnabled: Flow<Boolean> = dataStore.data
         .map { preferences -> preferences[KEY_APP_LOCK] ?: false }
-        .catch { emit(false) }
+        .catch { throwable ->
+            TelepicLog.warn("SettingsRepository", "app-lock preference could not be read; defaulting to off", throwable)
+            emit(false)
+        }
 
     override suspend fun setAppLockEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->

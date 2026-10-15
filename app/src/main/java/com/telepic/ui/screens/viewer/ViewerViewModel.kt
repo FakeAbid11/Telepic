@@ -271,9 +271,10 @@ class ViewerViewModel(
                 if (outcome != null) _message.value = outcome
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
-                // Deliberately silent: no message and the control is unchanged, so the tap can simply
-                // be repeated. See the KDoc.
+            } catch (throwable: Throwable) {
+                // Deliberately silent to the user: no message and the control is unchanged, so the tap
+                // can simply be repeated. See the KDoc.
+                TelepicLog.warn("ViewerViewModel", "the item could not be queued for backup", throwable)
             } finally {
                 _backupBusy.value = false
             }
@@ -341,8 +342,10 @@ class ViewerViewModel(
                 // A cancelled read must not publish: the identity guard below cannot tell a cancelled
                 // scope from a live one, so swallowing this would set details for a dead session.
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // Corrupt file, unsupported format, or a stream we cannot open → MediaStore fields only.
+                // Expected per item rather than exceptional, so this is a debug line, not a warning.
+                TelepicLog.debug("ViewerViewModel", "no readable metadata; falling back to MediaStore fields", throwable)
                 MediaMetadata()
             }
             val backup = backupStateOf(media.id)
@@ -425,7 +428,8 @@ class ViewerViewModel(
             repository.visualStates.first()[localMediaId.toString()]
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (_: Throwable) {
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("ViewerViewModel", "the backup state could not be read; omitting it", throwable)
             null
         }
     }
@@ -495,11 +499,12 @@ class ViewerViewModel(
                 action(repo, id, _flags.value)
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // A database failure must not escape `viewModelScope`: that is an uncaught exception on
                 // the main thread and the app closes itself with no message. Nothing is claimed on
                 // failure either — the flags stay as they were, which is the truth, and the next load
                 // re-reads them from the repository.
+                TelepicLog.warn("ViewerViewModel", "an organization change could not be saved", throwable)
                 return@launch
             }
             // Identity-guarded: the write targets the captured id (always the correct item), but

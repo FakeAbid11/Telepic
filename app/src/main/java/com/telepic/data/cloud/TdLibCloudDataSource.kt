@@ -219,7 +219,10 @@ class TdLibCloudDataSource(
             TelepicLog.warn("CloudDownload", "this record carries no file id, so there is nothing to download")
             return null
         }
-        val response = gateway.request(TdApiCloudRequests.downloadSynchronously(fileId, priority))
+        val response = gateway.request(
+            TdApiCloudRequests.downloadSynchronously(fileId, priority),
+            DOWNLOAD_TIMEOUT_MILLIS,
+        )
         if (response is TdApi.Error) {
             // Every branch below used to return a bare null, which made a rejected or half-finished
             // download indistinguishable from "this media has no file". The file id is the whole
@@ -295,5 +298,14 @@ class TdLibCloudDataSource(
         const val ORIGINAL_PRIORITY = 32
         const val DEFAULT_SEND_POLL_DELAY_MS = 300L
         const val DEFAULT_MAX_SEND_ATTEMPTS = 200 // ~60s at 300ms
+
+        /**
+         * A synchronous TDLib download blocks until the file is fully transferred, so it must not be
+         * held to the gateway's 30s request timeout — a large original on a slow link legitimately
+         * takes minutes, and timing it out reported the media as unavailable (and, for a retried
+         * restore, downloaded it all over again). Bounded, not unbounded: a genuinely hung download
+         * still fails eventually rather than borrowing the worker forever.
+         */
+        const val DOWNLOAD_TIMEOUT_MILLIS = 10 * 60 * 1000L
     }
 }

@@ -222,13 +222,14 @@ class DefaultBackupCoordinator(
                 pageLoader.load(offset, discoveryPageSize)
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
                 // One unreadable page ends *this* loader, not the pass. A MediaStore query can fail on
                 // its own — a revoked or limited media grant, a provider error — and that must not
                 // discard the buckets already scanned, nor propagate into whatever is awaiting the
                 // pass (the periodic worker, the app's startup scope, an onboarding ViewModel). The
                 // cursor stays where it is, so the next pass resumes at the page that failed rather
                 // than skipping past it.
+                TelepicLog.warn("BackupCoordinator", "a discovery page failed to load; resuming from the same offset next pass", throwable)
                 return enqueuedAny
             }
             if (page.isEmpty()) {
@@ -289,10 +290,11 @@ class DefaultBackupCoordinator(
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
-        } catch (_: Throwable) {
+        } catch (throwable: Throwable) {
             // Recognition failed outside its own boundaries (a database error, an unexpected
             // provider throwable). Keep the documented rule — an item is never silently skipped —
             // by queueing it unhashed and letting the worker decide.
+            TelepicLog.warn("BackupCoordinator", "recognition failed; queueing the item unhashed", throwable)
             enqueueUnhashed(media)
         }
 
@@ -300,7 +302,8 @@ class DefaultBackupCoordinator(
         if (repository.enqueue(media)) BulkBackupSummary(1, 0) else BulkBackupSummary(0, 1)
     } catch (cancellation: CancellationException) {
         throw cancellation
-    } catch (_: Throwable) {
+    } catch (throwable: Throwable) {
+        TelepicLog.warn("BackupCoordinator", "could not enqueue an item for backup; it is skipped this pass", throwable)
         BulkBackupSummary.Empty // neither queued nor covered: nothing is claimed about this item
     }
 

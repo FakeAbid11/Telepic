@@ -146,8 +146,11 @@ class DefaultBackupRecognitionRepository(
             val expected = hasher.hashSize(media.contentUri)
             val result = hasher.hash(media.contentUri)
             // §44: a byte-count that disagrees with the provider's size means the file changed
-            // mid-hash — discard rather than persist a torn hash.
-            if (expected >= 0 && result.sizeBytes >= 0 && expected != result.sizeBytes) {
+            // mid-hash — discard rather than persist a torn hash. The guard is `expected > 0`, not
+            // `>= 0`: a provider that reports SIZE as 0 (unknown/stale, which `AndroidContentHasher`
+            // returns verbatim) is not a torn hash — treating it as one discarded every hash for such
+            // an item, permanently losing content dedup and re-hashing the whole file on every scan.
+            if (expected > 0 && result.sizeBytes >= 0 && expected != result.sizeBytes) {
                 // §44: the file changed while being hashed. Discard rather than persist a torn hash —
                 // and say so, because this item will now be re-hashed on every scan with no trace of
                 // why recognition keeps refusing to trust the cached one.

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.telepic.diagnostics.TelepicLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -22,15 +23,24 @@ class OnboardingRepositoryImpl(
 
     override val isCompleted: Flow<Boolean> = dataStore.data
         .map { preferences -> preferences[KEY_COMPLETED] ?: false }
-        .catch { emit(false) }
+        .catch { throwable ->
+            TelepicLog.warn("OnboardingRepository", "completion flag could not be read; assuming not completed", throwable)
+            emit(false)
+        }
 
     override val backupPreference: Flow<BackupPreference?> = dataStore.data
         .map { preferences -> BackupPreference.fromKey(preferences[KEY_BACKUP_PREFERENCE]) }
-        .catch { emit(null) }
+        .catch { throwable ->
+            TelepicLog.warn("OnboardingRepository", "backup preference could not be read; using no preference", throwable)
+            emit(null)
+        }
 
     override val backupBucketIds: Flow<Set<Long>> = dataStore.data
         .map { preferences -> preferences[KEY_BACKUP_BUCKET_IDS]?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet() }
-        .catch { emit(emptySet()) }
+        .catch { throwable ->
+            TelepicLog.warn("OnboardingRepository", "selected bucket ids could not be read; using none", throwable)
+            emit(emptySet())
+        }
 
     override suspend fun setCompleted(completed: Boolean) {
         dataStore.edit { preferences ->

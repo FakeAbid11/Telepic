@@ -29,6 +29,16 @@ interface TdLibClientGateway {
     /** Send a request and suspend for exactly one response object (Ok or [TdApi.Error]). */
     suspend fun request(request: TdApi.Function<*>): TdApi.Object
 
+    /**
+     * As [request], but with an explicit response timeout, for operations the caller knows run long.
+     *
+     * A **synchronous** TDLib download blocks until the file is fully transferred, so it is the one
+     * request whose response is legitimately allowed to outlive the default timeout. The default body
+     * delegates to [request], so a fake that implements only the ordinary form is unaffected.
+     */
+    suspend fun request(request: TdApi.Function<*>, timeoutMillis: Long): TdApi.Object =
+        request(request)
+
     /** Close the client (idempotent). */
     fun close()
 }
@@ -117,10 +127,13 @@ class TdLibClientGatewayImpl(
         )
     }
 
-    override suspend fun request(request: TdApi.Function<*>): TdApi.Object {
+    override suspend fun request(request: TdApi.Function<*>): TdApi.Object =
+        request(request, requestTimeoutMillis)
+
+    override suspend fun request(request: TdApi.Function<*>, timeoutMillis: Long): TdApi.Object {
         val active = client ?: throw IllegalStateException("TDLib client is not open")
         return try {
-            withTimeout(requestTimeoutMillis) {
+            withTimeout(timeoutMillis) {
                 suspendCancellableCoroutine { continuation ->
                     active.send(request) { result ->
                         if (continuation.isActive) continuation.resume(result)
@@ -132,7 +145,7 @@ class TdLibClientGatewayImpl(
             // as control flow — so it is translated here into an ordinary failure that can actually be
             // reported. A response that arrives after the timeout finds an inactive continuation and
             // is ignored.
-            throw TdLibRequestTimeoutException(requestTimeoutMillis)
+            throw TdLibRequestTimeoutException(timeoutMillis)
         }
     }
 

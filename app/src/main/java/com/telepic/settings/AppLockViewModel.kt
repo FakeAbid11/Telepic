@@ -2,6 +2,7 @@ package com.telepic.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.telepic.diagnostics.TelepicLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -54,7 +55,8 @@ class AppLockViewModel(
                 settingsRepository.appLockEnabled.first() && isDeviceSecure()
             } catch (cancellation: CancellationException) {
                 throw cancellation
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("AppLockViewModel", "app-lock preference could not be read; starting unlocked", throwable)
                 false
             }
             _resolved.value = true
