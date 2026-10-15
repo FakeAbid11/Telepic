@@ -48,8 +48,13 @@ class KeystoreTdLibKeyProvider(context: Context) : SecureTdLibKeyProvider {
      * and produced a *different* key for a TDLib database already encrypted with the old one — which
      * surfaces as an init error and loses the user's Telegram session. A rename is atomic on the same
      * filesystem, so the target is either the old blob or the new one, never a partial write.
+     *
+     * `suspend` and pinned to [Dispatchers.IO] because it performs Keystore crypto (`Cipher`, key
+     * generation) that blocks for tens to hundreds of milliseconds: a caller that reached it from the
+     * main thread would ANR. Making the dispatcher part of the signature means a future caller cannot
+     * get that wrong.
      */
-    private fun generateAndStore(): ByteArray {
+    private suspend fun generateAndStore(): ByteArray = withContext(Dispatchers.IO) {
         val plaintext = ByteArray(KEY_LENGTH_BYTES).also { SECURE_RANDOM.nextBytes(it) }
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
             init(Cipher.ENCRYPT_MODE, keystoreKey())
@@ -66,7 +71,7 @@ class KeystoreTdLibKeyProvider(context: Context) : SecureTdLibKeyProvider {
                 throw IOException("Could not persist the TDLib database key")
             }
         }
-        return plaintext
+        plaintext
     }
 
     private fun unwrap(blob: ByteArray): ByteArray {

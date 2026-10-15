@@ -6,8 +6,18 @@ import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
-/** Verifies the manifest round-trip preserves the stable remote identity and metadata. */
+/**
+ * Verifies the manifest round-trip preserves the stable remote identity and metadata.
+ *
+ * Robolectric is needed because the corrupted-value path logs through
+ * [com.telepic.diagnostics.TelepicLog], which reaches `android.util.Log`.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class CloudMappingTest {
 
     private val media = CloudMedia(
@@ -37,5 +47,13 @@ class CloudMappingTest {
         val entity = media.toEntity(nowMillis = 1L)
         assertEquals(7L, entity.chatId)
         assertEquals(42L, entity.messageId)
+    }
+
+    @Test
+    fun `an unknown media type is logged and falls back to IMAGE`() {
+        // A corrupted row (failed migration / manual DB edit) must not masquerade as a valid photo
+        // without a trace. The IMAGE fallback is preserved, but it is now reported.
+        val corrupted = media.toEntity(nowMillis = 1L).copy(mediaType = "NOT_A_TYPE")
+        assertEquals(CloudMediaType.IMAGE, corrupted.toDomain().mediaType)
     }
 }

@@ -1,6 +1,7 @@
 package com.telepic.data.backup
 
 import com.telepic.data.backup.db.BackupQueueEntity
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.BackupState
@@ -21,7 +22,12 @@ object BackupMapping {
         fileName = fileName,
         sizeBytes = sizeBytes,
         modifiedTimeSeconds = modifiedTimeSeconds,
-        state = BackupState.fromName(state) ?: BackupState.NOT_BACKED_UP,
+        state = BackupState.fromName(state) ?: run {
+            // fromName() returns null for an unknown name; defaulting silently hid database corruption
+            // or a migration bug. Log it so a bad row is visible rather than rendered as a valid item.
+            TelepicLog.warn("BackupMapping", "unknown backup state '$state'; defaulting to NOT_BACKED_UP")
+            BackupState.NOT_BACKED_UP
+        },
         retryCount = retryCount,
         lastError = lastError,
         telegramChatId = telegramChatId,

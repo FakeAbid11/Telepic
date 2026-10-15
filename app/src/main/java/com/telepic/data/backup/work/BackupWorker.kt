@@ -71,6 +71,12 @@ class BackupWorker(
     private suspend fun runPass(): Result {
         val repo = repository
 
+        // Create the notification channel once per run, not on every foreground update: ensureChannel
+        // does a `getNotificationChannel` binder round-trip and buildNotification is called on each
+        // progress tick. Per-run (rather than Application.onCreate) keeps it exercised by
+        // BackupWorkerTest's TestListenableWorkerBuilder lifecycle.
+        ensureChannel(applicationContext)
+
         // Repair anything a previous process left mid-flight before touching new work.
         repo.recoverInterruptedWork()
 
@@ -138,7 +144,6 @@ class BackupWorker(
     }
 
     private fun buildNotification(uploaded: Int, processed: Int): Notification {
-        ensureChannel(applicationContext)
         val text = if (processed > 0) {
             applicationContext.getString(R.string.backup_notification_progress, uploaded, processed)
         } else {

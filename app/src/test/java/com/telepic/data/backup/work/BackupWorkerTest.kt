@@ -125,4 +125,17 @@ class BackupWorkerTest {
         )
         assertEquals(ListenableWorker.Result.success(), worker(repo).doWork())
     }
+
+    @Test
+    fun `the notification channel is created once per run, independent of any notification`() = runBlocking {
+        // An empty queue means buildNotification is never called this run, so the channel can only
+        // exist because runPass() creates it up front — the point of moving ensureChannel off the
+        // per-progress-update path.
+        val repo = FakeRepo(mutableListOf())
+        assertEquals(ListenableWorker.Result.success(), worker(repo).doWork())
+
+        val manager = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .getSystemService(android.app.NotificationManager::class.java)
+        assertTrue("backup channel was not created", manager.getNotificationChannel("telepic_backup") != null)
+    }
 }

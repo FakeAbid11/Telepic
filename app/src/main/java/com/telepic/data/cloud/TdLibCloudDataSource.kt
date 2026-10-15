@@ -186,7 +186,17 @@ class TdLibCloudDataSource(
         }
         val chat = chatResponse as? TdApi.Chat ?: return null
         val member = currentUserId()?.let { userId ->
-            gateway.request(TdApiCloudRequests.getChatMember(chatId, userId)) as? TdApi.ChatMember
+            when (val memberResponse = gateway.request(TdApiCloudRequests.getChatMember(chatId, userId))) {
+                is TdApi.ChatMember -> memberResponse
+                is TdApi.Error -> {
+                    // Logged rather than silently cast to null: "I can see the channel but Telepic says
+                    // it's not mine" needs a trace to inspect, and a failing lookup is otherwise
+                    // indistinguishable from a chat the account genuinely is not a member of.
+                    TelepicLog.debug("CloudDiscovery", "chat $chatId member lookup failed: ${memberResponse.message}")
+                    null
+                }
+                else -> null
+            }
         }
         // Ownership and posting rights come only from the account's real member status, never the
         // title: an admin of someone else's same-name channel is postable but NOT owned.

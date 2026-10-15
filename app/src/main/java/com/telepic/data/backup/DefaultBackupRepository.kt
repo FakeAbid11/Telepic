@@ -314,7 +314,16 @@ class DefaultBackupRepository(
 
     /** The queue row's cloud media type; a corrupted value must never silently change upload semantics. */
     private fun mediaTypeOf(item: BackupQueueEntity): CloudMediaType =
-        runCatching { CloudMediaType.valueOf(item.mediaType) }.getOrDefault(CloudMediaType.IMAGE)
+        runCatching { CloudMediaType.valueOf(item.mediaType) }.getOrElse {
+            // Same corruption-hiding class as the CloudMapping/BackupMapping defaults: surface the
+            // fallback in logs rather than silently reinterpreting an unknown kind as a photo.
+            TelepicLog.warn(
+                "BackupRepository",
+                "unknown media type '${item.mediaType}' for row ${item.id}; defaulting to IMAGE",
+                it,
+            )
+            CloudMediaType.IMAGE
+        }
 
     private fun safeError(throwable: Throwable): String =
         (throwable.message ?: "Upload failed").take(160)
