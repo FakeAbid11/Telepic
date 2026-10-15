@@ -53,6 +53,8 @@ class TelegramSessionManagerTest {
         @Volatile var failEmailAddress: Boolean = false
         @Volatile var failEmailCode: Boolean = false
         @Volatile var requests: List<TdApi.Function<*>> = emptyList()
+        /** What GetMe reports — the signed-in account's display identity. */
+        @Volatile var me: TdApi.Object = TdApi.Ok()
 
         fun setParametersSent(): Int = requests.count { it is TdApi.SetTdlibParameters }
 
@@ -83,6 +85,7 @@ class TelegramSessionManagerTest {
                     if (failEmailCode) TdApi.Error(400, "code invalid") else TdApi.Ok()
                 is TdApi.ResendLoginEmailAddressCode ->
                     TdApi.EmailAddressAuthenticationCodeInfo("a***@gmail.com", 5)
+                is TdApi.GetMe -> me
                 else -> TdApi.Ok()
             }
         }
@@ -330,5 +333,49 @@ class TelegramSessionManagerTest {
             m.state.value !is TelegramAuthState.WaitingForEmailCode,
         )
         m.close()
+    }
+
+    // --- Account identity ---------------------------------------------------------------------
+
+    /** Drives a fresh manager to Authorized with [account] as the GetMe reply. */
+    private suspend fun authorizedUserFor(account: TdApi.Object): TelegramUser {
+        val gateway = FakeGateway().apply { me = account }
+        val m = manager(gateway)
+        m.initialize()
+        // Wait for the parameters request before pushing state: replay = 1 with DROP_OLDEST discards
+        // an update that lands while open()'s own parameters wait is on the same flow.
+        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        gateway.emit(TdApi.AuthorizationStateReady())
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+        val user = (m.state.value as TelegramAuthState.Authorized).user
+        m.close()
+        return user
+    }
+
+    @Test
+    fun `an active username is carried through from TDLib`() = runBlocking {
+        // TDLib reports usernames as a struct, not a single field; the active username wins.
+        val user = authorizedUserFor(
+            TdApi.User().apply {
+                id = 99L
+                firstName = "Ada"
+                lastName = "Lovelace"
+                usernames = TdApi.Usernames(arrayOf("ada_l"), emptyArray<String>(), "ada", emptyArray<String>())
+            },
+        )
+        assertEquals("ada_l", user.username)
+    }
+
+    @Test
+    fun `the editable username is the fallback when no active username exists`() = runBlocking {
+        val user = authorizedUserFor(
+            TdApi.User().apply {
+                id = 99L
+                firstName = "Ada"
+                lastName = null
+                usernames = TdApi.Usernames(emptyArray<String>(), emptyArray<String>(), "ada", emptyArray<String>())
+            },
+        )
+        assertEquals("ada", user.username)
     }
 }

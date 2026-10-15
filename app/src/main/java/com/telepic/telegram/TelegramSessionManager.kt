@@ -212,7 +212,10 @@ class TelegramSessionManager(
                     id = me.id,
                     firstName = me.firstName,
                     lastName = me.lastName,
-                    username = null,
+                    // TDLib exposes usernames as a struct (active + editable). Prefer an active
+                    // username, then fall back to the account's own editable one; both are optional.
+                    username = me.usernames?.activeUsernames?.firstOrNull()
+                        ?: me.usernames?.editableUsername?.takeIf { it.isNotBlank() },
                 )
                 publishMappedState()
             }

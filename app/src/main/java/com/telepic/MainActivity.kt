@@ -3,12 +3,12 @@ package com.telepic
 import android.app.KeyguardManager
 import android.os.Bundle
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -21,8 +21,12 @@ import com.telepic.ui.TelepicRoot
 /**
  * Single-activity host. Wires the DI container into the theme/onboarding/app-lock ViewModels and
  * hands off all UI to [TelepicRoot], which handles startup routing and the lock gate.
+ *
+ * Extends `FragmentActivity` rather than `ComponentActivity` because the app-lock's
+ * `BiometricPrompt` requires a `FragmentActivity` host. `FragmentActivity` is a `ComponentActivity`,
+ * so `setContent` / `enableEdgeToEdge` below are unaffected.
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

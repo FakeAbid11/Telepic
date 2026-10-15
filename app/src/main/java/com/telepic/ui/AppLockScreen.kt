@@ -1,9 +1,9 @@
 package com.telepic.ui
 
-import android.app.Activity
-import android.app.KeyguardManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,12 +19,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import com.telepic.R
 import com.telepic.ui.theme.TelepicTokens
 
@@ -39,13 +44,14 @@ import com.telepic.ui.theme.TelepicTokens
  * `ON_START` and the snapshot is taken when the activity stops.
  *
  * Authentication is delegated to the device's own credential (PIN / pattern / password) through
- * `KeyguardManager`. That is deliberate: Telepic stores no credential of its own, so there is nothing
- * for it to get wrong — the platform owns the secret, the rate limiting and the lockout.
+ * `BiometricPrompt` in `DEVICE_CREDENTIAL` mode. That is deliberate: Telepic stores no credential of
+ * its own, so there is nothing for it to get wrong — the platform owns the secret, the rate limiting
+ * and the lockout. This replaced the deprecated `KeyguardManager.createConfirmDeviceCredentialIntent`,
+ * which still worked on every supported API but was flagged for removal.
  *
  * The prompt is raised immediately, because the only thing a lock screen is for is getting out of the
  * way once the user has authenticated. If they dismiss it, the button re-raises it.
  */
-@Suppress("DEPRECATION")
 @Composable
 fun AppLockScreen(
     onUnlocked: () -> Unit,
@@ -54,28 +60,53 @@ fun AppLockScreen(
     val context = LocalContext.current
     val spacing = TelepicTokens.spacing
 
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) onUnlocked()
+    // BiometricPrompt requires a FragmentActivity host; MainActivity is one. Resolved once. A null
+    // host means there is no way to raise the prompt, which requestUnlock handles by releasing the
+    // gate rather than trapping the user.
+    val activity = remember(context) { context.findFragmentActivity() }
+    val currentOnUnlocked by rememberUpdatedState(onUnlocked)
+    val prompt = remember(activity, context) {
+        activity?.let { host ->
+            BiometricPrompt(
+                host,
+                ContextCompat.getMainExecutor(context),
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        currentOnUnlocked()
+                    }
+
+                    override fun onAuthenticationFailed() {
+                        // A single unrecognised attempt: the prompt stays up so the user can retry.
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        // Cancel / lockout / negative button: never unlock. The screen stays, and the
+                        // button re-raises the prompt — the same behaviour as dismissing the old
+                        // KeyguardManager confirmation.
+                    }
+                },
+            )
+        }
     }
 
-    // `createConfirmDeviceCredentialIntent` is deprecated in favour of BiometricPrompt, which would
-    // require a FragmentActivity host and an extra dependency for the same device-credential prompt.
-    // It still works on every API Telepic supports (26+) and returns null when the device has no
-    // credential — the case the caller has already excluded, and which is handled below anyway.
+    val promptInfo = remember(context) {
+        BiometricPrompt.PromptInfo.Builder()
+            .setTitle(context.getString(R.string.app_lock_prompt_title))
+            .setSubtitle(context.getString(R.string.app_lock_prompt_body))
+            // minSdk 26: DEVICE_CREDENTIAL is the supported authenticator. Do NOT also set a negative
+            // button — it conflicts with DEVICE_CREDENTIAL and throws on API 30+.
+            .setAllowedAuthenticators(BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .build()
+    }
+
     val requestUnlock: () -> Unit = {
-        val keyguard = context.getSystemService(KeyguardManager::class.java)
-        val intent = keyguard?.createConfirmDeviceCredentialIntent(
-            context.getString(R.string.app_lock_prompt_title),
-            context.getString(R.string.app_lock_prompt_body),
-        )
-        if (intent != null) {
-            launcher.launch(intent)
-        } else {
-            // No credential to check against: releasing the gate is the only honest outcome. Trapping
-            // the user behind a prompt the device will never show would be the worst possible bug here.
+        // No credential to check against, or no FragmentActivity host to prompt from: releasing the
+        // gate is the only honest outcome. Trapping the user behind a prompt the device will never
+        // show would be the worst possible bug here.
+        if (prompt == null || !context.hasDeviceCredential()) {
             onUnlocked()
+        } else {
+            prompt.authenticate(promptInfo)
         }
     }
 
@@ -132,4 +163,17 @@ fun AppLockScreen(
             }
         }
     }
+}
+
+/** True when the device has a PIN / pattern / password to authenticate against. */
+private fun Context.hasDeviceCredential(): Boolean =
+    BiometricManager.from(this)
+        .canAuthenticate(BiometricManager.Authenticators.DEVICE_CREDENTIAL) ==
+        BiometricManager.BIOMETRIC_SUCCESS
+
+/** Walks the `ContextWrapper` chain to the hosting [FragmentActivity], or null when there is none. */
+private tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (this) {
+    is FragmentActivity -> this
+    is ContextWrapper -> baseContext.findFragmentActivity()
+    else -> null
 }
