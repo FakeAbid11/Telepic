@@ -78,6 +78,18 @@
                 tools:node="remove" />
         </provider>
 
+        <!--
+          WorkManager's foreground service is declared by the library WITHOUT a foregroundServiceType.
+          Since targetSdk 34 a foreground service started as type "none" is rejected with
+          InvalidForegroundServiceTypeException, so a backup run crashed the app on Android 14+. The
+          worker now tags its notification dataSync; this merge is what makes that type legal — it must
+          match FOREGROUND_SERVICE_TYPE_DATA_SYNC in BackupWorker and the permission above.
+        -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

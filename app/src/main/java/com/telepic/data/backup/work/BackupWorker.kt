@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
@@ -90,7 +91,7 @@ class BackupWorker(
             ?.let { it.queued + it.uploading }
             ?: 0
         if (pending > 0) {
-            runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(uploaded = 0, processed = 0))) }
+            runCatching { setForeground(foregroundInfo(buildNotification(uploaded = 0, processed = 0))) }
                 .onFailure {
                     // Best-effort by design, but it used to be invisible: a denied notification
                     // permission or an Android 14 background-FGS refusal left the run with no
@@ -109,7 +110,7 @@ class BackupWorker(
         if (summary.processed > 0) {
             // Same notification id, so this updates the in-place foreground line with real counts
             // rather than posting a second one WorkManager does not own.
-            runCatching { setForeground(ForegroundInfo(NOTIFICATION_ID, buildNotification(summary.uploaded, summary.processed))) }
+            runCatching { setForeground(foregroundInfo(buildNotification(summary.uploaded, summary.processed))) }
                 .onFailure { TelepicLog.warn("BackupWorker", "could not update the backup notification", it) }
         }
 
@@ -158,6 +159,21 @@ class BackupWorker(
             .setProgress(0, 0, true)
             .build()
     }
+
+    /**
+     * A foreground notification carrying the service type WorkManager must pass to
+     * `startForeground` on Android 10+. WorkManager's own `SystemForegroundService` is declared
+     * without a `foregroundServiceType`, and since targetSdk 34 a foreground service started as
+     * type "none" is rejected outright — `InvalidForegroundServiceTypeException`, which killed the
+     * process the moment a backup began. `dataSync` is the correct type for an upload and matches
+     * the `FOREGROUND_SERVICE_DATA_SYNC` permission and the manifest's service override.
+     */
+    private fun foregroundInfo(notification: Notification): ForegroundInfo =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            ForegroundInfo(NOTIFICATION_ID, notification)
+        }
 
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
