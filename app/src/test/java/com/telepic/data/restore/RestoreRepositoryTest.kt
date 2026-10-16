@@ -12,6 +12,9 @@ import com.telepic.domain.cloud.CloudUploadResult
 import com.telepic.domain.cloud.LocalDownloadedMedia
 import com.telepic.domain.cloud.TelepicCloudDestination
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,11 +72,33 @@ class RestoreRepositoryTest {
 
     private class FakePublisher(private var result: PublishResult) : MediaStorePublisher {
         var lastSource: String? = null
+
+        /** How many times bytes were actually written — the duplicate-suppression assertion. */
+        var publishCount = 0
+
+        /** URIs the fake provider currently holds a live row for. */
+        val liveUris = mutableSetOf<String>()
+
         override suspend fun publish(sourcePath: String, mimeType: String?, displayName: String?): PublishResult {
             lastSource = sourcePath
+            publishCount++
+            (result as? PublishResult.Inserted)?.let { liveUris += it.uri }
             return result
         }
+
+        override suspend fun exists(uri: String): Boolean = uri in liveUris
+
         fun setResult(r: PublishResult) { result = r }
+
+        /** Simulates the user deleting the published copy from the gallery. */
+        fun delete(uri: String) { liveUris.remove(uri) }
+    }
+
+    private class FakeLedger : RestoreLedger {
+        private val map = mutableMapOf<String, String>()
+        override suspend fun publishedUri(identity: RestoreIdentity): String? = map[identity.token()]
+        override suspend fun record(identity: RestoreIdentity, uri: String) { map[identity.token()] = uri }
+        override suspend fun forget(identity: RestoreIdentity) { map.remove(identity.token()) }
     }
 
     @Test
@@ -135,5 +160,79 @@ class RestoreRepositoryTest {
         val file = fileWithBytes(bytes)
         val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), FakePublisher(PublishResult.Failed))
         assertEquals(RestoreResult.Failed(RestoreFailure.PUBLISH_FAILED), repository.restore(media(hash = sha(bytes))))
+    }
+
+    @Test
+    fun `a repeat restore of the same item reuses the recorded copy without republishing`() = runBlocking {
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val file = fileWithBytes(bytes)
+        val publisher = FakePublisher(PublishResult.Inserted("content://media/7"))
+        val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), publisher, FakeLedger())
+
+        val first = repository.restore(media())
+        val second = repository.restore(media())
+
+        assertEquals("content://media/7", (first as RestoreResult.Restored).localUri)
+        assertEquals("content://media/7", (second as RestoreResult.Restored).localUri)
+        assertEquals("the same item must not be published twice", 1, publisher.publishCount)
+    }
+
+    @Test
+    fun `a different cloud item is published even when it shares name, size and mime`() = runBlocking {
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val file = fileWithBytes(bytes)
+        val publisher = FakePublisher(PublishResult.Inserted("content://media/x"))
+        val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), publisher, FakeLedger())
+
+        // Two DIFFERENT remote messages carrying byte-identical files: identity must be the remote
+        // id, not the name/size/mime — which would (wrongly) collapse them into one.
+        repository.restore(media().copy(messageId = 7L))
+        repository.restore(media().copy(messageId = 8L))
+
+        assertEquals(2, publisher.publishCount)
+    }
+
+    @Test
+    fun `a recorded copy the user deleted is forgotten and republished, never falsely reported`() = runBlocking {
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val file = fileWithBytes(bytes)
+        val publisher = FakePublisher(PublishResult.Inserted("content://media/9"))
+        val ledger = FakeLedger()
+        val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), publisher, ledger)
+
+        assertTrue(repository.restore(media()) is RestoreResult.Restored)
+        publisher.delete("content://media/9") // the user removed it from the gallery
+
+        val again = repository.restore(media())
+        assertTrue(again is RestoreResult.Restored)
+        assertEquals("the vanished copy must be republished, not trusted", 2, publisher.publishCount)
+    }
+
+    @Test
+    fun `bytes that cannot be read fail integrity, never a false success`() = runBlocking {
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val file = fileWithBytes(bytes)
+        val repository = DefaultRestoreRepository(
+            cloudRepository = FakeCloud(file.absolutePath),
+            publisher = FakePublisher(PublishResult.Inserted("x")),
+            ledger = null,
+            computeRestoredHash = { throw java.io.IOException("unreadable") },
+        )
+        assertEquals(RestoreResult.Failed(RestoreFailure.VERIFY_FAILED), repository.restore(media()))
+    }
+
+    @Test
+    fun `concurrent restores of the same item publish exactly one copy`() = runBlocking {
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val file = fileWithBytes(bytes)
+        val publisher = FakePublisher(PublishResult.Inserted("content://media/10"))
+        val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), publisher, FakeLedger())
+
+        val results = (1..8).map {
+            async(Dispatchers.Default) { repository.restore(media()) }
+        }.awaitAll()
+
+        assertTrue(results.all { it is RestoreResult.Restored })
+        assertEquals(1, publisher.publishCount)
     }
 }

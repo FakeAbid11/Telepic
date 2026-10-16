@@ -51,6 +51,7 @@ import com.telepic.data.organization.LocalMediaDeleter
 import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.data.organization.MediaStoreLocalDeleter
 import com.telepic.data.restore.AndroidMediaStorePublisher
+import com.telepic.data.restore.DataStoreRestoreLedger
 import com.telepic.data.restore.DefaultRestoreRepository
 import com.telepic.data.restore.RestoreRepository
 import com.telepic.onboarding.OnboardingRepository
@@ -279,6 +280,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         DefaultRestoreRepository(
             cloudRepository = cloudRepository,
             publisher = AndroidMediaStorePublisher(appContext),
+            // App-owned record of (remote identity -> published uri) so a repeat "Save to device"
+            // reuses the earlier copy instead of publishing a duplicate. Keyed on the real Telegram
+            // identity, never on name/size/MIME.
+            ledger = DataStoreRestoreLedger(appContext.telepicDataStore),
         )
     }
 

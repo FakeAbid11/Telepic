@@ -79,10 +79,12 @@ class MainActivity : FragmentActivity() {
             // outlived the lock and was visible in the task switcher. Setting the flag blanks both the
             // Recents snapshot and any screenshot while the lock is on; it is cleared when the user
             // turns the lock off, so a user who wants to screenshot their own photos still can.
-            val lockEnabled by appLockViewModel.enabled.collectAsStateWithLifecycle()
-            LaunchedEffect(lockEnabled) {
+            // `secureWindow` is the preference OR an unreadable state (never "off" by default), so an
+            // unknown lock state still blanks the Recents snapshot rather than leaking the library.
+            val secureWindow by appLockViewModel.secureWindow.collectAsStateWithLifecycle()
+            LaunchedEffect(secureWindow) {
                 window.setFlags(
-                    if (lockEnabled) WindowManager.LayoutParams.FLAG_SECURE else 0,
+                    if (secureWindow) WindowManager.LayoutParams.FLAG_SECURE else 0,
                     WindowManager.LayoutParams.FLAG_SECURE,
                 )
             }

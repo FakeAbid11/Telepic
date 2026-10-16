@@ -13,6 +13,7 @@ import com.telepic.domain.media.Album
 import com.telepic.domain.media.LocalMedia
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingRepository
+import com.telepic.settings.AppLockPreference
 import com.telepic.settings.BackupNetworkPreference
 import com.telepic.settings.SettingsRepository
 import com.telepic.settings.ThemeMode
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -120,6 +122,7 @@ class SettingsViewModelTest {
         override val startVideosMuted: Flow<Boolean> get() = startMuted
         override suspend fun setStartVideosMuted(muted: Boolean) { startMuted.value = muted }
         override val appLockEnabled: Flow<Boolean> get() = appLock
+        override val appLockPreference: Flow<AppLockPreference> get() = appLock.map { AppLockPreference.Known(it) }
         override suspend fun setAppLockEnabled(enabled: Boolean) { appLock.value = enabled }
     }
 

@@ -457,7 +457,10 @@
     <string name="viewer_save_failed">Couldn\'t save to device</string>
     <string name="viewer_save_failed_download">Couldn\'t download the original</string>
     <string name="viewer_save_failed_missing">The original is no longer available</string>
-    <string name="viewer_save_failed_verify">The download couldn\'t be verified</string>
+    <!-- Integrity failure of the download itself (incomplete/unreadable), not a cryptographic
+         comparison — Telegram's stored representation may be recompressed, so no trusted digest is
+         compared. The wording must not imply a verification that did not happen. -->
+    <string name="viewer_save_failed_verify">The downloaded file was incomplete or unreadable</string>
     <string name="viewer_save_failed_storage">Not enough storage space</string>
 
     <!-- ============================ Organization: Favorites / Archive / Trash (Phase 10) ============================ -->
@@ -641,4 +644,11 @@
     <!-- ============================ Navigation fallback ============================ -->
     <string name="nav_invalid_title">This screen couldn\'t be opened.</string>
     <string name="nav_invalid_back">Go back</string>
+
+    <!-- ============================ App-lock recovery ============================ -->
+    <!-- Shown only when the app-lock preference could not be read: the app does NOT fail open, so it
+         explains why the library is hidden and offers a retry rather than showing content. -->
+    <string name="app_lock_recovery_title">App lock state unavailable</string>
+    <string name="app_lock_recovery_body">Telepic couldn\'t read whether app lock is on, so it won\'t show your library until that\'s resolved.</string>
+    <string name="app_lock_recovery_retry">Try again</string>
 </resources>

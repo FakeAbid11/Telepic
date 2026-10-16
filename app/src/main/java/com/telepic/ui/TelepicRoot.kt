@@ -14,6 +14,7 @@ import com.telepic.R
 import com.telepic.di.AppContainer
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingViewModel
+import com.telepic.settings.AppLockState
 import com.telepic.settings.AppLockViewModel
 import com.telepic.settings.ThemeViewModel
 import com.telepic.telegram.TelegramAuthController
@@ -23,14 +24,15 @@ import com.telepic.ui.theme.TelepicTheme
 
 /**
  * Root of the app. Applies the design system, then routes on persisted state:
- * app lock unresolved → [LoadingState]; locked → [AppLockScreen]; loading → [LoadingState];
- * onboarding incomplete → [OnboardingScreen]; otherwise the main application ([TelepicApp]).
- * Onboarding never shows the bottom navigation, and completing it persists and switches the startup
- * destination to Photos.
+ * app lock loading → [LoadingState]; unreadable lock state → [AppLockRecoveryScreen]; locked →
+ * [AppLockScreen]; onboarding loading → [LoadingState]; onboarding incomplete → [OnboardingScreen];
+ * otherwise the main application ([TelepicApp]). Onboarding never shows the bottom navigation, and
+ * completing it persists and switches the startup destination to Photos.
  *
  * The lock is checked *before* the onboarding branch because it has to cover the whole app, not just
- * the main shell — and it waits for [AppLockViewModel.resolved] so the content it exists to hide is
- * never drawn for even one frame.
+ * the main shell — and it waits for the lock state to resolve so the content it exists to hide is
+ * never drawn for even one frame. When the state cannot be determined the app fails closed rather
+ * than assuming the lock is off.
  */
 @Composable
 fun TelepicRoot(
@@ -42,8 +44,7 @@ fun TelepicRoot(
 ) {
     val themeMode by themeViewModel.themeMode.collectAsStateWithLifecycle()
     val onboarding by onboardingViewModel.uiState.collectAsStateWithLifecycle()
-    val lockResolved by appLockViewModel.resolved.collectAsStateWithLifecycle()
-    val locked by appLockViewModel.locked.collectAsStateWithLifecycle()
+    val lockState by appLockViewModel.state.collectAsStateWithLifecycle()
 
     // The grace window is measured from the activity lifecycle rather than from composition: leaving
     // the app does not dispose this composable, so ON_STOP is the only signal that the app really went
@@ -74,8 +75,10 @@ fun TelepicRoot(
 
     TelepicTheme(darkTheme = themeMode.isDarkTheme(isSystemInDarkTheme())) {
         when {
-            !lockResolved -> LoadingState(message = stringResource(R.string.onboarding_loading))
-            locked -> AppLockScreen(onUnlocked = appLockViewModel::unlock)
+            lockState == AppLockState.Loading -> LoadingState(message = stringResource(R.string.onboarding_loading))
+            // Could not read the lock state: fail CLOSED (never assume "off") and offer a retry.
+            lockState == AppLockState.RecoveryRequired -> AppLockRecoveryScreen(onRetry = appLockViewModel::retry)
+            lockState == AppLockState.Locked -> AppLockScreen(onUnlocked = appLockViewModel::unlock)
             onboarding.isLoading -> LoadingState(message = stringResource(R.string.onboarding_loading))
             !onboarding.isCompleted -> {
                 val folders by onboardingViewModel.folders.collectAsStateWithLifecycle()

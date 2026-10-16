@@ -119,6 +119,19 @@ class SettingsRepositoryImpl(
             emit(false)
         }
 
+    override val appLockPreference: Flow<AppLockPreference> = dataStore.data
+        // Explicit type argument: without it the flow narrows to `Flow<Known>` and the catch below
+        // could not emit `Unknown`.
+        .map<Preferences, AppLockPreference> { preferences ->
+            AppLockPreference.Known(preferences[KEY_APP_LOCK] ?: false)
+        }
+        .catch { throwable ->
+            // Do NOT emit `Known(false)` here: for enforcement an unreadable preference means the lock
+            // state is unknown, and the gate must require recovery rather than expose content.
+            TelepicLog.warn("SettingsRepository", "app-lock state could not be read; requiring recovery", throwable)
+            emit(AppLockPreference.Unknown)
+        }
+
     override suspend fun setAppLockEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[KEY_APP_LOCK] = enabled

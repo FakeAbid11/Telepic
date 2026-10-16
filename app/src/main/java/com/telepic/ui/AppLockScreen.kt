@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.ReportProblem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -160,6 +161,67 @@ fun AppLockScreen(
                 modifier = Modifier.padding(top = spacing.xl),
             ) {
                 Text(stringResource(R.string.app_lock_unlock))
+            }
+        }
+    }
+}
+
+/**
+ * Shown when the app-lock preference could not be read at all, so whether the lock is on is unknown.
+ *
+ * This is the fail-*closed* counterpart to [AppLockScreen]: rather than assuming the lock is off (and
+ * exposing the library), Telepic keeps the content hidden and offers an explicit retry. It is not an
+ * authentication prompt — there is nothing to authenticate against when the state itself is unreadable
+ * — so it never claims to have checked a credential.
+ */
+@Composable
+fun AppLockRecoveryScreen(
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = TelepicTokens.spacing
+    Surface(
+        modifier = modifier.fillMaxSize().safeDrawingPadding(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = spacing.xl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.ReportProblem,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(48.dp),
+            )
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = spacing.md),
+            )
+            Text(
+                text = stringResource(R.string.app_lock_recovery_title),
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = spacing.lg),
+            )
+            Text(
+                text = stringResource(R.string.app_lock_recovery_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = spacing.sm),
+            )
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.padding(top = spacing.xl),
+            ) {
+                Text(stringResource(R.string.app_lock_recovery_retry))
             }
         }
     }

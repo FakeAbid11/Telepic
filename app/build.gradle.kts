@@ -17,6 +17,9 @@ val telegramApiId = when {
         ?: error("TELEGRAM_API_ID must be a numeric integer")
 }
 val telegramApiHash = System.getenv("TELEGRAM_API_HASH").orEmpty()
+// Escape before embedding in the generated Java string literal. The api_hash is 32 hex chars today,
+// but an unexpected character must not break (or inject into) the generated BuildConfig.
+val telegramApiHashLiteral = telegramApiHash.replace("\\", "\\\\").replace("\"", "\\\"")
 
 // Release builds must never ship with placeholder credentials: a secret-less release would install
 // fine but leave login permanently dead. Fail the moment a release/bundle task is actually requested
@@ -65,7 +68,7 @@ android {
         }
 
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId.toString())
-        buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHash\"")
+        buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHashLiteral\"")
     }
 
     signingConfigs {

@@ -1,7 +1,6 @@
 package com.telepic.data.restore
 
 import android.content.ContentResolver
-import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
@@ -31,54 +30,47 @@ sealed interface PublishResult {
 /** Seam so MediaStore publication (a device-bound write) can be faked in tests. */
 interface MediaStorePublisher {
     suspend fun publish(sourcePath: String, mimeType: String?, displayName: String?): PublishResult
+
+    /**
+     * Whether [uri] still resolves to a live row in the provider.
+     *
+     * Used to re-verify a previously published copy before a repeat restore trusts it. A URI whose
+     * row the user deleted from the gallery must NOT be reported as a successful save, so an
+     * unverifiable URI answers `false` (re-publish) rather than `true` (claim a save).
+     */
+    suspend fun exists(uri: String): Boolean
 }
 
 /**
  * Publishes a downloaded original into public media storage through the supported Android APIs:
- * a [ContentResolver] insert with the correct collection + MIME + display name (and, on API 29+, a
- * scoped `Pictures/Movies/Telepic` relative path), then a streamed copy of the bytes — never a
- * whole-file `readBytes()`. It writes a NEW entry and lets the provider pick a unique name, so an
- * unrelated existing file is never overwritten. A partial write is abandoned and reported honestly.
- */
+* a [ContentResolver] insert with the correct collection + MIME + display name (and, on API 29+, a
+* scoped `Pictures/Movies/Telepic` relative path), then a streamed copy of the bytes — never a
+* whole-file `readBytes()`. It writes a NEW entry and lets the provider pick a unique name, so an
+* unrelated existing file is never overwritten. A partial write is abandoned and reported honestly.
+*
+* This writer deliberately performs **no** duplicate matching: matching on display name + size + MIME
+* is unsafe (two unrelated files can share all three, so it reported a *different* file as the
+* restored target). Duplicate suppression is the caller's job, driven by the true remote identity in
+* [RestoreLedger].
+*/
 class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
 
     private val resolver: ContentResolver = context.applicationContext.contentResolver
 
-    /**
-     * An already-published copy of the same file, or null.
-     *
-     * Identity is (display name, MIME type, byte size) inside the same collection. Telegram's
-     * re-encoding is deterministic, so restoring the same cloud item twice produces the same name and
-     * the same byte count — which makes this a reliable duplicate signal without a schema change.
-     * `RELATIVE_PATH` is deliberately not part of the match: the provider normalises it with a
-     * trailing slash, so a literal comparison against [relativeDir] would silently never match.
-     *
-     * On API 29+ the match additionally requires `IS_PENDING = 0`: a pending row is exactly the
-     * half-written entry this class creates *before* the bytes are copied, so without the clause a
-     * restore that died mid-write would leave a pending row that every later restore mistook for a
-     * finished copy and reported as `Inserted` — claiming a save for a file that never completed.
-     * `IS_PENDING` does not exist before API 29, so the clause is added only there.
-     */
-    private fun findPublished(collection: Uri, displayName: String, mime: String, size: Long): Uri? =
+    override suspend fun exists(uri: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            var selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?" +
-                " AND ${MediaStore.MediaColumns.SIZE} = ?" +
-                " AND ${MediaStore.MediaColumns.MIME_TYPE} = ?"
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                selection += " AND ${MediaStore.MediaColumns.IS_PENDING} = 0"
-            }
-            val args = arrayOf(displayName, size.toString(), mime)
-            resolver.query(collection, arrayOf(MediaStore.MediaColumns._ID), selection, args, null)
-                ?.use { cursor ->
-                    if (cursor.moveToFirst()) ContentUris.withAppendedId(collection, cursor.getLong(0)) else null
-                }
+            val parsed = Uri.parse(uri)
+            resolver.query(parsed, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+                ?.use { it.moveToFirst() } ?: false
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (throwable: Throwable) {
-            // A refused probe falls through to a fresh insert, so the publish still works — but a
-            // silent null made a provider that always failed to answer look identical to "no
-            // duplicate", so the reason is recorded.
-            TelepicLog.warn("MediaPublish", "the duplicate probe failed; publishing a new copy", throwable)
-            null
+            // Unverifiable → report absent (re-publish) rather than present (claim a save we did not
+            // confirm). Recorded so a provider that always fails to answer is distinguishable.
+            TelepicLog.warn("MediaPublish", "could not confirm a previously published item still exists", throwable)
+            false
         }
+    }
 
     override suspend fun publish(sourcePath: String, mimeType: String?, displayName: String?): PublishResult =
         withContext(Dispatchers.IO) {
@@ -96,14 +88,6 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
                 ?: guessMime(source.name) ?: "application/octet-stream"
             val collection = collectionFor(mime)
             val name = displayName ?: source.name
-            // Already published: report the existing copy rather than adding a second one. "Save to
-            // device" is offered for any ready cloud item, so a repeat tap published the same bytes
-            // twice. `RestoreResult.Restored.restoredContentHash` was documented as the dedup key for
-            // exactly this and is read by nothing, and recording it would need a new column and a
-            // schema migration — so the check is made against the provider, before the insert.
-            findPublished(collection, name, mime, source.length())?.let {
-                return@withContext PublishResult.Inserted(it.toString())
-            }
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                 put(MediaStore.MediaColumns.MIME_TYPE, mime)

@@ -1,5 +1,6 @@
 package com.telepic.telegram
 
+import com.telepic.diagnostics.TelepicLog
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -117,13 +118,24 @@ class TdLibClientGatewayImpl(
         // crashing later. Any Throwable from native binding is propagated to the caller.
         try {
             System.loadLibrary("tdjni")
-        } catch (_: UnsatisfiedLinkError) {
-            // Ignore: Client.create may still succeed if its static block already loaded it.
+        } catch (link: UnsatisfiedLinkError) {
+            // Not fatal here: Client.create may still succeed if its static block already loaded the
+            // library. Recorded (debug — this is an expected outcome on the fallback path, not a
+            // failure) so a genuinely missing native library is diagnosable instead of silent.
+            TelepicLog.debug("TdLibGateway", "explicit tdjni load failed; relying on Client's static initializer", link)
         }
         client = Client.create(
             { update -> _updates.tryEmit(update) }, // update handler
-            { _ -> /* update processing exception: swallow, never crash */ },
-            { _ -> /* default exception handler: swallow */ },
+            // TDLib reports a per-update failure and a backend-internal exception through these
+            // callbacks; they must never crash the app, but swallowing them silently left a device-only
+            // TDLib failure with no trace. Debug-gated and message-only — no request/response payload,
+            // which can carry private media or credentials, is ever logged.
+            { exception ->
+                TelepicLog.debug("TdLibGateway", "TDLib update-processing exception", exception)
+            },
+            { exception ->
+                TelepicLog.debug("TdLibGateway", "TDLib default exception", exception)
+            },
         )
     }
 

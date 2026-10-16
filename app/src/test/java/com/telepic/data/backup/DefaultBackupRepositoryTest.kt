@@ -147,7 +147,7 @@ class DefaultBackupRepositoryTest {
     }
 
     @Test
-    fun `re-queueing a failed item is real work, not "already backed up"`() = runBlocking {
+    fun `re-queueing a failed item is real work, not already backed up`() = runBlocking {
         val r = repo(FakeCloud(uploadError = CloudUploadRejectedException("Unsupported media")))
         r.enqueue(media(1))
         r.processPendingWork(maxItems = 1)

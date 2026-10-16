@@ -193,7 +193,7 @@ Defined in [`app/build.gradle.kts`](app/build.gradle.kts):
 |---|---|
 | `applicationId` / `namespace` | `com.telepic` |
 | `minSdk` | 26 (Android 8.0) — required by the TDLib artifact |
-| `targetSdk` / `compileSdk` | 35 |
+| `targetSdk` / `compileSdk` | 36 (Android 16) |
 | ABI filters | `arm64-v8a`, `armeabi-v7a` (x86/x86_64 excluded) |
 | Java / Kotlin target | 17 |
 | Release build | R8 minification + resource shrinking, with project ProGuard rules |
@@ -350,7 +350,7 @@ never run against the real thing.
 | TDLib request/response shapes | Written against `io.github.tdlib-android:core:0.1.1` (TDLib 1.8.x); the generated `TdApi` surface must be finalized on-device |
 | Telegram auth round-trip | Needs a real phone number, code, and optional 2FA — or, for an account registered by email, the emailed code (and possibly a Telegram Premium purchase) |
 | Cloud browse / preview / original download | Needs a populated channel and a live session |
-| Backup upload (`SendMessage` + `InputFile`) | Same bring-up; until then `TdLibCloudDataSource.upload` throws an honest transient failure and items stay `QUEUED`/`WAITING` — never falsely `BACKED_UP` |
+| Backup upload (`SendMessage` + `InputFile`) | The upload path is implemented (`TdLibCloudDataSource.upload` sends the staged file and polls the sent message's sending state); a live send against a real session is what remains unverified. An item stays `QUEUED`/`WAITING` on a transient failure and is never marked `BACKED_UP` without a confirmed remote identity |
 | MediaStore write (restore) and delete consent | Provider behaviour and the system consent dialog are device-only |
 | ExoPlayer playback, osmdroid rendering, Coil GIF decode | Rendering is device-only |
 | App lock (`KeyguardManager` device-credential prompt) | The credential prompt and the activity `ON_STOP`/`ON_START` round trip are device-only |
@@ -513,9 +513,9 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 
 **Part D — Restore / download original to device**
 
-- `RestoreRepository`: explicit download of a cloud original → **SHA-256 verification** of the bytes (against the trusted manifest hash when present) → publish into public media storage via a `MediaStore` `ContentResolver` insert + streamed copy (correct MIME, scoped `Pictures|Movies/Telepic` path, `IS_PENDING` commit, no overwrite of unrelated files, partial-write cleanup). A **"Save to device"** action lives in the Viewer for cloud items; success is reported only after a committed publication, and every earlier step is a distinct, honest failure.
+- `RestoreRepository`: explicit download of a cloud original, then an **integrity check of the downloaded bytes** (present, non-empty, and readable enough to stream through SHA-256), then publication into public media storage via a `MediaStore` `ContentResolver` insert + streamed copy (correct MIME, scoped `Pictures|Movies/Telepic` path, `IS_PENDING` commit, no overwrite of unrelated files, partial-write cleanup). The computed digest is the *published copy's* identity, **not** a comparison against a trusted manifest hash: Telegram may recompress the stored representation, so comparing the download to the original's hash would reject legitimate restores. A **"Save to device"** action lives in the Viewer for cloud items; success is reported only after a committed publication, and every earlier step is a distinct, honest failure. Repeat restores of the same item are deduplicated by the true remote identity (`chatId` + `messageId`) recorded in an app-owned ledger, never by display name/size/MIME.
 - Publishing needs **write access on API ≤ 28** (the scoped-storage columns only exist on API 29+), so the app declares `WRITE_EXTERNAL_STORAGE` with `maxSdkVersion="29"` and requests it alongside media access on those versions only.
-- CI-tested with a fake cloud source and a fake publisher (success, unavailable/missing, verify mismatch, low-storage, publish failure). **Real Telegram download and the MediaStore write are device-gated and NOT TESTED**; byte-for-byte preservation of a restored *image* is not claimed (Telegram's photo pipeline may recompress), consistent with the upload note.
+- CI-tested with a fake cloud source and a fake publisher (success, unavailable/missing, unreadable bytes, low-storage, publish failure, repeat-restore dedup by remote identity, and concurrent restores publishing once). **Real Telegram download and the MediaStore write are device-gated and NOT TESTED**; byte-for-byte preservation of a restored *image* is not claimed (Telegram's photo pipeline may recompress), consistent with the upload note.
 
 **Cross-phase:** Phases 1–9 are preserved; the new tables are additive (non-destructive migrations); ARM-only packaging and `minSdk 26` are unchanged; and GitHub Secrets remain the only credential source.
 
@@ -534,6 +534,8 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 - **No offline map tiles.** The map requires connectivity.
 - **`SELECT_FOLDER` is keyed to MediaStore buckets.** A folder *is* a bucket, and the bucket id is derived from the folder's path — so a folder renamed or moved outside the app drops out of the selection and has to be picked again. Only folders that currently hold photos or videos are offered (an empty folder produces no bucket), and on Android 9 and below there is no `RELATIVE_PATH`, so two folders sharing a name cannot be told apart in the picker there.
 - **Restored images are not byte-for-byte identical** to the source, because Telegram may recompress photos; only the *restored* bytes are hashed.
+- **Restore deduplication is app-owned.** Repeat restores of the same cloud item are recognized by Telegram `chatId` + `messageId` recorded in an app-local ledger (the recorded MediaStore row is re-verified before it is trusted). After an uninstall or "clear data" that ledger is gone, so a repeat restore may add a second copy — deliberately preferred over the previous behaviour, which matched on display name/size/MIME and could report a *different* file as the restored target.
+- **An unreadable app-lock preference fails closed.** If the persisted lock setting cannot be read, Telepic hides the library behind a recovery screen with a retry instead of assuming the lock is off and opening the content it protects. The window is also protected (`FLAG_SECURE`) whenever the state is unknown.
 - **The open-source licence list is hand-maintained** (`OpenSourceLicenses.kt`), so it has to be updated whenever a runtime dependency changes. It mirrors `gradle/libs.versions.toml` rather than being generated.
 - **ARM-only**, `minSdk 26`.
 - **No shipping release is built.** Only the debug APK is produced on every push, because that is the artifact being installed while the project is being tested. The `release-smoke` job that compiles the R8/minified configuration and builds an AAB is **manual-only** — run it from *Actions → Android CI → Run workflow* before any release attempt, so shrinking and the bundle path cannot rot unnoticed in the meantime.

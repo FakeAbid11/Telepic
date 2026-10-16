@@ -2,6 +2,7 @@ package com.telepic.data.backup.hash
 
 import android.content.ContentResolver
 import android.net.Uri
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.backup.ContentHashResult
 import java.io.IOException
 import java.io.InputStream
@@ -67,7 +68,11 @@ class AndroidContentHasher(
             // swallowing it here would report a torn-down scan as a broken file — the caller uses this
             // answer to choose between "hash failed" and "source unreadable".
             throw cancellation
-        } catch (_: Throwable) {
+        } catch (throwable: Throwable) {
+            // A per-item, expected outcome (permission revoked, item deleted) rather than an
+            // exceptional failure, so debug-gated — but recorded, so "nothing hashed" is
+            // distinguishable from "every read is being refused".
+            TelepicLog.debug("ContentHasher", "content at the requested uri is not readable", throwable)
             false
         }
     }

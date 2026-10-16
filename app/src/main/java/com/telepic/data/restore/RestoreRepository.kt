@@ -5,8 +5,11 @@ import com.telepic.data.backup.hash.hashContent
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.domain.cloud.CloudMedia
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 sealed interface RestoreResult {
@@ -17,8 +20,17 @@ sealed interface RestoreResult {
 
 enum class RestoreFailure {
     DOWNLOAD_UNAVAILABLE,
+
+    /** The download completed but the file is absent or zero-length (presence/size check failed). */
     MISSING_REMOTE,
+
+    /**
+     * The downloaded bytes could not be read/hashed. This is an integrity failure of the *download*,
+     * NOT a failed comparison against a trusted digest — no such comparison is made for Telegram's
+     * (possibly recompressed) stored representation.
+     */
     VERIFY_FAILED,
+
     LOW_STORAGE,
     PUBLISH_FAILED,
 }
@@ -36,6 +48,11 @@ enum class RestoreFailure {
  * completed file (TDLib's synchronous download yields a completed file or nothing), and we compute
  * the RESTORED bytes' SHA-256 as `restoredContentHash` — the identity of the file we publish, for
  * downstream dedup. No claim of byte-for-byte equality with the source is made for transformed media.
+ *
+ * Duplicate handling is keyed on the true remote identity ([RestoreIdentity]), never on display
+ * name/size/MIME: a repeat restore of the same cloud item reuses the copy the [RestoreLedger]
+ * recorded for it (after the provider confirms that row still exists), and a *different* item is
+ * always published even if it happens to share a name, size and MIME with an earlier one.
  */
 interface RestoreRepository {
     suspend fun restore(media: CloudMedia): RestoreResult
@@ -44,38 +61,69 @@ interface RestoreRepository {
 class DefaultRestoreRepository(
     private val cloudRepository: CloudRepository,
     private val publisher: MediaStorePublisher,
+    private val ledger: RestoreLedger? = null,
+    // Seam for the restored-bytes digest so the integrity-failure path is testable without a real
+    // unreadable file. Production streams the file's bytes; no trusted digest is compared (see the
+    // interface KDoc) — the hash is recorded as the published copy's identity.
+    private val computeRestoredHash: suspend (File) -> String = { file ->
+        hashContent(ContentStreamSource { file.inputStream() }, expectedSize = null).sha256
+    },
 ) : RestoreRepository {
 
+    // Serialises restores of the SAME remote item so two concurrent "Save to device" requests cannot
+    // both pass the ledger check and publish a second copy. Distinct items still restore in parallel.
+    // Entries are bounded by the number of distinct items restored in the process lifetime.
+    private val itemLocks = ConcurrentHashMap<String, Mutex>()
+
     override suspend fun restore(media: CloudMedia): RestoreResult = withContext(Dispatchers.IO) {
-        // The whole pipeline — download, on-disk existence/length checks, a full streaming SHA-256 of
-        // the file, and the MediaStore publish — is file I/O and hashing. It used to run on whatever
-        // dispatcher the caller happened to be on (the Viewer's `viewModelScope`, i.e. Main), so a
-        // large original blocked the UI thread for the length of a hash. Everything below is IO-bound.
-        //
+        val identity = RestoreIdentity(media.chatId, media.messageId)
+        itemLocks.computeIfAbsent(identity.token()) { Mutex() }.withLock {
+            restoreLocked(media, identity)
+        }
+    }
+
+    /**
+     * The whole pipeline — download, on-disk existence/length checks, a full streaming SHA-256 of the
+     * file, and the MediaStore publish — is file I/O and hashing, so it runs on [Dispatchers.IO]
+     * rather than whatever dispatcher the caller happened to be on (the Viewer's `viewModelScope`,
+     * i.e. Main), where a large original blocked the UI thread for the length of a hash.
+     */
+    private suspend fun restoreLocked(media: CloudMedia, identity: RestoreIdentity): RestoreResult {
+        // Reuse a previously published copy of THIS remote item, but only after the provider confirms
+        // the recorded row still exists — a copy the user deleted must re-publish rather than be
+        // reported as a save that is no longer there. Never matched on name/size/MIME.
+        ledger?.publishedUri(identity)?.let { recorded ->
+            if (publisher.exists(recorded)) {
+                return RestoreResult.Restored(recorded, restoredContentHash = null)
+            }
+            ledger.forget(identity)
+        }
+
         // `onFailure { throw }` keeps cancellation flowing: without it a cancelled scope would be
         // reported to the user as "download unavailable".
         val downloaded = runCatching { cloudRepository.downloadOriginal(media) }
             .onFailure { if (it is CancellationException) throw it }
             .getOrNull()
-            ?: return@withContext RestoreResult.Failed(RestoreFailure.DOWNLOAD_UNAVAILABLE)
+            ?: return RestoreResult.Failed(RestoreFailure.DOWNLOAD_UNAVAILABLE)
 
         // A completed download must be present and non-empty; an absent/zero-length file is treated
         // as missing (and a partial/interrupted download never reaches a completed-path here).
         val file = File(downloaded.localPath)
         if (!file.exists() || file.length() <= 0L) {
-            return@withContext RestoreResult.Failed(RestoreFailure.MISSING_REMOTE)
+            return RestoreResult.Failed(RestoreFailure.MISSING_REMOTE)
         }
 
         // Compute the restored bytes' identity for the record. Unreadable bytes are a real integrity
         // failure (VERIFY_FAILED); this is NOT a comparison against the lossy-representation original.
-        val restoredHash = runCatching {
-            hashContent(ContentStreamSource { file.inputStream() }, expectedSize = null).sha256
-        }
+        val restoredHash = runCatching { computeRestoredHash(file) }
             .onFailure { if (it is CancellationException) throw it }
-            .getOrNull() ?: return@withContext RestoreResult.Failed(RestoreFailure.VERIFY_FAILED)
+            .getOrNull() ?: return RestoreResult.Failed(RestoreFailure.VERIFY_FAILED)
 
-        when (val published = publisher.publish(downloaded.localPath, media.mimeType, media.fileName)) {
-            is PublishResult.Inserted -> RestoreResult.Restored(published.uri, restoredHash)
+        return when (val published = publisher.publish(downloaded.localPath, media.mimeType, media.fileName)) {
+            is PublishResult.Inserted -> {
+                ledger?.record(identity, published.uri)
+                RestoreResult.Restored(published.uri, restoredHash)
+            }
             PublishResult.NoSpace -> RestoreResult.Failed(RestoreFailure.LOW_STORAGE)
             PublishResult.Failed -> RestoreResult.Failed(RestoreFailure.PUBLISH_FAILED)
         }

@@ -63,5 +63,22 @@ interface SettingsRepository {
      */
     val appLockEnabled: Flow<Boolean>
 
+    /**
+     * The app-lock preference for *enforcement*, distinguishing an explicitly disabled lock from a
+     * preference that could not be read at all.
+     *
+     * [appLockEnabled] degrades a read error to `false` (its safe default for a *display* toggle),
+     * which is exactly the wrong answer for the gate: treating an unreadable preference as "off"
+     * silently fails open and exposes the content the lock exists to hide. The gate therefore reads
+     * this tri-state instead, and [AppLockPreference.Unknown] must never be interpreted as disabled.
+     */
+    val appLockPreference: Flow<AppLockPreference>
+
     suspend fun setAppLockEnabled(enabled: Boolean)
+}
+
+/** The app-lock preference as read, distinguishing "off" from "could not be read". */
+sealed interface AppLockPreference {
+    data class Known(val enabled: Boolean) : AppLockPreference
+    data object Unknown : AppLockPreference
 }
