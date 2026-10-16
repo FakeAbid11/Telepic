@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -384,6 +385,9 @@ private fun AlbumTile(
                 .semantics(mergeDescendants = true) { contentDescription = openLabel }
                 .combinedClickable(
                     onClick = onClick,
+                    // An album card opens a screen; the role says so, rather than leaving it as an
+                    // unlabelled tappable region.
+                    role = Role.Button,
                     onLongClickLabel = if (hasMenu) menuLabel else null,
                     onLongClick = if (hasMenu) {
                         {

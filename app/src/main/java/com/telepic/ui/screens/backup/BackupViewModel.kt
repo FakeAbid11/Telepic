@@ -95,6 +95,14 @@ class BackupViewModel(
     private val _message = MutableStateFlow<BackupMessage?>(null)
     val message: StateFlow<BackupMessage?> = _message.asStateFlow()
 
+    /**
+     * Bumped on every emission so the transient bar can tell a repeated failure apart from a stale
+     * one. [BackupMessage.ActionFailed] is a single object, so a second failed tap is indistinguishable
+     * from the first by value — without this token its bar would keep the first event's expiring timer.
+     */
+    private val _messageId = MutableStateFlow(0L)
+    val messageId: StateFlow<Long> = _messageId.asStateFlow()
+
     /** Re-read the queue after [BackupUiState.loadFailed]. */
     fun retryLoad() {
         reloadTrigger.update { it + 1 }
@@ -130,6 +138,7 @@ class BackupViewModel(
             throw cancellation
         } catch (throwable: Throwable) {
             TelepicLog.warn("BackupViewModel", "backup action failed", throwable)
+            _messageId.value += 1
             _message.value = BackupMessage.ActionFailed
         }
     }

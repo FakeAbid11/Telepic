@@ -55,6 +55,7 @@ fun BackupCenterScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val messageId by viewModel.messageId.collectAsStateWithLifecycle()
     val spacing = TelepicTokens.spacing
 
     // The scheme's own background rather than `mediaBackdrop` — deliberately. `mediaBackdrop` is the
@@ -155,6 +156,9 @@ fun BackupCenterScreen(
                 TransientMessageBar(
                     message = stringResource(it.textRes()),
                     onDismiss = viewModel::consumeMessage,
+                    // A repeated failure is the same object; the id restarts its countdown so the
+                    // second event does not inherit the first one's nearly-expired timer.
+                    messageId = messageId,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }

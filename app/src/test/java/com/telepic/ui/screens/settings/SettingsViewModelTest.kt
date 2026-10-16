@@ -288,6 +288,23 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `each reported outcome bumps the message id even when the message is identical`() = runTest {
+        val vm = viewModel()
+
+        vm.clearBackupCache()
+        runCurrent()
+        val firstId = vm.messageId.value
+        assertEquals(SettingsMessage.CacheCleared, vm.message.value)
+
+        // A second identical outcome is the same object; without the id the transient bar would keep the
+        // first event's nearly-expired countdown instead of starting a fresh one.
+        vm.clearBackupCache()
+        runCurrent()
+        assertTrue(vm.messageId.value > firstId)
+        assertEquals(SettingsMessage.CacheCleared, vm.message.value)
+    }
+
+    @Test
     fun `transport preferences persist and are reflected by the screen's own flows`() = runTest {
         val settings = FakeSettings()
         val vm = viewModel(settings = settings)

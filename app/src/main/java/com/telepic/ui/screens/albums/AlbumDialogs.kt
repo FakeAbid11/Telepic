@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -26,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import com.telepic.R
 import com.telepic.domain.media.CustomAlbum
@@ -63,6 +66,12 @@ fun AlbumNameDialog(
                 onValueChange = { name = it },
                 label = { Text(stringResource(R.string.album_name_label)) },
                 singleLine = true,
+                // The keyboard offers "Done" and it commits, so naming an album is one gesture rather
+                // than a reach past the keyboard to the dialog's own confirm button.
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = { if (trimmed.isNotEmpty()) onConfirm(trimmed) },
+                ),
                 modifier = Modifier.fillMaxWidth(),
             )
         },

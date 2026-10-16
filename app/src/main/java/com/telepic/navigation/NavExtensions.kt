@@ -43,3 +43,18 @@ fun NavHostController.navigateToSettings(settingsRoute: String = TelepicDestinat
         launchSingleTop = true
     }
 }
+
+/**
+ * Open the Map from the Viewer's "Show on map" action.
+ *
+ * Deliberately **not** [navigateToTopLevel]: the Map is a tab, but this is a hand-off *from* a detail
+ * screen, so the top-level form's `popUpTo(start){saveState}` popped the Viewer and Back from the map
+ * landed on Photos — the photo the user was looking at was gone. A plain push keeps the Viewer
+ * underneath so Back returns to it, exactly like [navigateToSettings]. `launchSingleTop` keeps a
+ * repeat request from stacking a second map.
+ */
+fun NavHostController.navigateToMap(mapRoute: String = TelepicDestination.Map.route) {
+    navigate(mapRoute) {
+        launchSingleTop = true
+    }
+}

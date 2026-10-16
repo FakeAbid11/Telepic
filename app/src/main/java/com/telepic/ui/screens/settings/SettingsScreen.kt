@@ -131,6 +131,7 @@ fun SettingsScreen(
     val foldersLoaded by viewModel.foldersLoaded.collectAsStateWithLifecycle()
     val storage by viewModel.storageSummary.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val messageId by viewModel.messageId.collectAsStateWithLifecycle()
     val cloudStatus by viewModel.cloudStatus.collectAsStateWithLifecycle()
     val channelTitle by viewModel.backupChannelTitle.collectAsStateWithLifecycle()
     val networkPreference by viewModel.backupNetworkPreference.collectAsStateWithLifecycle()
@@ -415,6 +416,9 @@ fun SettingsScreen(
                 TransientMessageBar(
                     message = stringResource(it.textRes()),
                     onDismiss = viewModel::consumeMessage,
+                    // The same outcome twice (clear cache, then clear it again) is the same message
+                    // object; the id keeps the second from inheriting the first's expired timer.
+                    messageId = messageId,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.view.Window
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -188,7 +189,12 @@ fun ViewerScreen(
     // details loaded (restored instance, or a swipe to a new item while the sheet was open),
     // load them instead of spinning forever. Applies to cloud items too — their details come from
     // the manifest entry, so the sheet is no longer a dead end there.
-    LaunchedEffect(showDetails, state.source) {
+    //
+    // `state.status` is a key because the restore case composes while the item is still LOADING:
+    // without it the one and only run would be rejected by the READY guard below and, since neither
+    // `showDetails` nor `state.source` changed afterwards, the effect would never re-run — leaving the
+    // sheet on its spinner for good. Keying on status re-runs it the moment the item becomes READY.
+    LaunchedEffect(showDetails, state.source, state.status) {
         if (showDetails && state.status == ViewerStatus.READY && details == null) {
             viewModel.loadDetails()
         }
@@ -206,6 +212,7 @@ fun ViewerScreen(
                     onNavigate = viewModel::open,
                     onDownload = viewModel::downloadOriginal,
                     onRequestToggle = { controlsVisible = !controlsVisible },
+                    controlsVisible = controlsVisible,
                     // Handed down for the video transport, which *is* the bottom bar for a playable
                     // video (see ViewerUiState.isPlayableVideo).
                     onPrevious = viewModel::showPrevious,
@@ -235,8 +242,10 @@ fun ViewerScreen(
                     onBackup = viewModel::backupCurrent,
                     // Offered for cloud items as well as local ones: a cloud item's details come from
                     // its manifest entry, so there is real information to show rather than a spinner.
+                    // Opening the sheet is enough — the LaunchedEffect above owns the load, so this does
+                    // not also kick one off and read the metadata twice.
                     onShowDetails = if (state.status == ViewerStatus.READY) {
-                        { viewModel.loadDetails(); showDetails = true }
+                        { showDetails = true }
                     } else null,
                 )
             }
@@ -343,6 +352,7 @@ private fun ViewerContent(
     onNavigate: (MediaSource) -> Unit,
     onDownload: () -> Unit,
     onRequestToggle: () -> Unit,
+    controlsVisible: Boolean = true,
     onPrevious: () -> Unit = {},
     onNext: () -> Unit = {},
     onRestore: (() -> Unit)? = null,
@@ -405,6 +415,19 @@ private fun ViewerContent(
     // animation alive for the life of the screen.
     var loadState by remember(model) { mutableStateOf(ImageLoadState.Loading) }
     var retryToken by remember(model) { mutableIntStateOf(0) }
+
+    // Back is not simply "leave": while the photo is zoomed the first press returns it to fit, and
+    // while the chrome is hidden the first press brings it back — the same order the user expects from
+    // a full-screen image. Only when neither applies does Back fall through to the route pop that
+    // `onBack` performs. The sheet and the trash dialog are separate windows and consume Back first,
+    // so this never fires underneath them.
+    BackHandler(enabled = zoom.isZoomed || !controlsVisible) {
+        if (zoom.isZoomed) {
+            zoom = ZoomState()
+        } else {
+            onRequestToggle()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // Shown behind the image while a (possibly slow) cloud preview or local decode loads —

@@ -39,6 +39,7 @@ class NavToTopLevelTest {
             NavHost(navController = nc, startDestination = TelepicDestination.Photos.route) {
                 composable(TelepicDestination.Photos.route) { Text("photos") }
                 composable(TelepicDestination.Cloud.route) { Text("cloud") }
+                composable(TelepicDestination.Map.route) { Text("map") }
                 composable(TelepicDestination.Settings.route) { Text("settings") }
                 composable("viewer/{mediaId}") { Text("viewer") }
             }
@@ -104,6 +105,42 @@ class NavToTopLevelTest {
         rule.waitForIdle()
         // launchSingleTop: the same entry is reused rather than a second Settings pushed on top, which
         // would have cost two Back presses to leave.
+        assertEquals(entriesAfterFirst, nav.currentBackStackEntry?.id)
+    }
+
+    @Test
+    fun `back from the map returns to the viewer it was opened from`() {
+        setNav()
+        val nav = controller!!
+
+        nav.navigate("viewer/42")
+        rule.waitForIdle()
+
+        nav.navigateToMap()
+        rule.waitForIdle()
+        assertEquals(TelepicDestination.Map.route, nav.currentDestination?.route)
+
+        nav.popBackStack()
+        rule.waitForIdle()
+        // The regression: "Show on map" used the top-level helper, which pops to the start destination —
+        // so Back from the map landed on Photos and the photo the action came from was gone.
+        assertEquals("viewer/{mediaId}", nav.currentDestination?.route)
+    }
+
+    @Test
+    fun `requesting the map twice does not stack two maps`() {
+        setNav()
+        val nav = controller!!
+        nav.navigate("viewer/42")
+        rule.waitForIdle()
+
+        nav.navigateToMap()
+        rule.waitForIdle()
+        val entriesAfterFirst = nav.currentBackStackEntry?.id
+
+        nav.navigateToMap()
+        rule.waitForIdle()
+        // launchSingleTop keeps a repeat request from pushing a second map that would cost an extra Back.
         assertEquals(entriesAfterFirst, nav.currentBackStackEntry?.id)
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -47,6 +48,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -169,7 +171,19 @@ private fun AuthContent(
                     supportingText = { Text(state.error ?: stringResource(R.string.telegram_phone_hint)) },
                     isError = state.error != null,
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Phone,
+                        imeAction = ImeAction.Done,
+                    ),
+                    // "Done" submits the same request the button does, so entering the number is one
+                    // gesture instead of a reach past the keyboard. Guarded identically to the button.
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (phone.isNotBlank()) {
+                                controller.submitPhoneNumber(normalizeE164(phone, country.dialCode))
+                            }
+                        },
+                    ),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -188,7 +202,13 @@ private fun AuthContent(
                 supportingText = { Text(state.error ?: stringResource(R.string.telegram_code_hint)) },
                 isError = state.error != null,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = { if (code.isNotBlank()) controller.submitCode(code) },
+                ),
                 modifier = Modifier.fillMaxWidth(),
             )
             PrimaryButton(
@@ -210,7 +230,18 @@ private fun AuthContent(
                 isError = state.error != null,
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        if (password.isNotBlank()) {
+                            controller.submitPassword(password)
+                            password = "" // clear the secret from UI state after submitting
+                        }
+                    },
+                ),
                 modifier = Modifier.fillMaxWidth(),
             )
             PrimaryButton(
@@ -234,7 +265,17 @@ private fun AuthContent(
                 supportingText = { Text(state.error ?: stringResource(R.string.telegram_email_hint)) },
                 isError = state.error != null,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        if (email.contains('@') && email.substringAfter('@').contains('.')) {
+                            controller.submitEmailAddress(email.trim())
+                        }
+                    },
+                ),
                 modifier = Modifier.fillMaxWidth(),
             )
             PrimaryButton(
@@ -266,7 +307,22 @@ private fun AuthContent(
                 supportingText = { Text(state.error ?: stringResource(R.string.telegram_email_code_hint)) },
                 isError = state.error != null,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        // Same length gate as the button: Telegram is the authority when it gave us a
+                        // length, and a short code submitted from the key would only bounce.
+                        val ready = if (state.codeLength > 0) {
+                            code.length == state.codeLength
+                        } else {
+                            code.isNotBlank()
+                        }
+                        if (ready) controller.submitEmailCode(code.trim())
+                    },
+                ),
                 modifier = Modifier.fillMaxWidth(),
             )
             PrimaryButton(

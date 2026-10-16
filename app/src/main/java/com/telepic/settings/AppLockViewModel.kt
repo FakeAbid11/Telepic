@@ -80,17 +80,4 @@ class AppLockViewModel(
     fun unlock() {
         _locked.value = false
     }
-
-    /**
-     * Applies a change to the preference immediately.
-     *
-     * Switching the lock *off* while it is on screen must release it — otherwise turning the feature
-     * off from Settings would leave the user staring at a lock screen they had just disabled.
-     */
-    fun onPreferenceChanged(enabledNow: Boolean) {
-        if (!enabledNow) {
-            timer.reset()
-            _locked.value = false
-        }
-    }
 }

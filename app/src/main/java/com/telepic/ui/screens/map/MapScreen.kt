@@ -218,9 +218,14 @@ private fun OsmMap(
     val plan = remember(pins) {
         MapCameraPlan.forPoints(pins.map { it.latitude to it.longitude })
     }
-    // The framing applied when the surface is created, captured once. Priority: an explicit focus
-    // (another screen asked for one photo) → the remembered position → all the user's photos.
-    val initialCamera = remember {
+    // The framing applied when the surface is created. Priority: an explicit focus (another screen
+    // asked for one photo) → the remembered position → all the user's photos.
+    //
+    // Keyed on its inputs, not captured once: the map is composed before a long first scan has found
+    // any coordinates (the grace window settles the scan without waiting for it), so a one-shot
+    // capture froze the world view whenever the pins arrived after the surface. Recomputing lets the
+    // first usable framing land when the data does; `initialApplied` still guarantees it happens once.
+    val initialCamera = remember(focus, savedCamera, plan) {
         MapCameraResolver.resolve(
             focus = focus?.let { GeoLocation(it.latitude, it.longitude) },
             saved = savedCamera,
@@ -374,13 +379,15 @@ private fun OsmMap(
                 mapView.contentDescription =
                     mapView.context.resources.getQuantityString(R.plurals.map_view_description, pins.size, pins.size)
                 // The opening framing is applied exactly once — later recompositions (a new overlay, a
-                // changed badge colour) must never move the camera out from under the user.
+                // changed badge colour) must never move the camera out from under the user. Only a
+                // real decision latches: `KeepDefault` (nothing to frame yet) leaves the flag clear so
+                // the next recomposition, with the pins that finally arrived, can still apply it.
                 if (!initialApplied) {
                     (initialCamera as? MapCameraResolver.Decision.Apply)?.let {
                         mapView.controller.setCenter(GeoPoint(it.centerLat, it.centerLon))
                         mapView.controller.setZoom(it.zoom)
+                        initialApplied = true
                     }
-                    initialApplied = true
                 }
                 pendingCamera?.let { decision ->
                     if (decision is MapCameraResolver.Decision.Apply) {

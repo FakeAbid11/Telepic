@@ -299,8 +299,21 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val _message = MutableStateFlow<SettingsMessage?>(null)
     val message: StateFlow<SettingsMessage?> = _message.asStateFlow()
 
+    /**
+     * Bumped on every emission so the transient bar can tell two identical events apart. The settings
+     * outcomes are idempotent objects, so "cache cleared" twice in a row is the same [SettingsMessage]
+     * twice; without this token the second would keep the first's nearly-expired timer.
+     */
+    private val _messageId = MutableStateFlow(0L)
+    val messageId: StateFlow<Long> = _messageId.asStateFlow()
+
     fun consumeMessage() {
         _message.value = null
+    }
+
+    private fun showMessage(message: SettingsMessage) {
+        _messageId.value += 1
+        _message.value = message
     }
 
     // Deliberately declared *after* [tdlibDir], [stagingDir] and [_storageSummary]: an `init` block
@@ -410,12 +423,12 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         viewModelScope.launch {
             try {
                 action()
-                _message.value = success
+                showMessage(success)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
                 TelepicLog.warn("SettingsViewModel", "cache action failed", throwable)
-                _message.value = SettingsMessage.ActionFailed
+                showMessage(SettingsMessage.ActionFailed)
             }
         }
     }

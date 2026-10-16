@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -106,6 +107,9 @@ fun MediaTile(
             // since the check badge only appears afterwards.
             .combinedClickable(
                 onClick = onClick,
+                // A tile is a button to a screen reader: without the role it is announced as a bare
+                // "double tap to activate" region, indistinguishable from the decorative image it wraps.
+                role = Role.Button,
                 // Announced to a screen reader so long-press-to-select is reachable by someone who
                 // cannot discover a gesture. Null for a caller whose long press means something else
                 // (or nothing), so no label is invented for it.

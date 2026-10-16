@@ -410,7 +410,9 @@ private fun TelepicNavGraph(
                     onBack = { navController.popBackStack() },
                     onShowOnMap = { latitude, longitude ->
                         mapFocusRequest.request(latitude, longitude)
-                        navController.navigateToTopLevel(TelepicDestination.Map)
+                        // A plain push, not a tab jump: the Viewer stays underneath so Back returns to
+                        // the photo, not to the Photos root (see [navigateToMap]).
+                        navController.navigateToMap()
                     },
                 )
             }
