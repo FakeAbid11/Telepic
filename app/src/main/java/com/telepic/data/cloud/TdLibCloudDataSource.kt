@@ -115,7 +115,9 @@ class TdLibCloudDataSource(
     override suspend fun downloadPreview(media: CloudMedia): CloudPreview? {
         requireAuth()
         val path = downloadAndVerify(media.previewFileId, PREVIEW_PRIORITY) ?: return null
-        return CloudPreview(localPath = path, width = media.width, height = media.height)
+        // The downloaded preview's own dimensions are not tracked — CloudMedia carries the
+        // original's size, which is a different file. Report "unknown" rather than a wrong number.
+        return CloudPreview(localPath = path, width = null, height = null)
     }
 
     override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? {

@@ -87,8 +87,8 @@ object TdApiCloudMapper {
 
     private fun photo(chatId: Long, messageId: Long, content: TdApi.MessagePhoto, date: Long): CloudMedia? {
         val sizes = content.photo?.sizes ?: return null
-        val smallest = sizes.smallestByArea() ?: return null
-        val largest = sizes.largestByArea() ?: smallest
+        val preview = sizes.previewByArea(PREVIEW_MAX_EDGE) ?: return null
+        val largest = sizes.largestByArea() ?: preview
         val identity = CloudBackupMarker.parse(content.caption?.text)
         return CloudMedia(
             messageId = messageId,
@@ -103,7 +103,7 @@ object TdApiCloudMapper {
             height = largest.height.takeIf { it > 0 },
             durationMs = null,
             dateEpochSec = date,
-            previewFileId = smallest.photo?.id,
+            previewFileId = preview.photo?.id,
             originalFileId = largest.photo?.id,
             contentHash = identity?.sha256,
             contentSizeBytes = identity?.sizeBytes,
@@ -235,11 +235,27 @@ object TdApiCloudMapper {
         else -> null
     }
 
-    private fun Array<TdApi.PhotoSize>.smallestByArea(): TdApi.PhotoSize? =
-        filter { it.photo != null }.minByOrNull { areaOf(it) }
+    /**
+     * The size to download as a preview: the largest one whose longest edge stays within [maxEdge],
+     * so the grid and the full-screen Viewer get a screen-quality image without pulling the full
+     * original. Falls back to the smallest size when every size exceeds [maxEdge].
+     */
+    private fun Array<TdApi.PhotoSize>.previewByArea(maxEdge: Int): TdApi.PhotoSize? {
+        val withPhoto = filter { it.photo != null }
+        if (withPhoto.isEmpty()) return null
+        return withPhoto.filter { maxOf(it.width, it.height) <= maxEdge }.maxByOrNull { areaOf(it) }
+            ?: withPhoto.minByOrNull { areaOf(it) }
+    }
 
     private fun Array<TdApi.PhotoSize>.largestByArea(): TdApi.PhotoSize? =
         filter { it.photo != null }.maxByOrNull { areaOf(it) }
 
     private fun areaOf(size: TdApi.PhotoSize): Long = size.width.toLong() * size.height.toLong()
+
+    /**
+     * The longest edge a downloaded preview may have. Telegram's photo ladder tops out near 1280px,
+     * so 1024 typically selects the ~800px `m` tier — a clear improvement over the tiny `s`
+     * thumbnail while keeping browsing lighter than downloading originals.
+     */
+    private const val PREVIEW_MAX_EDGE = 1024
 }

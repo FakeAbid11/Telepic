@@ -33,20 +33,47 @@ class TdApiCloudMapperTest {
         }
 
     @Test
-    fun `photo maps with smallest preview and largest original`() {
-        val small = TdApi.PhotoSize().apply { type = "s"; photo = file(11, 5_000); width = 100; height = 100 }
-        val large = TdApi.PhotoSize().apply { type = "x"; photo = file(12, 500_000); width = 1280; height = 720 }
-        val photo = TdApi.Photo().apply { sizes = arrayOf(small, large) }
+    fun `photo maps a screen-quality preview tier and the largest original`() {
+        val small = TdApi.PhotoSize().apply { type = "s"; photo = file(11, 5_000); width = 320; height = 240 }
+        val medium = TdApi.PhotoSize().apply { type = "m"; photo = file(12, 50_000); width = 800; height = 600 }
+        val large = TdApi.PhotoSize().apply { type = "x"; photo = file(13, 500_000); width = 1280; height = 960 }
+        val photo = TdApi.Photo().apply { sizes = arrayOf(small, medium, large) }
         val content = TdApi.MessagePhoto().apply { this.photo = photo }
 
         val media = TdApiCloudMapper.messageToCloudMedia(100L, message(content))!!
         assertEquals(CloudMediaType.IMAGE, media.mediaType)
-        assertEquals(11, media.previewFileId)
-        assertEquals(12, media.originalFileId)
+        // Preview is the largest size within the 1024px cap (the ~800px `m` tier), not the tiny `s`.
+        assertEquals(12, media.previewFileId)
+        assertEquals(13, media.originalFileId)
         assertEquals(500_000L, media.sizeBytes)
         assertEquals(1280, media.width)
-        assertEquals(720, media.height)
+        assertEquals(960, media.height)
         assertNull(media.durationMs)
+    }
+
+    @Test
+    fun `photo preview falls back to the smallest size when every size exceeds the cap`() {
+        val small = TdApi.PhotoSize().apply { photo = file(21, 100_000); width = 1280; height = 960 }
+        val huge = TdApi.PhotoSize().apply { photo = file(22, 900_000); width = 4000; height = 3000 }
+        val content = TdApi.MessagePhoto().apply {
+            this.photo = TdApi.Photo().apply { sizes = arrayOf(huge, small) }
+        }
+
+        val media = TdApiCloudMapper.messageToCloudMedia(100L, message(content))!!
+        assertEquals(21, media.previewFileId)
+        assertEquals(22, media.originalFileId)
+    }
+
+    @Test
+    fun `photo with a single size uses it for both preview and original`() {
+        val only = TdApi.PhotoSize().apply { photo = file(31, 20_000); width = 500; height = 500 }
+        val content = TdApi.MessagePhoto().apply {
+            this.photo = TdApi.Photo().apply { sizes = arrayOf(only) }
+        }
+
+        val media = TdApiCloudMapper.messageToCloudMedia(100L, message(content))!!
+        assertEquals(31, media.previewFileId)
+        assertEquals(31, media.originalFileId)
     }
 
     @Test
