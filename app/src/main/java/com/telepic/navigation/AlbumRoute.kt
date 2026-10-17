@@ -32,7 +32,10 @@ object AlbumRoute {
      * from the Albums grid — replaces it. Carrying no name at all left the title blank until Room
      * emitted, which is a visible hole in the header on every open.
      */
-    const val CUSTOM_PATTERN = "$CUSTOM_BASE/{$ARG_ALBUM_ID}?{$ARG_NAME}"
+    // The name query arg keeps its `key={key}` shape: Navigation only reads a named query value when
+    // the pattern spells the key out, and a bare `?{key}` would hand the whole raw query string
+    // ("name=Trip") to the arg instead of the value.
+    const val CUSTOM_PATTERN = "$CUSTOM_BASE/{$ARG_ALBUM_ID}?$ARG_NAME={$ARG_NAME}"
 
     fun create(bucketId: Long, title: String): String =
         "$BASE/$bucketId/${Uri.encode(title)}"

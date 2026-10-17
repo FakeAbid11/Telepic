@@ -42,7 +42,14 @@ object ViewerRoute {
     // mediaId is required; the rest are optional query args (defaults registered in the nav graph) so
     // a plain local route still matches while albums and collections pass their own context. Exactly
     // one of them is ever supplied, and [scopeOf] fixes the precedence.
-    const val LOCAL = "viewer/local/{$ARG_MEDIA_ID}?{$ARG_BUCKET_ID}&{$ARG_ORG_KIND}&{$ARG_ALBUM_ID}"
+    //
+    // Each query arg must keep its `key={key}` shape. Navigation only reads a named query value when
+    // the pattern spells the key out; a bare `?{key}` is instead its "single query param value only"
+    // form, which hands the *entire* raw query string to every declared arg — Longs then fail to parse
+    // back to their defaults and the scope collapses to [ViewerScope.Global].
+    const val LOCAL =
+        "viewer/local/{$ARG_MEDIA_ID}?$ARG_BUCKET_ID={$ARG_BUCKET_ID}" +
+            "&$ARG_ORG_KIND={$ARG_ORG_KIND}&$ARG_ALBUM_ID={$ARG_ALBUM_ID}"
     const val CLOUD = "viewer/cloud/{$ARG_CHAT_ID}/{$ARG_MESSAGE_ID}"
 
     fun local(mediaId: Long): String = "viewer/local/$mediaId"
