@@ -29,8 +29,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.BrokenImage
@@ -215,10 +213,6 @@ fun ViewerScreen(
                     onDownload = viewModel::downloadOriginal,
                     onRequestToggle = { controlsVisible = !controlsVisible },
                     controlsVisible = controlsVisible,
-                    // Handed down for the video transport, which *is* the bottom bar for a playable
-                    // video (see ViewerUiState.isPlayableVideo).
-                    onPrevious = viewModel::showPrevious,
-                    onNext = viewModel::showNext,
                     onRestore = if (isCloudReady) viewModel::restoreToLocal else null,
                     restore = restore,
                     // "Start videos muted" is the *initial* state for each clip, not a lock: the
@@ -252,35 +246,20 @@ fun ViewerScreen(
                 )
             }
 
-            // A playable video draws its own transport bar (play/pause, seek, prev/next and the cloud
-            // save action) in the band the surface reserves, so the generic bar is skipped: rendering
+            // A playable video draws its own transport bar (play/pause, seek and the cloud save
+            // action) in the band the surface reserves, so the generic bar is skipped: rendering
             // both is precisely the two-stacked-bars defect the transport replaced.
-            if (state.status == ViewerStatus.READY &&
-                !state.isPlayableVideo &&
-                (state.previous != null || state.next != null)
-            ) {
+            //
+            // The generic bar only carries the cloud save/download actions now that the arrows are
+            // gone, so a local photo renders no bottom bar at all rather than an empty scrim.
+            if (isCloudReady && !state.isPlayableVideo) {
                 AnimatedVisibility(visible = controlsVisible, modifier = Modifier.align(Alignment.BottomCenter)) {
                     ViewerBottomBar(
                         state = state,
-                        onPrevious = viewModel::showPrevious,
-                        onNext = viewModel::showNext,
                         onDownload = viewModel::downloadOriginal,
-                        onRestore = if (isCloudReady) viewModel::restoreToLocal else null,
+                        onRestore = viewModel::restoreToLocal,
                         restore = restore,
                     )
-                }
-            } else if (isCloudReady && !state.isPlayableVideo) {
-                // A lone cloud item has no nav bar; offer Save-to-device on its own.
-                AnimatedVisibility(
-                    visible = controlsVisible,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .windowInsetsPadding(WindowInsets.navigationBars)
-                        .padding(bottom = TelepicTokens.spacing.md),
-                ) {
-                    GlassPill(modifier = Modifier.height(TelepicTokens.spacing.touchTarget)) {
-                        RestoreAction(onRestore = viewModel::restoreToLocal, restore = restore)
-                    }
                 }
             }
 
@@ -357,20 +336,14 @@ private fun ViewerContent(
     onDownload: () -> Unit,
     onRequestToggle: () -> Unit,
     controlsVisible: Boolean = true,
-    onPrevious: () -> Unit = {},
-    onNext: () -> Unit = {},
     onRestore: (() -> Unit)? = null,
     restore: RestoreState = RestoreState.Idle,
     startMuted: Boolean = true,
 ) {
     if (state.kind == ViewerKind.VIDEO) {
-        // Videos keep button navigation only: the surface consumes touches for its own controls,
-        // and a swipe detector here would fight them.
         VideoViewer(
             state = state,
             onDownload = onDownload,
-            onPrevious = onPrevious,
-            onNext = onNext,
             onRestore = onRestore,
             restore = restore,
             startMuted = startMuted,
@@ -886,8 +859,6 @@ private fun BackupGlyph(description: String, glyph: @Composable () -> Unit) {
 @Composable
 private fun ViewerBottomBar(
     state: ViewerUiState,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
     onDownload: () -> Unit,
     onRestore: (() -> Unit)? = null,
     restore: RestoreState = RestoreState.Idle,
@@ -913,27 +884,11 @@ private fun ViewerBottomBar(
             )
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(vertical = spacing.sm),
-        // Centred, so the navigation cluster sits on the photo's midline instead of being split to
+        // Centred, so the save/download actions sit on the photo's midline instead of being split to
         // the two far edges around an empty middle.
         horizontalArrangement = Arrangement.spacedBy(spacing.md, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlassPill {
-            IconButton(onClick = onPrevious, enabled = state.previous != null) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                    contentDescription = stringResource(R.string.viewer_previous),
-                    tint = if (state.previous != null) Color.White else Color.White.copy(alpha = 0.3f),
-                )
-            }
-            IconButton(onClick = onNext, enabled = state.next != null) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = stringResource(R.string.viewer_next),
-                    tint = if (state.next != null) Color.White else Color.White.copy(alpha = 0.3f),
-                )
-            }
-        }
         when {
             onRestore != null -> GlassPill(modifier = Modifier.height(spacing.touchTarget)) {
                 RestoreAction(onRestore = onRestore, restore = restore)

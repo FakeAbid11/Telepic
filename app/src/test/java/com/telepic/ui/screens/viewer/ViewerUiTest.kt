@@ -115,6 +115,39 @@ class ViewerUiTest {
         override val visualStates: Flow<Map<String, MediaBackupVisualState>> = flowOf(states)
     }
 
+    private fun cloudItem(messageId: Long) = CloudMedia(
+        messageId = messageId, chatId = 100L, mediaType = com.telepic.domain.cloud.CloudMediaType.IMAGE,
+        mimeType = "image/jpeg", fileName = null, sizeBytes = null, width = null, height = null,
+        durationMs = null, dateEpochSec = 2L, previewFileId = 9, originalFileId = 9,
+    )
+
+    /**
+     * A ready cloud repository with a manifest, so a cloud item resolves to READY with neighbours.
+     * The bottom bar only renders for a cloud item now that the photo arrows are gone, and this is
+     * what the chrome-height contract is pinned against.
+     */
+    private class ReadyCloud(private val manifest: List<CloudMedia>) : CloudRepository {
+        override val status: StateFlow<CloudStatus> = MutableStateFlow(CloudStatus.Ready).asStateFlow()
+        override val media: Flow<List<CloudMedia>> = flowOf(manifest)
+        override val destinationTitle: StateFlow<String?> = MutableStateFlow<String?>("Telepic Backup").asStateFlow()
+        override suspend fun prepare() = Unit
+        override suspend fun refresh() = Unit
+        override suspend fun ensureDestination(): TelepicCloudDestination? = null
+        override suspend fun confirmDestination(): TelepicCloudDestination? = null
+        override suspend fun createNewDestination(): TelepicCloudDestination? = null
+        override suspend fun getPreview(media: CloudMedia): CloudPreview? =
+            CloudPreview("/tmp/prev_${media.messageId}", null, null)
+        override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? = null
+        override suspend fun uploadMedia(request: com.telepic.domain.cloud.CloudUploadRequest, onProgress: (com.telepic.domain.cloud.CloudUploadProgress) -> Unit, onSent: suspend (Long, Long) -> Unit) = null
+        override suspend fun confirmUpload(
+            chatId: Long,
+            messageId: Long,
+            mediaType: com.telepic.domain.cloud.CloudMediaType,
+            contentHash: String?,
+            contentSizeBytes: Long?,
+        ): com.telepic.domain.cloud.CloudUploadResult = throw NotImplementedError()
+    }
+
     @Test
     fun `a backed-up item shows the backed-up state rather than a backup button`() {
         val vm = ViewerViewModel(
@@ -152,7 +185,7 @@ class ViewerUiTest {
 
         composeRule.onNodeWithContentDescription("Back").assertIsDisplayed()
         composeRule.onNodeWithText("On this device").assertIsDisplayed()
-        // A next item exists → the forward control is present and back returns to the origin.
+        // Back returns to the screen the viewer was opened from.
         composeRule.onNodeWithContentDescription("Back").performClick()
         assertTrue(backed)
     }
@@ -201,10 +234,12 @@ class ViewerUiTest {
     fun `the chrome bars are exactly as tall as the band the video surface reserves`() {
         var topBarExpected = 0.dp
         var bottomBarExpected = 0.dp
+        // A cloud item: its bottom bar carries the save/download actions, so it is the bar that
+        // renders now that the photo-viewer arrows are gone.
         val vm = ViewerViewModel(
-            MediaSource.Local(5),
-            Lookup(mapOf(5L to localPhoto(5), 9L to localPhoto(9)), older = 9L),
-            NoCloud,
+            MediaSource.Cloud(100, 7),
+            Lookup(emptyMap()),
+            ReadyCloud(listOf(cloudItem(6), cloudItem(7), cloudItem(8))),
         )
         composeRule.setContent {
             TelepicTheme {
@@ -219,7 +254,6 @@ class ViewerUiTest {
         }
         composeRule.waitForIdle()
 
-        // `older = 9L` gives the item a neighbour, so the navigation row is the bar that renders.
         composeRule.onNodeWithTag(TAG_VIEWER_TOP_BAR).assertHeightIsEqualTo(topBarExpected)
         composeRule.onNodeWithTag(TAG_VIEWER_BOTTOM_BAR).assertHeightIsEqualTo(bottomBarExpected)
     }

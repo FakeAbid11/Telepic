@@ -436,8 +436,6 @@
     <!-- ============================ Viewer (Phase 9) ============================ -->
     <string name="viewer_back">Back</string>
     <string name="viewer_more_actions">More actions</string>
-    <string name="viewer_previous">Previous item</string>
-    <string name="viewer_next">Next item</string>
     <string name="viewer_missing">This media is no longer available</string>
     <string name="viewer_content_description">Media viewer image</string>
     <string name="viewer_image_error">This image couldn\'t be loaded</string>

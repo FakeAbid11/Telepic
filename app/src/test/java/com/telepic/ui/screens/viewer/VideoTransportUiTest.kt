@@ -4,7 +4,6 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -18,7 +17,6 @@ import com.telepic.data.restore.RestoreFailure
 import com.telepic.ui.theme.TelepicTheme
 import com.telepic.ui.theme.TelepicTokens
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -51,28 +49,20 @@ class VideoTransportUiTest {
             positionMs = 30_000L,
             durationMs = 60_000L,
         ),
-        previousEnabled: Boolean = true,
-        nextEnabled: Boolean = true,
         restore: RestoreState = RestoreState.Idle,
         onRestore: (() -> Unit)? = null,
         muted: Boolean = true,
         onToggleMute: () -> Unit = {},
         onTogglePlay: () -> Unit = {},
         onSeekTo: (Long) -> Unit = {},
-        onPrevious: () -> Unit = {},
-        onNext: () -> Unit = {},
     ) {
         composeRule.setContent {
             expectedBarHeight = TelepicTokens.spacing.videoTransportHeight
             TelepicTheme {
                 VideoTransport(
                     state = state,
-                    previousEnabled = previousEnabled,
-                    nextEnabled = nextEnabled,
                     onTogglePlay = onTogglePlay,
                     onSeekTo = onSeekTo,
-                    onPrevious = onPrevious,
-                    onNext = onNext,
                     muted = muted,
                     onToggleMute = onToggleMute,
                     onRestore = onRestore,
@@ -159,18 +149,6 @@ class VideoTransportUiTest {
         composeRule.onNodeWithContentDescription("Video position").assertIsNotEnabled()
         composeRule.onNodeWithText("0:00").assertIsDisplayed()
         assertEquals(-1L, seekTarget)
-    }
-
-    @Test
-    fun `prev and next follow the neighbours the item actually has`() {
-        var previous = false
-        var next = false
-        transport(previousEnabled = true, nextEnabled = false, onPrevious = { previous = true }, onNext = { next = true })
-
-        composeRule.onNodeWithContentDescription("Previous item").assertIsEnabled().performClick()
-        composeRule.onNodeWithContentDescription("Next item").assertIsNotEnabled()
-        assertTrue(previous)
-        assertFalse(next)
     }
 
     @Test

@@ -288,15 +288,7 @@ class ViewerViewModel(
         load(initialSource)
     }
 
-    fun showNext() {
-        _uiState.value.next?.let(::open)
-    }
-
-    fun showPrevious() {
-        _uiState.value.previous?.let(::open)
-    }
-
-    /** Navigate to another source (used by next/previous and by the swipe gesture). */
+    /** Navigate to another source (used by the swipe gesture to page to a neighbour). */
     fun open(newSource: MediaSource) {
         loadJob?.cancel()
         // A confirmation belongs to the item it describes: carrying "Moved to trash" onto the next

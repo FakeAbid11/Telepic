@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CheckCircle
@@ -99,8 +97,6 @@ fun VideoViewer(
     state: ViewerUiState,
     onDownload: () -> Unit,
     modifier: Modifier = Modifier,
-    onPrevious: () -> Unit = {},
-    onNext: () -> Unit = {},
     onRestore: (() -> Unit)? = null,
     restore: RestoreState = RestoreState.Idle,
     startMuted: Boolean = true,
@@ -246,12 +242,8 @@ fun VideoViewer(
 
         VideoTransport(
             state = playback.state,
-            previousEnabled = state.previous != null,
-            nextEnabled = state.next != null,
             onTogglePlay = { if (player.isPlaying) player.pause() else player.play() },
             onSeekTo = { target -> player.seekTo(target) },
-            onPrevious = onPrevious,
-            onNext = onNext,
             // The mute affordance lives on the transport now (media3 1.4.1 exposes no volume control
             // and ships no mute button). It used to float top-right, where it competed with the
             // top-bar's own actions; on the bar it reads as one of the transport's controls.
@@ -355,8 +347,8 @@ internal const val TAG_VIDEO_TRANSPORT = "video_transport"
 /**
  * The video's bottom bar, laid out in two tiers inside `TelepicSpacing.videoTransportHeight` — the
  * band the video surface reserves for it. The seek slider takes the top tier on its own, so it is wide
- * and grabbable instead of sharing one cramped row with seven controls; the control row below carries
- * prev, play / pause, next, mute and the cloud save action.
+ * and grabbable instead of sharing one cramped row with many controls; the control row below carries
+ * play / pause, mute and the cloud save action.
  *
  * Icon rather than label: a 360dp phone has no room for words once the clock shares the bar. The
  * labels ride on content descriptions, and every one of them names the *action* (a screen reader user
@@ -365,12 +357,8 @@ internal const val TAG_VIDEO_TRANSPORT = "video_transport"
 @Composable
 internal fun VideoTransport(
     state: VideoTransportState,
-    previousEnabled: Boolean,
-    nextEnabled: Boolean,
     onTogglePlay: () -> Unit,
     onSeekTo: (Long) -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
     modifier: Modifier = Modifier,
     muted: Boolean = true,
     onToggleMute: () -> Unit = {},
@@ -456,13 +444,6 @@ internal fun VideoTransport(
                 .weight(1f),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onPrevious, enabled = previousEnabled) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                    contentDescription = stringResource(R.string.viewer_previous),
-                    tint = chromeTint(previousEnabled),
-                )
-            }
             IconButton(onClick = onTogglePlay) {
                 if (state.isPlaying) {
                     // Drawn, not imported: `Pause` is not part of `material-icons-core`, and pulling in
@@ -479,14 +460,7 @@ internal fun VideoTransport(
                     )
                 }
             }
-            IconButton(onClick = onNext, enabled = nextEnabled) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = stringResource(R.string.viewer_next),
-                    tint = chromeTint(nextEnabled),
-                )
-            }
-            // Navigation on the leading side, output controls (mute, save) pushed to the trailing edge.
+            // Playback on the leading side, output controls (mute, save) pushed to the trailing edge.
             Spacer(modifier = Modifier.weight(1f))
             IconButton(onClick = onToggleMute) {
                 Icon(
