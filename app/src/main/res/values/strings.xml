@@ -443,6 +443,11 @@
     <string name="viewer_video_play">Play</string>
     <string name="viewer_video_pause">Pause</string>
     <string name="viewer_video_seek">Video position</string>
+    <string name="viewer_video_seek_forward">Forward 10 seconds</string>
+    <string name="viewer_video_seek_backward">Back 10 seconds</string>
+    <string name="viewer_video_brightness">Brightness</string>
+    <string name="viewer_video_volume">Volume</string>
+    <string name="viewer_video_speed_boost">Playing at 2× speed</string>
     <string name="viewer_mute">Mute</string>
     <string name="viewer_unmute">Unmute</string>
     <string name="viewer_source_local">On this device</string>

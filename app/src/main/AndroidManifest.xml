@@ -26,6 +26,12 @@
         android:maxSdkVersion="29" />
 
     <!--
+      The video player's right-half drag changes the media stream's level programmatically; Android
+      gates stream-volume changes on this normal (install-time, non-runtime) permission.
+    -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!--
       Phase 6 backup engine: WorkManager drives long-running uploads. The foreground service is
       WorkManager's own (no custom service class), gated on network, and only used while actively
       uploading. Data-sync is the closest correct type for a backup upload.

@@ -37,7 +37,7 @@ class VideoTransportUiTest {
     val composeRule = createComposeRule()
 
     /**
-     * The band the video surface reserves. Captured during composition because `TelepicTokens` is a
+     * The transport's own height token. Captured during composition because `TelepicTokens` is a
      * `@ReadOnlyComposable` accessor — the same reason `ViewerUiTest` reads the bar expectation back
      * inside `setContent` rather than outside it.
      */
@@ -73,11 +73,11 @@ class VideoTransportUiTest {
     }
 
     @Test
-    fun `the transport is exactly the band the video surface reserves for it`() {
+    fun `the transport is exactly its height token`() {
         transport()
-        // The reservation in VideoViewer and this bar are coupled by `TelepicSpacing.videoTransportHeight`.
-        // A bar taller than the reservation would put its own controls under the bottom chrome; a
-        // shorter one would leave a dead strip — the exact defect the stock media3 controller left.
+        // The bar is now drawn *over* a full-bleed video rather than inside a reserved band, but its
+        // height still comes from `TelepicSpacing.videoTransportHeight`: too tall and it would swallow
+        // more of the picture than designed, too short and its two tiers would clip.
         composeRule.onNodeWithTag(TAG_VIDEO_TRANSPORT)
             .assertHeightIsEqualTo(expectedBarHeight)
     }

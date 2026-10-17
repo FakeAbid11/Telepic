@@ -221,17 +221,16 @@ class ViewerUiTest {
     }
 
     /**
-     * `VideoViewer` insets the video surface by exactly `TelepicSpacing.chromeBarHeight` at each end,
-     * and the Compose transport that replaced media3's stock controller is that tall too
-     * (`VideoTransportUiTest` pins that side). The three are coupled by one value, so this pins the
-     * photo chrome against it: the bars build their height from `sm` + `touchTarget` + `sm`, and the
-     * reservation is the same sum.
+     * The Viewer's chrome bars are exactly `TelepicSpacing.chromeBarHeight` tall — the token the bars
+     * build their own height from (`sm` + `touchTarget` + `sm`). The video transport is a separate,
+     * taller bar drawn *over* a full-bleed video (see `VideoTransportUiTest`), so the two no longer
+     * share a reservation; this pins the photo chrome's own contract.
      *
-     * Equality rather than a minimum, because the failure mode runs the *other* way — a bar that
-     * grows taller than the reservation is what would push controls back under the chrome.
+     * Equality rather than a minimum: a bar that drifts taller would cover the media it is meant to
+     * float over.
      */
     @Test
-    fun `the chrome bars are exactly as tall as the band the video surface reserves`() {
+    fun `the chrome bars are exactly the chrome bar token tall`() {
         var topBarExpected = 0.dp
         var bottomBarExpected = 0.dp
         // A cloud item: its bottom bar carries the save/download actions, so it is the bar that

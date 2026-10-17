@@ -1,22 +1,23 @@
 package com.telepic.ui.screens.viewer
 
 import android.content.Context
+import android.media.AudioManager
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -36,11 +37,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -66,6 +70,7 @@ import com.telepic.R
 import com.telepic.navigation.MediaSource
 import com.telepic.ui.theme.TelepicTokens
 import java.io.File
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 /**
@@ -82,8 +87,14 @@ import kotlinx.coroutines.delay
  * button used to sit exactly under the Viewer's "next" arrow (composed later, so it won the hit test
  * and swallowed the taps). `useController = false` removes media3's chrome entirely, and
  * [VideoTransport] owns the one bar that's left — a seek line over a control row carrying play/pause,
- * prev/next, mute and the cloud save action — sized to `videoTransportHeight`, the band the surface
- * reserves for it.
+ * mute and the cloud save action — sized to `videoTransportHeight`.
+ *
+ * Following NextPlayer's shape, the surface is **full-bleed** and the chrome floats over it: a centre
+ * play/pause medallion, the bottom transport, and a transient [VideoGestureHud], all dismissed by a
+ * tap and auto-hidden ~3s after the last interaction *while playing*. The picture owns the whole
+ * screen and the whole gesture language ([videoPlayerGestures]) — double-tap to seek, vertical drag
+ * for brightness/volume, long-press for a speed boost, horizontal drag to page — while the controls,
+ * composed on top, keep first refusal on any touch.
  *
  * Videos open **muted** by default ([startMuted], from the "Start videos muted" preference).
  * Autoplaying with sound hijacks whatever the user was already listening to, and media3 gives no
@@ -102,6 +113,8 @@ fun VideoViewer(
     onRestore: (() -> Unit)? = null,
     restore: RestoreState = RestoreState.Idle,
     startMuted: Boolean = true,
+    controlsVisible: Boolean = true,
+    onSetControlsVisible: (Boolean) -> Unit = {},
 ) {
     val videoUri: Uri? = when (val item = state.item) {
         is ViewerItem.Local -> item.media.contentUri
@@ -193,30 +206,101 @@ fun VideoViewer(
 
     val spacing = TelepicTokens.spacing
 
-    // The video surface gets the frame the chrome leaves free — the system-bar inset plus one chrome
-    // bar at each end — instead of the window. The chrome is composed *over* this component, and on
-    // video it is always visible: ViewerContent hands videos here without wiring onRequestToggle, so
-    // no tap can dismiss it.
-    //
-    // Reserving the band at the bottom is what makes room for the transport: the transport sits in
-    // the last `videoTransportHeight` of this already-inset box, so it replaces the Viewer's bottom
-    // chrome rather than stacking above it. The reserved strip is indistinguishable from media3's own
-    // letterbox — the backdrop behind this component is black in both schemes.
-    //
-    // Reserved at both ends unconditionally: the top chrome is the only one left for a photo, and
-    // keeping the same top band for both kinds keeps the video from shifting as the user swipes. The
-    // bottom band is taller for a video — its two-tier transport (slider over buttons) needs the room
-    // — so the video surface gives up a little more at the bottom than a photo does.
-    val chromeBarHeight = spacing.chromeBarHeight
-    val transportHeight = spacing.videoTransportHeight
+    // Full-bleed: the video fills the window, and every control is drawn *over* it, exactly as the
+    // photo chrome floats over the image. Reserving a band for the transport used to keep the surface
+    // clear of the chrome, but it shrank the picture and blocked the NextPlayer-style gestures (a
+    // surface padded out of the transport band could not see a vertical drag that started on it).
+    // Instead the transport is composed on top with its own scrim, and the full-surface gesture
+    // detector yields to any control already consuming a drag (see `videoPlayerGestures`).
+    val brightness = rememberScreenBrightnessController()
+    val audioManager = remember(context) {
+        context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
+    // Left-half drags own this; seeded from the window's current override (or the middle when the
+    // window follows the system, since the true system brightness needs a permission to read).
+    var brightnessFraction by remember(videoUri, brightness) {
+        mutableFloatStateOf(brightness?.initialFraction ?: 0.5f)
+    }
+    var boosting by remember(videoUri) { mutableStateOf(false) }
+    var feedback by remember(videoUri) { mutableStateOf<VideoGestureFeedback?>(null) }
+    // Bumped by every gesture so the auto-hide timer restarts on interaction.
+    var interactionToken by remember(videoUri) { mutableIntStateOf(0) }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(top = chromeBarHeight, bottom = transportHeight),
-    ) {
+    // The confirmation clears itself a beat after the last gesture. Keyed on the value, so a stream of
+    // volume/level updates keeps the HUD up and only the *final* one starts the countdown.
+    LaunchedEffect(feedback) {
+        if (feedback != null) {
+            delay(FEEDBACK_VISIBLE_MS)
+            feedback = null
+        }
+    }
+
+    // Chrome hides ~3s after the last interaction, but only while the video is actually playing: a
+    // paused clip keeps its controls, because with nothing moving the controls *are* the screen.
+    LaunchedEffect(controlsVisible, playback.state.isPlaying, interactionToken) {
+        if (controlsVisible && playback.state.isPlaying) {
+            delay(AUTO_HIDE_DELAY_MS)
+            onSetControlsVisible(false)
+        }
+    }
+
+    fun togglePlay() {
+        if (player.isPlaying) player.pause() else player.play()
+    }
+
+    val applySeek: (Long) -> Unit = { deltaMs ->
+        val duration = player.duration
+        val target = player.currentPosition + deltaMs
+        player.seekTo(if (duration > 0L) target.coerceIn(0L, duration) else target.coerceAtLeast(0L))
+        playback.tick(player) // reflect the jump immediately, not on the next 250ms poll
+        feedback = VideoGestureFeedback.Seek(deltaMs, deltaMs > 0)
+        interactionToken++
+    }
+
+    val applySpeed: (Boolean) -> Unit = { start ->
+        if (start) {
+            if (!boosting) {
+                boosting = true
+                player.setPlaybackSpeed(VideoGestureMath.SPEED_BOOST_MULTIPLIER)
+                feedback = VideoGestureFeedback.SpeedBoost(VideoGestureMath.SPEED_BOOST_MULTIPLIER)
+            }
+        } else if (boosting) {
+            boosting = false
+            player.setPlaybackSpeed(1f)
+            if (feedback is VideoGestureFeedback.SpeedBoost) feedback = null
+        }
+        interactionToken++
+    }
+
+    val applyLevel: (LevelKind, Float) -> Unit = { kind, delta ->
+        when (kind) {
+            LevelKind.BRIGHTNESS -> {
+                val next = VideoGestureMath.clampLevel(brightnessFraction + delta)
+                brightnessFraction = brightness?.set(next) ?: next
+                feedback = VideoGestureFeedback.Level(LevelKind.BRIGHTNESS, brightnessFraction)
+            }
+            LevelKind.VOLUME -> {
+                // System stream volume, so the gesture leaves the hardware keys' own model intact.
+                // Raising it while muted is the one thing that also unmutes: a user who asks for
+                // volume wants sound, and that self-serve unmute is exactly the "explicit request"
+                // the player is built to wait for. Dragging to 0 does *not* mute — the mute button
+                // stays authoritative.
+                val stream = AudioManager.STREAM_MUSIC
+                val max = audioManager?.getStreamMaxVolume(stream) ?: 0
+                if (audioManager != null && max > 0) {
+                    val current = audioManager.getStreamVolume(stream).toFloat() / max
+                    val next = VideoGestureMath.clampLevel(current + delta)
+                    val target = (next * max).roundToInt().coerceIn(0, max)
+                    audioManager.setStreamVolume(stream, target, 0)
+                    if (target > 0 && muted) muted = false
+                    feedback = VideoGestureFeedback.Level(LevelKind.VOLUME, next)
+                }
+            }
+        }
+        interactionToken++
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -226,11 +310,24 @@ fun VideoViewer(
             },
             update = { view -> view.player = player },
             onRelease = { view -> view.player = null },
-            // Scoped to the surface itself, which the enclosing Box pads to exclude the transport
-            // band: the seek slider's horizontal drag is never mistaken for a page swipe.
+            // The full surface owns the gestures; controls composed after it (below) get first refusal
+            // on a touch and consume their own drags.
             modifier = Modifier
                 .fillMaxSize()
-                .swipeToNavigate(state.source, state.previous, state.next, onNavigate),
+                .videoPlayerGestures(
+                    key = state.source,
+                    previous = state.previous,
+                    next = state.next,
+                    onNavigate = onNavigate,
+                    onToggleControls = {
+                        onSetControlsVisible(!controlsVisible)
+                        interactionToken++
+                    },
+                    onDoubleTapCenter = { togglePlay(); interactionToken++ },
+                    onSeekBy = applySeek,
+                    onSpeedBoost = applySpeed,
+                    onLevel = applyLevel,
+                ),
         )
 
         // Honest playback failure. media3's stock controller drew its own error view; ours must say
@@ -246,19 +343,84 @@ fun VideoViewer(
             )
         }
 
-        VideoTransport(
-            state = playback.state,
-            onTogglePlay = { if (player.isPlaying) player.pause() else player.play() },
-            onSeekTo = { target -> player.seekTo(target) },
-            // The mute affordance lives on the transport now (media3 1.4.1 exposes no volume control
-            // and ships no mute button). It used to float top-right, where it competed with the
-            // top-bar's own actions; on the bar it reads as one of the transport's controls.
-            muted = muted,
-            onToggleMute = { muted = !muted },
-            onRestore = onRestore,
-            restore = restore,
+        // The centre play/pause medallion, part of the chrome: an obvious target when the transport's
+        // own button is a long way down the frame.
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            CenterPlayButton(isPlaying = playback.state.isPlaying, onClick = { togglePlay(); interactionToken++ })
+        }
+
+        // The bottom chrome: a scrim for legibility plus the two-tier transport. It slides away with
+        // the rest of the chrome, so nothing dark lingers over the picture.
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
-        )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // Fades from clear at the top to a dark base under the controls, so white glyphs
+                    // stay legible over a bright frame without blackening the whole band.
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
+                        ),
+                    ),
+            ) {
+                Spacer(modifier = Modifier.height(spacing.lg))
+                VideoTransport(
+                    state = playback.state,
+                    onTogglePlay = { togglePlay() },
+                    onSeekTo = { target -> player.seekTo(target) },
+                    // The mute affordance lives on the transport now (media3 1.4.1 exposes no volume
+                    // control and ships no mute button). It used to float top-right, where it competed
+                    // with the top-bar's own actions; on the bar it reads as one of the transport's
+                    // controls.
+                    muted = muted,
+                    onToggleMute = { muted = !muted },
+                    onRestore = onRestore,
+                    restore = restore,
+                )
+            }
+        }
+
+        // The transient answer to a gesture — the seek jump, the level, the speed — over everything.
+        VideoGestureHud(feedback = feedback)
+    }
+}
+
+/**
+ * The large glass play/pause medallion at the centre of a video. Reuses the transport's drawn pause
+ * glyph, because `Icons.Filled.Pause` is not in `material-icons-core`.
+ */
+@Composable
+private fun CenterPlayButton(isPlaying: Boolean, onClick: () -> Unit) {
+    val playDescription = stringResource(R.string.viewer_video_play)
+    val pauseDescription = stringResource(R.string.viewer_video_pause)
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(72.dp)
+            .glassSurface(CircleShape),
+    ) {
+        if (isPlaying) {
+            PauseGlyph(
+                modifier = Modifier.semantics { contentDescription = pauseDescription },
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = playDescription,
+                tint = Color.White,
+                modifier = Modifier.size(36.dp),
+            )
+        }
     }
 }
 
@@ -351,8 +513,9 @@ internal class VideoPlaybackState {
 internal const val TAG_VIDEO_TRANSPORT = "video_transport"
 
 /**
- * The video's bottom bar, laid out in two tiers inside `TelepicSpacing.videoTransportHeight` — the
- * band the video surface reserves for it. The seek slider takes the top tier on its own, so it is wide
+ * The video's bottom bar, laid out in two tiers inside `TelepicSpacing.videoTransportHeight`. It is
+ * drawn over the full-bleed video rather than inside a reserved band. The seek slider takes the top
+ * tier on its own, so it is wide
  * and grabbable instead of sharing one cramped row with many controls; the control row below carries
  * play / pause, mute and the cloud save action.
  *
@@ -587,3 +750,9 @@ private fun buildPlayer(context: Context, uri: Uri): ExoPlayer =
 
 /** How often the running clock is re-read while a video plays. Fast enough to read as continuous. */
 private const val POSITION_TICK_MS = 250L
+
+/** How long the chrome lingers after the last interaction before hiding, while playing. */
+private const val AUTO_HIDE_DELAY_MS = 3_000L
+
+/** How long a gesture's on-screen confirmation (seek/level/speed) stays before fading. */
+private const val FEEDBACK_VISIBLE_MS = 900L

@@ -110,7 +110,8 @@ internal const val TAG_VIEWER_BOTTOM_BAR = "viewer_bottom_bar"
  * The full-screen media Viewer (Phase 9) for both local and cloud items. Photos and GIFs render via
  * Coil with pinch-to-zoom anchored under the fingers, pan, double-tap to magnify at the tapped point
  * (and again to return), and a horizontal swipe that pages to the adjacent item (disabled while
- * zoomed); videos delegate to the isolated Media3 [VideoViewer] and keep button-only navigation.
+ * zoomed); videos delegate to the isolated Media3 [VideoViewer], which adds the player gestures
+ * (double-tap seek, vertical brightness/volume, long-press speed) on a full-bleed surface.
  * The display stays awake while a Viewer is on screen and the system bars go with the chrome.
  * Controls are minimal, the source (Local / Cloud) is labelled, next/
  * previous stay within the originating collection, and a cloud original downloads only on explicit
@@ -212,6 +213,7 @@ fun ViewerScreen(
                     onNavigate = viewModel::open,
                     onDownload = viewModel::downloadOriginal,
                     onRequestToggle = { controlsVisible = !controlsVisible },
+                    onSetControlsVisible = { controlsVisible = it },
                     controlsVisible = controlsVisible,
                     onRestore = if (isCloudReady) viewModel::restoreToLocal else null,
                     restore = restore,
@@ -335,6 +337,7 @@ private fun ViewerContent(
     onNavigate: (MediaSource) -> Unit,
     onDownload: () -> Unit,
     onRequestToggle: () -> Unit,
+    onSetControlsVisible: (Boolean) -> Unit,
     controlsVisible: Boolean = true,
     onRestore: (() -> Unit)? = null,
     restore: RestoreState = RestoreState.Idle,
@@ -348,6 +351,8 @@ private fun ViewerContent(
             onRestore = onRestore,
             restore = restore,
             startMuted = startMuted,
+            controlsVisible = controlsVisible,
+            onSetControlsVisible = onSetControlsVisible,
         )
         return
     }
@@ -972,7 +977,7 @@ private fun MissingMedia(onBack: () -> Unit) {
  * it. Null when the composition is not inside an Activity (a preview), which the caller treats as
  * "leave the system bars alone" rather than as a failure.
  */
-private fun Context.hostingWindow(): Window? {
+internal fun Context.hostingWindow(): Window? {
     var current: Context = this
     while (current is ContextWrapper) {
         if (current is Activity) return current.window
