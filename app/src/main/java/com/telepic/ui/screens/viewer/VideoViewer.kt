@@ -215,7 +215,7 @@ fun VideoViewer(
     // detector can compare against its own pointer-space height.
     val controlsBandPx = if (controlsVisible) {
         with(density) { spacing.videoTransportHeight.toPx() } +
-            with(density) { WindowInsets.navigationBars.getBottom(this).toPx() }
+            WindowInsets.navigationBars.getBottom(density).toFloat()
     } else {
         0f
     }
