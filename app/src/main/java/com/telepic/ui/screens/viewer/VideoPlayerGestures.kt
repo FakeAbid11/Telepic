@@ -84,9 +84,12 @@ internal fun Modifier.videoPlayerGestures(
                     val change = pressed.first()
                     val delta = change.position - last
                     last = change.position
+                    // Accumulate the *whole* gesture, not just up to the lock: the horizontal
+                    // displacement at lift-off is what [SwipeResolver] measures against the page
+                    // threshold, so freezing it at the slop crossing would always undershoot.
+                    totalX += delta.x
+                    totalY += delta.y
                     if (axis == null) {
-                        totalX += delta.x
-                        totalY += delta.y
                         val slop = viewConfiguration.touchSlop
                         if (abs(totalX) > slop || abs(totalY) > slop) {
                             axis = if (abs(totalX) > abs(totalY)) DragAxis.HORIZONTAL else DragAxis.VERTICAL
