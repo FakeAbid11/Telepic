@@ -84,6 +84,7 @@ class VideoPlayerGesturesTest {
         composeRule.onNodeWithTag(TAG).performTouchInput { swipeLeft() }
         composeRule.waitForIdle()
 
+        println("DBG swipeLeft navigated=${recorder.navigated} levels=${recorder.levels} toggle=${recorder.toggleCount} seeks=${recorder.seeks} speed=${recorder.speedCalls}")
         assertEquals(next, recorder.navigated)
     }
 
@@ -95,6 +96,7 @@ class VideoPlayerGesturesTest {
         composeRule.onNodeWithTag(TAG).performTouchInput { swipeRight() }
         composeRule.waitForIdle()
 
+        println("DBG swipeRight navigated=${recorder.navigated} levels=${recorder.levels} toggle=${recorder.toggleCount} seeks=${recorder.seeks} speed=${recorder.speedCalls}")
         assertEquals(previous, recorder.navigated)
     }
 
