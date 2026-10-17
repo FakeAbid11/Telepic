@@ -63,6 +63,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.telepic.R
+import com.telepic.navigation.MediaSource
 import com.telepic.ui.theme.TelepicTokens
 import java.io.File
 import kotlinx.coroutines.delay
@@ -96,6 +97,7 @@ import kotlinx.coroutines.delay
 fun VideoViewer(
     state: ViewerUiState,
     onDownload: () -> Unit,
+    onNavigate: (MediaSource) -> Unit,
     modifier: Modifier = Modifier,
     onRestore: (() -> Unit)? = null,
     restore: RestoreState = RestoreState.Idle,
@@ -224,7 +226,11 @@ fun VideoViewer(
             },
             update = { view -> view.player = player },
             onRelease = { view -> view.player = null },
-            modifier = Modifier.fillMaxSize(),
+            // Scoped to the surface itself, which the enclosing Box pads to exclude the transport
+            // band: the seek slider's horizontal drag is never mistaken for a page swipe.
+            modifier = Modifier
+                .fillMaxSize()
+                .swipeToNavigate(state.source, state.previous, state.next, onNavigate),
         )
 
         // Honest playback failure. media3's stock controller drew its own error view; ours must say

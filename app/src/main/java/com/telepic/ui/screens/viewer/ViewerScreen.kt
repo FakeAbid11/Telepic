@@ -344,6 +344,7 @@ private fun ViewerContent(
         VideoViewer(
             state = state,
             onDownload = onDownload,
+            onNavigate = onNavigate,
             onRestore = onRestore,
             restore = restore,
             startMuted = startMuted,
