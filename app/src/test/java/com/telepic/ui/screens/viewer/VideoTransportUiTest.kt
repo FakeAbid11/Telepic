@@ -55,13 +55,15 @@ class VideoTransportUiTest {
         nextEnabled: Boolean = true,
         restore: RestoreState = RestoreState.Idle,
         onRestore: (() -> Unit)? = null,
+        muted: Boolean = true,
+        onToggleMute: () -> Unit = {},
         onTogglePlay: () -> Unit = {},
         onSeekTo: (Long) -> Unit = {},
         onPrevious: () -> Unit = {},
         onNext: () -> Unit = {},
     ) {
         composeRule.setContent {
-            expectedBarHeight = TelepicTokens.spacing.chromeBarHeight
+            expectedBarHeight = TelepicTokens.spacing.videoTransportHeight
             TelepicTheme {
                 VideoTransport(
                     state = state,
@@ -71,6 +73,8 @@ class VideoTransportUiTest {
                     onSeekTo = onSeekTo,
                     onPrevious = onPrevious,
                     onNext = onNext,
+                    muted = muted,
+                    onToggleMute = onToggleMute,
                     onRestore = onRestore,
                     restore = restore,
                 )
@@ -81,7 +85,7 @@ class VideoTransportUiTest {
     @Test
     fun `the transport is exactly the band the video surface reserves for it`() {
         transport()
-        // The reservation in VideoViewer and this bar are coupled by `TelepicSpacing.chromeBarHeight`.
+        // The reservation in VideoViewer and this bar are coupled by `TelepicSpacing.videoTransportHeight`.
         // A bar taller than the reservation would put its own controls under the bottom chrome; a
         // shorter one would leave a dead strip — the exact defect the stock media3 controller left.
         composeRule.onNodeWithTag(TAG_VIDEO_TRANSPORT)
@@ -104,6 +108,22 @@ class VideoTransportUiTest {
 
         composeRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
         composeRule.onAllNodesWithContentDescription("Play").assertCountEquals(0)
+    }
+
+    @Test
+    fun `the mute control rides the transport and names the action it performs`() {
+        var toggled = false
+        transport(muted = true, onToggleMute = { toggled = true })
+
+        // Muted → the button offers to unmute (the action, not the state), and tapping it flips it.
+        composeRule.onNodeWithContentDescription("Unmute").assertIsDisplayed().performClick()
+        assertTrue(toggled)
+    }
+
+    @Test
+    fun `an unmuted video offers to mute`() {
+        transport(muted = false)
+        composeRule.onNodeWithContentDescription("Mute").assertIsDisplayed()
     }
 
     @Test

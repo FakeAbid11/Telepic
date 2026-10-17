@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -43,7 +43,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -83,8 +82,9 @@ import kotlinx.coroutines.delay
  * directly above the Viewer's bottom chrome: two stacked bars, and the controller's right-most
  * button used to sit exactly under the Viewer's "next" arrow (composed later, so it won the hit test
  * and swallowed the taps). `useController = false` removes media3's chrome entirely, and
- * [VideoTransport] owns the one bar that's left — play/pause, seek, the clock, prev/next and the
- * cloud save action — sized to `chromeBarHeight`, the same band the surface reserves for it.
+ * [VideoTransport] owns the one bar that's left — a seek line over a control row carrying play/pause,
+ * prev/next, mute and the cloud save action — sized to `videoTransportHeight`, the band the surface
+ * reserves for it.
  *
  * Videos open **muted** by default ([startMuted], from the "Start videos muted" preference).
  * Autoplaying with sound hijacks whatever the user was already listening to, and media3 gives no
@@ -201,20 +201,23 @@ fun VideoViewer(
     // no tap can dismiss it.
     //
     // Reserving the band at the bottom is what makes room for the transport: the transport sits in
-    // the last `chromeBarHeight` of this already-inset box, so it replaces the Viewer's bottom chrome
-    // rather than stacking above it. The reserved strip is indistinguishable from media3's own
+    // the last `videoTransportHeight` of this already-inset box, so it replaces the Viewer's bottom
+    // chrome rather than stacking above it. The reserved strip is indistinguishable from media3's own
     // letterbox — the backdrop behind this component is black in both schemes.
     //
     // Reserved at both ends unconditionally: the top chrome is the only one left for a photo, and
-    // keeping the same frame for both kinds means the video never changes size as the user swipes.
+    // keeping the same top band for both kinds keeps the video from shifting as the user swipes. The
+    // bottom band is taller for a video — its two-tier transport (slider over buttons) needs the room
+    // — so the video surface gives up a little more at the bottom than a photo does.
     val chromeBarHeight = spacing.chromeBarHeight
+    val transportHeight = spacing.videoTransportHeight
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.statusBars)
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(top = chromeBarHeight, bottom = chromeBarHeight),
+            .padding(top = chromeBarHeight, bottom = transportHeight),
     ) {
         AndroidView(
             factory = { ctx ->
@@ -249,39 +252,15 @@ fun VideoViewer(
             onSeekTo = { target -> player.seekTo(target) },
             onPrevious = onPrevious,
             onNext = onNext,
+            // The mute affordance lives on the transport now (media3 1.4.1 exposes no volume control
+            // and ships no mute button). It used to float top-right, where it competed with the
+            // top-bar's own actions; on the bar it reads as one of the transport's controls.
+            muted = muted,
+            onToggleMute = { muted = !muted },
             onRestore = onRestore,
             restore = restore,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
-
-        // PlayerView exposes no mute/volume setter in media3 1.4.1, and its default controller
-        // layout ships no mute button either (checked against exo_player_control_view.xml), so the
-        // affordance is ours. It stays mounted whether or not the transport controls are shown.
-        //
-        // Positioned from the Box's content area, which already begins below the top bar. The button
-        // used to repeat that inset itself; the duplication is what let it drift up into the bar's
-        // Details action — composed later, so it also won the hit test and stole the taps.
-        IconButton(
-            onClick = { muted = !muted },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(end = spacing.xs)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.45f)),
-        ) {
-            Icon(
-                imageVector = if (muted) {
-                    Icons.AutoMirrored.Filled.VolumeOff
-                } else {
-                    Icons.AutoMirrored.Filled.VolumeUp
-                },
-                // Describes the ACTION, not the state: a screen reader user hears what a tap will do.
-                contentDescription = stringResource(
-                    if (muted) R.string.viewer_unmute else R.string.viewer_mute,
-                ),
-                tint = Color.White,
-            )
-        }
     }
 }
 
@@ -374,14 +353,14 @@ internal class VideoPlaybackState {
 internal const val TAG_VIDEO_TRANSPORT = "video_transport"
 
 /**
- * The video's only bottom bar. Sized to `TelepicSpacing.chromeBarHeight` — the same band the video
- * surface reserves for it and the same height the Viewer's photo chrome uses — and placed in the last
- * `chromeBarHeight` of the inset-adjusted surface, so it *is* the bar instead of a second one stacked
- * above it.
+ * The video's bottom bar, laid out in two tiers inside `TelepicSpacing.videoTransportHeight` — the
+ * band the video surface reserves for it. The seek slider takes the top tier on its own, so it is wide
+ * and grabbable instead of sharing one cramped row with seven controls; the control row below carries
+ * prev, play / pause, next, mute and the cloud save action.
  *
- * Icon rather than label, because a 360dp phone has room for 0:12 · [seek] · 9:41 between two
- * navigation buttons and nothing else; the labels ride on content descriptions, and every one of them
- * names the *action* (a screen reader user hears what the tap does, not what the icon shows).
+ * Icon rather than label: a 360dp phone has no room for words once the clock shares the bar. The
+ * labels ride on content descriptions, and every one of them names the *action* (a screen reader user
+ * hears what the tap does, not what the icon shows).
  */
 @Composable
 internal fun VideoTransport(
@@ -393,6 +372,8 @@ internal fun VideoTransport(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
+    muted: Boolean = true,
+    onToggleMute: () -> Unit = {},
     onRestore: (() -> Unit)? = null,
     restore: RestoreState = RestoreState.Idle,
 ) {
@@ -405,116 +386,147 @@ internal fun VideoTransport(
     // The clock tracks the scrub, not just the playback: a scrubbing user needs to read the position
     // they are aiming at, not the one they left.
     val displayPositionMs = state.displayPositionMs(dragFraction)
-    Row(
+    val playDescription = stringResource(R.string.viewer_video_play)
+    val pauseDescription = stringResource(R.string.viewer_video_pause)
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(spacing.chromeBarHeight)
+            .height(spacing.videoTransportHeight)
             .padding(horizontal = spacing.xs)
             .testTag(TAG_VIDEO_TRANSPORT),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onPrevious, enabled = previousEnabled) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                contentDescription = stringResource(R.string.viewer_previous),
-                tint = chromeTint(previousEnabled),
+        // Tier 1 — the seek line, full width, with the clock at each end.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = formatPlaybackTime(displayPositionMs),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
+                maxLines = 1,
+                // Ellipsis, not the default Clip: at a large font scale a clipped duration was cut
+                // mid-glyph with no indication anything was missing.
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End,
+                modifier = Modifier.padding(horizontal = spacing.xs),
+            )
+            Slider(
+                value = dragFraction ?: state.fraction,
+                // The seek is applied *while* dragging, not on release: scrubbing shows the frame the
+                // finger is on instead of jumping once at the end. media3's seekTo is cheap and
+                // idempotent, so this costs nothing and matches what the stock controller always did.
+                onValueChange = { fraction ->
+                    dragFraction = fraction
+                    state.seekTarget(fraction)?.let(onSeekTo)
+                },
+                onValueChangeFinished = { dragFraction = null },
+                enabled = state.isSeekable,
+                colors = SliderDefaults.colors(
+                    // Explicit: the Material defaults (`primary` / `surfaceVariant`) are tuned for the
+                    // themed surface, and this bar sits on black.
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+                ),
+                // A bare slider announces its percentage, which says nothing about *what* is being
+                // scrubbed; name the media position instead.
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { contentDescription = seekDescription },
+            )
+            Text(
+                // Tied to `isSeekable`, not to a second `> 0` test: an unknown duration disables the
+                // bar *and* must not be printed as a length.
+                text = if (state.isSeekable) formatPlaybackTime(state.durationMs) else stringResource(R.string.viewer_duration_unknown),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Start,
+                modifier = Modifier.padding(horizontal = spacing.xs),
             )
         }
-        val playDescription = stringResource(R.string.viewer_video_play)
-        val pauseDescription = stringResource(R.string.viewer_video_pause)
-        IconButton(onClick = onTogglePlay) {
-            if (state.isPlaying) {
-                // Drawn, not imported: `Pause` is not part of `material-icons-core`, and pulling in
-                // the extended set for one glyph is not a trade this app makes. The label rides on
-                // the glyph's wrapper, which the button merges — the drawn bars carry no semantics.
-                PauseGlyph(
-                    modifier = Modifier.semantics { contentDescription = pauseDescription },
-                )
-            } else {
+        // Tier 2 — the transport controls.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onPrevious, enabled = previousEnabled) {
                 Icon(
-                    imageVector = Icons.Filled.PlayArrow,
-                    contentDescription = playDescription,
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = stringResource(R.string.viewer_previous),
+                    tint = chromeTint(previousEnabled),
+                )
+            }
+            IconButton(onClick = onTogglePlay) {
+                if (state.isPlaying) {
+                    // Drawn, not imported: `Pause` is not part of `material-icons-core`, and pulling in
+                    // the extended set for one glyph is not a trade this app makes. The label rides on
+                    // the glyph's wrapper, which the button merges — the drawn bars carry no semantics.
+                    PauseGlyph(
+                        modifier = Modifier.semantics { contentDescription = pauseDescription },
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = playDescription,
+                        tint = Color.White,
+                    )
+                }
+            }
+            IconButton(onClick = onNext, enabled = nextEnabled) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.viewer_next),
+                    tint = chromeTint(nextEnabled),
+                )
+            }
+            // Navigation on the leading side, output controls (mute, save) pushed to the trailing edge.
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(onClick = onToggleMute) {
+                Icon(
+                    imageVector = if (muted) {
+                        Icons.AutoMirrored.Filled.VolumeOff
+                    } else {
+                        Icons.AutoMirrored.Filled.VolumeUp
+                    },
+                    // Describes the ACTION, not the state: a screen reader user hears what a tap does.
+                    contentDescription = stringResource(
+                        if (muted) R.string.viewer_unmute else R.string.viewer_mute,
+                    ),
                     tint = Color.White,
                 )
             }
-        }
-        Text(
-            text = formatPlaybackTime(displayPositionMs),
-            style = MaterialTheme.typography.labelMedium,
-            color = Color.White,
-            maxLines = 1,
-            // Ellipsis, not the default Clip: at a large font scale a clipped duration was cut
-            // mid-glyph with no indication anything was missing.
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.End,
-            modifier = Modifier.padding(horizontal = spacing.xs),
-        )
-        Slider(
-            value = dragFraction ?: state.fraction,
-            // The seek is applied *while* dragging, not on release: scrubbing shows the frame the
-            // finger is on instead of jumping once at the end. media3's seekTo is cheap and
-            // idempotent, so this costs nothing and matches what the stock controller always did.
-            onValueChange = { fraction ->
-                dragFraction = fraction
-                state.seekTarget(fraction)?.let(onSeekTo)
-            },
-            onValueChangeFinished = { dragFraction = null },
-            enabled = state.isSeekable,
-            colors = SliderDefaults.colors(
-                // Explicit: the Material defaults (`primary` / `surfaceVariant`) are tuned for the
-                // themed surface, and this bar sits on black.
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color.White.copy(alpha = 0.3f),
-            ),
-            // A bare slider announces its percentage, which says nothing about *what* is being
-            // scrubbed; name the media position instead.
-            modifier = Modifier
-                .weight(1f)
-                .semantics { contentDescription = seekDescription },
-        )
-        Text(
-            // Tied to `isSeekable`, not to a second `> 0` test: an unknown duration disables the
-            // bar *and* must not be printed as a length.
-            text = if (state.isSeekable) formatPlaybackTime(state.durationMs) else stringResource(R.string.viewer_duration_unknown),
-            style = MaterialTheme.typography.labelMedium,
-            color = Color.White,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Start,
-            modifier = Modifier.padding(horizontal = spacing.xs),
-        )
-        IconButton(onClick = onNext, enabled = nextEnabled) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = stringResource(R.string.viewer_next),
-                tint = chromeTint(nextEnabled),
-            )
-        }
-        if (onRestore != null) {
-            IconButton(onClick = onRestore, enabled = restore !is RestoreState.Restoring) {
-                when (restore) {
-                    is RestoreState.Restoring -> CircularProgressIndicator(
-                        color = Color.White,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    is RestoreState.Restored -> Icon(
-                        imageVector = Icons.Filled.CheckCircle,
-                        contentDescription = stringResource(R.string.viewer_saved),
-                        tint = Color.White,
-                    )
-                    is RestoreState.Failed -> Icon(
-                        imageVector = Icons.Outlined.SaveAlt,
-                        // The reason rides on the description: a red icon alone cannot tell "no
-                        // space" from "not available" apart.
-                        contentDescription = stringResource(restore.reason.messageRes),
-                        tint = TelepicTokens.colors.mediaErrorText,
-                    )
-                    RestoreState.Idle -> Icon(
-                        imageVector = Icons.Outlined.SaveAlt,
-                        contentDescription = stringResource(R.string.viewer_save_device),
-                        tint = chromeTint(true),
-                    )
+            if (onRestore != null) {
+                IconButton(onClick = onRestore, enabled = restore !is RestoreState.Restoring) {
+                    when (restore) {
+                        is RestoreState.Restoring -> CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        is RestoreState.Restored -> Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = stringResource(R.string.viewer_saved),
+                            tint = Color.White,
+                        )
+                        is RestoreState.Failed -> Icon(
+                            imageVector = Icons.Outlined.SaveAlt,
+                            // The reason rides on the description: a red icon alone cannot tell "no
+                            // space" from "not available" apart.
+                            contentDescription = stringResource(restore.reason.messageRes),
+                            tint = TelepicTokens.colors.mediaErrorText,
+                        )
+                        RestoreState.Idle -> Icon(
+                            imageVector = Icons.Outlined.SaveAlt,
+                            contentDescription = stringResource(R.string.viewer_save_device),
+                            tint = chromeTint(true),
+                        )
+                    }
                 }
             }
         }

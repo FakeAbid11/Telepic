@@ -6,26 +6,31 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.telepic.R
 import com.telepic.domain.backup.MediaBackupVisualState
@@ -43,6 +48,10 @@ import kotlin.math.abs
  * backup status and, for a cloud item, its remote identity. Any field that cannot be obtained is
  * omitted rather than guessed, and the file's library/modified date is never presented as the actual
  * capture time. Renders a spinner while the details are still being assembled.
+ *
+ * The rows are grouped under small section labels (File / Camera / Location / Backup / Cloud), each
+ * group riding on its own rounded surface, with a header that names the file and carries pills for its
+ * kind and backup state — so the sheet reads as a designed panel rather than a bare list.
  *
  * When [onShowOnMap] is supplied and the item really carries a coordinate, the sheet also offers to
  * open that spot on the map — the coordinate is otherwise only readable, never actionable.
@@ -65,34 +74,30 @@ fun MediaDetailsSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.screenMargin)
                 .padding(bottom = spacing.xl),
-            verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             Text(
                 text = stringResource(R.string.details_title),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = spacing.sm),
             )
             if (details == null) {
                 CircularProgressIndicator(modifier = Modifier.padding(vertical = spacing.lg))
             } else {
-                details.displayRows(context).forEach { row ->
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = stringResource(row.labelRes),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth(0.38f),
-                        )
-                        Text(
-                            text = row.value,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.End,
-                            // `weight`, not `fillMaxWidth`: asking for the full row width made a long
-                            // value (a file path, a filename) run past the label and clip. Weighted, it
-                            // takes exactly the space left and wraps inside it.
-                            modifier = Modifier.weight(1f),
-                        )
+                DetailsHeader(details)
+                // One rounded surface per section, in first-seen order. `displayRows` already emits the
+                // rows grouped contiguously, so `distinct` preserves the intended section order.
+                val rows = details.displayRows(context)
+                rows.map { it.group }.distinct().forEach { group ->
+                    SectionLabel(group)
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs)) {
+                            rows.filter { it.group == group }.forEach { DetailRowView(it) }
+                        }
                     }
                 }
 
@@ -100,7 +105,11 @@ fun MediaDetailsSheet(
                 // when the item genuinely carries one, so the action can never lead to a fabricated pin.
                 details.mappableLocation()?.let { (latitude, longitude) ->
                     if (onShowOnMap != null) {
-                        TextButton(onClick = { onShowOnMap(latitude, longitude) }) {
+                        Spacer(modifier = Modifier.height(spacing.md))
+                        Button(
+                            onClick = { onShowOnMap(latitude, longitude) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
                             Icon(
                                 imageVector = Icons.Outlined.Map,
                                 contentDescription = null,
@@ -116,8 +125,100 @@ fun MediaDetailsSheet(
     }
 }
 
-/** One label/value line for the Details sheet. */
-data class DetailRow(val labelRes: Int, val value: String)
+/** The sheet's header: the file name over pills for its kind and backup state. */
+@Composable
+private fun DetailsHeader(details: MediaDetails) {
+    val spacing = TelepicTokens.spacing
+    val typeLabel = details.mediaType?.let { stringResource(it.labelRes) }
+    val backupLabel = details.backupState?.let { stringResource(it.labelRes) }
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        Text(
+            text = details.fileName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.details_unknown),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (typeLabel != null || backupLabel != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                typeLabel?.let { SubtitlePill(it) }
+                backupLabel?.let { SubtitlePill(it) }
+            }
+        }
+    }
+}
+
+/** A small rounded label, used for the header's kind / backup-state pills. */
+@Composable
+private fun SubtitlePill(text: String) {
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = TelepicTokens.spacing.sm, vertical = TelepicTokens.spacing.xxs),
+        )
+    }
+}
+
+/** One section's small label, above its rounded row surface. */
+@Composable
+private fun SectionLabel(group: DetailGroup) {
+    Text(
+        text = stringResource(group.labelRes),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = TelepicTokens.spacing.lg, bottom = TelepicTokens.spacing.xs),
+    )
+}
+
+/** One label/value line inside a section surface. */
+@Composable
+private fun DetailRowView(row: DetailRow) {
+    val spacing = TelepicTokens.spacing
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(row.labelRes),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(0.38f),
+        )
+        Text(
+            text = row.value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.End,
+            // `weight`, not `fillMaxWidth`: asking for the full row width made a long value (a file
+            // path, a filename) run past the label and clip. Weighted, it takes exactly the space left
+            // and wraps inside it.
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** The section a [DetailRow] belongs to. */
+enum class DetailGroup(val labelRes: Int) {
+    FILE(R.string.details_section_file),
+    CAPTURE(R.string.details_section_capture),
+    LOCATION(R.string.details_section_location),
+    BACKUP(R.string.details_section_backup),
+    CLOUD(R.string.details_section_cloud),
+}
+
+/** One label/value line for the Details sheet, plus the section it belongs to. */
+data class DetailRow(
+    val labelRes: Int,
+    val value: String,
+    val group: DetailGroup = DetailGroup.FILE,
+)
 
 /**
  * Builds the presentable rows, including only fields with a reliable value. Pure enough to unit-test
@@ -125,12 +226,14 @@ data class DetailRow(val labelRes: Int, val value: String)
  * two always-present fields when their source is blank, and omits optional fields entirely.
  *
  * Two rules the row order follows. Identity first — what the file *is* (name, kind, format, size,
- * dimensions, duration) before where it came from and what happened to it. And every exposure row is
- * conditional: a file with no EXIF shows no ISO/aperture/shutter/focal-length rows at all, rather
- * than four lines reading "Unknown".
+ * dimensions, duration) before its capture data, its location, where it came from and what happened to
+ * it — and rows are emitted grouped by [DetailGroup] so the sheet can draw one section per group. And
+ * every exposure row is conditional: a file with no EXIF shows no ISO/aperture/shutter/focal-length
+ * rows at all, rather than four lines reading "Unknown".
  */
 internal fun MediaDetails.displayRows(context: Context): List<DetailRow> {
     val rows = mutableListOf<DetailRow>()
+    // File — what the item is and where its bytes live.
     rows += DetailRow(R.string.details_file_name, fileName?.takeIf { it.isNotBlank() } ?: unknown(context))
     mediaType?.let { rows += DetailRow(R.string.details_type, context.getString(it.labelRes)) }
     rows += DetailRow(R.string.details_format, mimeType?.takeIf { it.isNotBlank() } ?: unknown(context))
@@ -144,10 +247,6 @@ internal fun MediaDetails.displayRows(context: Context): List<DetailRow> {
     DurationLabel.format(durationMillis)?.let {
         rows += DetailRow(R.string.details_duration, it)
     }
-    // Capture time only from EXIF — never the file-modified/library date masquerading as the shot time.
-    captureMillis?.let {
-        rows += DetailRow(R.string.details_taken, DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(it))
-    }
     // The date the item entered the device library (MediaStore DATE_ADDED), when available.
     libraryAddedMillis?.let {
         rows += DetailRow(R.string.details_date_added, DateFormat.getDateInstance(DateFormat.MEDIUM).format(it))
@@ -158,43 +257,65 @@ internal fun MediaDetails.displayRows(context: Context): List<DetailRow> {
     relativePath?.takeIf { it.isNotBlank() }?.let {
         rows += DetailRow(R.string.details_path, it)
     }
+    // Camera & capture — EXIF only, and only from EXIF: the file-modified date never masquerades as
+    // the capture time.
+    captureMillis?.let {
+        rows += DetailRow(
+            R.string.details_taken,
+            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(it),
+            DetailGroup.CAPTURE,
+        )
+    }
     cameraMake?.let { make ->
         val model = cameraModel
         val value = if (model != null && model.isNotBlank()) "$make $model" else make
-        rows += DetailRow(R.string.details_camera, value)
+        rows += DetailRow(R.string.details_camera, value, DetailGroup.CAPTURE)
     }
-    iso?.let { rows += DetailRow(R.string.details_iso, it.toString()) }
+    iso?.let { rows += DetailRow(R.string.details_iso, it.toString(), DetailGroup.CAPTURE) }
     // The `f/` is part of the notation [formatAperture] produces, so the row takes its output as-is.
     // Wrapping it in a "f/%1$s" format string is what rendered "f/f/2.8" — the prefix belongs to the
     // value, not to the label. The exposure and focal-length rows below are the opposite case: their
     // unit is a suffix the label owns, so those do go through a format string.
     fNumber?.let { aperture ->
-        formatAperture(aperture)?.let { rows += DetailRow(R.string.details_aperture, it) }
+        formatAperture(aperture)?.let { rows += DetailRow(R.string.details_aperture, it, DetailGroup.CAPTURE) }
     }
     exposureTimeSeconds?.let { exposure ->
         formatExposureTime(exposure)?.let {
-            rows += DetailRow(R.string.details_exposure, context.getString(R.string.details_exposure_value, it))
+            rows += DetailRow(
+                R.string.details_exposure,
+                context.getString(R.string.details_exposure_value, it),
+                DetailGroup.CAPTURE,
+            )
         }
     }
     focalLengthMm?.let { focal ->
         formatFocalLength(focal)?.let {
-            rows += DetailRow(R.string.details_focal_length, context.getString(R.string.details_focal_length_value, it))
+            rows += DetailRow(
+                R.string.details_focal_length,
+                context.getString(R.string.details_focal_length_value, it),
+                DetailGroup.CAPTURE,
+            )
         }
     }
     mappableLocation()?.let { (latitude, longitude) ->
-        rows += DetailRow(R.string.details_location, formatCoordinate(latitude, longitude))
+        rows += DetailRow(R.string.details_location, formatCoordinate(latitude, longitude), DetailGroup.LOCATION)
     }
     // Where the item actually lives. Always shown: for a local item it says so, and for a cloud item
     // it is the one row that explains why the EXIF rows above are absent.
     rows += DetailRow(
         R.string.details_source,
         context.getString(if (isCloud) R.string.viewer_source_cloud else R.string.viewer_source_local),
+        DetailGroup.BACKUP,
     )
     // Omitted when the queue has no row for the item — see MediaDetails.backupState for why an absent
     // row must not be rendered as "Not backed up".
-    backupState?.let { rows += DetailRow(R.string.details_backup, context.getString(it.labelRes)) }
+    backupState?.let {
+        rows += DetailRow(R.string.details_backup, context.getString(it.labelRes), DetailGroup.BACKUP)
+    }
     if (isCloud) {
-        cloudMessageId?.let { rows += DetailRow(R.string.details_telegram_message, it.toString()) }
+        cloudMessageId?.let {
+            rows += DetailRow(R.string.details_telegram_message, it.toString(), DetailGroup.CLOUD)
+        }
         rows += DetailRow(
             R.string.details_cloud_original,
             context.getString(
@@ -204,6 +325,7 @@ internal fun MediaDetails.displayRows(context: Context): List<DetailRow> {
                     R.string.details_cloud_original_remote
                 },
             ),
+            DetailGroup.CLOUD,
         )
     }
     return rows

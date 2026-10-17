@@ -61,6 +61,17 @@ data class TelepicSpacing(
      * bars build their height from [sm] and [touchTarget], and this is the same sum.
      */
     val chromeBarHeight: Dp get() = sm + touchTarget + sm
+
+    /**
+     * Height of the video's own bottom bar — deliberately taller than [chromeBarHeight].
+     *
+     * The photo chrome is one row of controls, so [chromeBarHeight] fits it. The video transport is
+     * *two* tiers: a full-width seek slider above a row of transport buttons. Squeezing both into one
+     * 64dp band made a grabbable scrubber share its height with the buttons and left neither
+     * comfortable. Two stacked [touchTarget] rows give the slider its own band; the video surface
+     * reserves this much at the bottom (and [chromeBarHeight] at the top) for it.
+     */
+    val videoTransportHeight: Dp get() = touchTarget * 2
 }
 
 val LocalSpacing = staticCompositionLocalOf { TelepicSpacing() }

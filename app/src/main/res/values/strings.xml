@@ -612,6 +612,14 @@
     <string name="details_show_on_map">Show on map</string>
     <string name="details_unknown">Unknown</string>
 
+    <!-- Media Details section headers, grouping the rows into File / Camera / Location / Backup /
+         Cloud so the sheet reads as a designed panel rather than one long list. -->
+    <string name="details_section_file">File</string>
+    <string name="details_section_capture">Camera</string>
+    <string name="details_section_location">Location</string>
+    <string name="details_section_backup">Backup</string>
+    <string name="details_section_cloud">Cloud</string>
+
     <!-- Media Details — kind, duration and where the file lives. Every row is omitted when its value
          cannot be obtained, so nothing here is ever guessed. -->
     <string name="details_type">Type</string>

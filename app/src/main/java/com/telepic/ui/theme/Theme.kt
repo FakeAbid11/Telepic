@@ -61,6 +61,16 @@ data class TelepicExtendedColors(
      * black — under the 3:1 floor for a graphical marker, so the warning was invisible in light mode
      * even though the backdrop is identical in both schemes. Measures ~12:1 on black. */
     val mediaWarningText: Color,
+    /**
+     * Fill of a "glass" control chip overlaid on media (the Viewer's back button, its grouped action
+     * pill, the mute control). Scheme-independent like the other on-media tokens: the backdrop is
+     * black in both schemes, so a translucent black veil reads the same either way. Held lighter than
+     * [chromeScrim] because a *control* has to feel tappable and be read, whereas the scrim only has
+     * to keep static text legible.
+     */
+    val glassFill: Color,
+    /** Hairline border that gives a glass chip its edge over a busy photo without a solid outline. */
+    val glassBorder: Color,
 )
 
 private val DarkExtended = TelepicExtendedColors(
@@ -72,6 +82,8 @@ private val DarkExtended = TelepicExtendedColors(
     mediaErrorText = Color(0xFFFF8A80),
     mediaSuccessText = Color(0xFF7FE0A6),
     mediaWarningText = Color(0xFFFFB74D),
+    glassFill = Color(0x59000000),
+    glassBorder = Color(0x1FFFFFFF),
 )
 
 private val LightExtended = TelepicExtendedColors(
@@ -83,6 +95,8 @@ private val LightExtended = TelepicExtendedColors(
     mediaErrorText = Color(0xFFFF8A80),
     mediaSuccessText = Color(0xFF7FE0A6),
     mediaWarningText = Color(0xFFFFB74D),
+    glassFill = Color(0x59000000),
+    glassBorder = Color(0x1FFFFFFF),
 )
 
 val LocalTelepicColors = staticCompositionLocalOf { DarkExtended }

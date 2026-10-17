@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -276,7 +278,9 @@ fun ViewerScreen(
                         .windowInsetsPadding(WindowInsets.navigationBars)
                         .padding(bottom = TelepicTokens.spacing.md),
                 ) {
-                    RestoreAction(onRestore = viewModel::restoreToLocal, restore = restore)
+                    GlassPill(modifier = Modifier.height(TelepicTokens.spacing.touchTarget)) {
+                        RestoreAction(onRestore = viewModel::restoreToLocal, restore = restore)
+                    }
                 }
             }
 
@@ -599,12 +603,7 @@ private fun ViewerImageError(onRetry: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(spacing.md, Alignment.CenterVertically),
     ) {
-        Icon(
-            imageVector = Icons.Outlined.BrokenImage,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(40.dp),
-        )
+        GlassMedallion(imageVector = Icons.Outlined.BrokenImage)
         Text(
             text = stringResource(R.string.viewer_image_error),
             style = MaterialTheme.typography.bodyMedium,
@@ -624,12 +623,7 @@ internal fun CloudUnavailable(state: ViewerUiState, onDownload: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.md, Alignment.CenterVertically),
     ) {
-        Icon(
-            imageVector = Icons.Outlined.CloudDownload,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(40.dp),
-        )
+        GlassMedallion(imageVector = Icons.Outlined.CloudDownload)
         Text(
             text = stringResource(
                 if (state.download is CloudDownload.Unavailable) R.string.viewer_download_unavailable
@@ -686,19 +680,23 @@ private fun ViewerTopBar(
                 ),
             )
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(horizontal = spacing.xs, vertical = spacing.sm),
+            .padding(horizontal = spacing.sm, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backDesc, tint = Color.White)
-        }
-        Column(modifier = Modifier.padding(start = spacing.xs).weight(1f)) {
+        // Glass chips rather than bare glyphs: the chrome reads as a designed overlay with a clear
+        // edge over a busy photo, and the touch target is unchanged.
+        GlassIconButton(
+            onClick = onBack,
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = backDesc,
+        )
+        Column(modifier = Modifier.padding(start = spacing.md).weight(1f)) {
             state.dateMillis?.let { dateMillis ->
                 Text(
                     // Month-and-day within the current year, the full date otherwise — the year of an
                     // older photo must not be silently dropped just to make the header fit.
                     text = MediaDay.monthDayOrFullDate(dateMillis, nowMillis),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     color = Color.White,
                     // Without this the date wraps on a 360dp phone and grows the bar from 48dp to
                     // roughly 68dp, shoving the photo down; ellipsis degrades instead of reflowing.
@@ -707,76 +705,90 @@ private fun ViewerTopBar(
                     modifier = Modifier.semantics { heading() },
                 )
             }
-            Text(
-                text = stringResource(
-                    if (state.source is MediaSource.Cloud) R.string.viewer_source_cloud
-                    else R.string.viewer_source_local,
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (showActions) {
-            IconButton(onClick = onToggleFavorite) {
-                Icon(
-                    imageVector = if (flags.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                    contentDescription = stringResource(
-                        if (flags.isFavorite) R.string.viewer_unfavorite else R.string.viewer_favorite,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                // A small source dot sets "where this came from" apart from the date line without a
+                // second full-width row.
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(Color.White.copy(alpha = 0.7f), CircleShape),
+                )
+                Text(
+                    text = stringResource(
+                        if (state.source is MediaSource.Cloud) R.string.viewer_source_cloud
+                        else R.string.viewer_source_local,
                     ),
-                    tint = if (flags.isFavorite) TelepicTokens.colors.favoriteAmber else Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            // The per-item backup control sits beside the favourite star, in the band that carries
-            // this item's own state, rather than behind the overflow: "is this one backed up?" is a
-            // question the user asks while looking at the photo, and a menu that has to be opened to
-            // answer it is not an answer.
-            BackupControl(state = backupState, busy = backupBusy, onBackup = onBackup)
-            // Archive, trash and details sit behind one overflow control. As four separate 48dp
-            // buttons they left the date column only 108dp — less than a long month name needs, so
-            // the title wrapped. Favourite stays inline: it is a toggle the user reads at a glance.
-            Box {
-                IconButton(onClick = { menuOpen = true }) {
+        }
+        if (showActions) {
+            // Favourite, backup and the overflow share one glass pill, so the action cluster reads as
+            // a unit rather than three loose glyphs. Favourite stays inline (a glanceable toggle) and
+            // archive/trash/details stay behind the overflow for the width reason they always were:
+            // four separate 48dp buttons starved the date column.
+            GlassPill {
+                IconButton(onClick = onToggleFavorite) {
                     Icon(
-                        imageVector = Icons.Outlined.MoreVert,
-                        contentDescription = stringResource(R.string.viewer_more_actions),
-                        tint = Color.White,
+                        imageVector = if (flags.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                        contentDescription = stringResource(
+                            if (flags.isFavorite) R.string.viewer_unfavorite else R.string.viewer_favorite,
+                        ),
+                        tint = if (flags.isFavorite) TelepicTokens.colors.favoriteAmber else Color.White,
                     )
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(
-                                    if (flags.isArchived) R.string.viewer_unarchive
-                                    else R.string.viewer_archive,
-                                ),
-                            )
-                        },
-                        onClick = {
-                            menuOpen = false
-                            onToggleArchive()
-                        },
-                        leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.viewer_move_to_trash)) },
-                        onClick = {
-                            menuOpen = false
-                            onMoveToTrash()
-                        },
-                        leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
-                    )
-                    onShowDetails?.let { showDetails ->
+                // The per-item backup control sits beside the favourite star, in the band that
+                // carries this item's own state, rather than behind the overflow: "is this one backed
+                // up?" is a question the user asks while looking at the photo.
+                BackupControl(state = backupState, busy = backupBusy, onBackup = onBackup)
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.MoreVert,
+                            contentDescription = stringResource(R.string.viewer_more_actions),
+                            tint = Color.White,
+                        )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.viewer_details)) },
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (flags.isArchived) R.string.viewer_unarchive
+                                        else R.string.viewer_archive,
+                                    ),
+                                )
+                            },
                             onClick = {
                                 menuOpen = false
-                                showDetails()
+                                onToggleArchive()
                             },
-                            leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
+                            leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
                         )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.viewer_move_to_trash)) },
+                            onClick = {
+                                menuOpen = false
+                                onMoveToTrash()
+                            },
+                            leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                        )
+                        onShowDetails?.let { showDetails ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.viewer_details)) },
+                                onClick = {
+                                    menuOpen = false
+                                    showDetails()
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
+                            )
+                        }
                     }
                 }
             }
@@ -901,19 +913,32 @@ private fun ViewerBottomBar(
             )
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(vertical = spacing.sm),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        // Centred, so the navigation cluster sits on the photo's midline instead of being split to
+        // the two far edges around an empty middle.
+        horizontalArrangement = Arrangement.spacedBy(spacing.md, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onPrevious, enabled = state.previous != null) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                contentDescription = stringResource(R.string.viewer_previous),
-                tint = if (state.previous != null) Color.White else Color.White.copy(alpha = 0.3f),
-            )
+        GlassPill {
+            IconButton(onClick = onPrevious, enabled = state.previous != null) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = stringResource(R.string.viewer_previous),
+                    tint = if (state.previous != null) Color.White else Color.White.copy(alpha = 0.3f),
+                )
+            }
+            IconButton(onClick = onNext, enabled = state.next != null) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.viewer_next),
+                    tint = if (state.next != null) Color.White else Color.White.copy(alpha = 0.3f),
+                )
+            }
         }
         when {
-            onRestore != null -> RestoreAction(onRestore = onRestore, restore = restore)
-            showDownload -> {
+            onRestore != null -> GlassPill(modifier = Modifier.height(spacing.touchTarget)) {
+                RestoreAction(onRestore = onRestore, restore = restore)
+            }
+            showDownload -> GlassPill(modifier = Modifier.height(spacing.touchTarget)) {
                 if (state.download == CloudDownload.Downloading) {
                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
                 } else {
@@ -923,14 +948,6 @@ private fun ViewerBottomBar(
                     }
                 }
             }
-            else -> Box(modifier = Modifier.size(48.dp))
-        }
-        IconButton(onClick = onNext, enabled = state.next != null) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = stringResource(R.string.viewer_next),
-                tint = if (state.next != null) Color.White else Color.White.copy(alpha = 0.3f),
-            )
         }
     }
 }
@@ -988,7 +1005,7 @@ private fun MissingMedia(onBack: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(spacing.md, Alignment.CenterVertically),
     ) {
-        Icon(Icons.Outlined.PhotoLibrary, null, tint = Color.White, modifier = Modifier.size(40.dp))
+        GlassMedallion(imageVector = Icons.Outlined.PhotoLibrary)
         Text(stringResource(R.string.viewer_missing), style = MaterialTheme.typography.bodyLarge, color = Color.White)
         TextButton(onClick = onBack) { Text(stringResource(R.string.viewer_back), color = Color.White) }
     }
