@@ -119,6 +119,19 @@ fun <T : Any> telepicMotionSpec(): AnimationSpec<T> =
     if (LocalReduceMotion.current) snap() else spring()
 
 /**
+ * Navigation motion timing, in milliseconds — one tune for every route change.
+ *
+ * navigation-compose's default is a 700 ms cross-fade, which reads as a muddy double-exposure
+ * between a bright grid and the Viewer's pure-black backdrop. These are short on purpose: the
+ * tile→image shared-element zoom carries the eye, and the route fade only has to get out of its way.
+ */
+const val NAV_FADE_ENTER_MILLIS = 220
+const val NAV_FADE_EXIT_MILLIS = 160
+
+/** How long the shared tile→image zoom runs; matched to the fade so neither outlives the other. */
+const val SHARED_ELEMENT_MILLIS = 300
+
+/**
  * Root of the Telepic design system.
  *
  * Wraps [MaterialTheme] and additionally provides the centralized spacing and extended

@@ -5,11 +5,14 @@ package com.telepic.ui.components
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import com.telepic.ui.theme.LocalReduceMotion
+import com.telepic.ui.theme.SHARED_ELEMENT_MILLIS
 
 /**
  * The two scopes `Modifier.sharedElement` needs, carried by composition local rather than threaded
@@ -75,14 +78,20 @@ internal fun ProvideSharedElementScopes(
 internal fun rememberSharedMediaModifier(mediaId: Long?): Modifier {
     val sharedTransitionScope = LocalSharedTransitionScope.current
     val animatedVisibilityScope = LocalSharedElementVisibilityScope.current
-    // Users who prefer reduced motion often find the long spring-based shared-element zoom
-    // disorienting; fall back to a plain cross-fade by not registering the shared element.
+    // Users who prefer reduced motion often find the long shared-element zoom disorienting; fall
+    // back to a plain cross-fade by not registering the shared element.
     if (LocalReduceMotion.current) return Modifier
     return if (mediaId != null && sharedTransitionScope != null && animatedVisibilityScope != null) {
         with(sharedTransitionScope) {
             Modifier.sharedElement(
                 state = rememberSharedContentState(key = mediaSharedElementKey(mediaId)),
                 animatedVisibilityScope = animatedVisibilityScope,
+                // A tween, not the default bounds spring: the zoom now shares one clock with the
+                // route cross-fade ([SHARED_ELEMENT_MILLIS] against NAV_FADE_*_MILLIS), so the image
+                // settles as the background does instead of drifting on past it.
+                boundsTransform = { _, _ ->
+                    tween(SHARED_ELEMENT_MILLIS, easing = LinearOutSlowInEasing)
+                },
             )
         }
     } else {

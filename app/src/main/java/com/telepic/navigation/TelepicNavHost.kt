@@ -99,10 +99,17 @@ private fun TelepicNavGraph(
     // One handoff channel for "show this photo on the map", hoisted above the graph so the Viewer's
     // Details sheet and the Map tab share it without touching the Map route (see [MapFocusRequest]).
     val mapFocusRequest = remember { MapFocusRequest() }
+    // One tune for every route change. Set on the NavHost rather than per destination so no screen —
+    // including the Viewer — keeps navigation-compose's 700 ms default cross-fade.
+    val transitions = navigationTransitions()
     NavHost(
         navController = navController,
         startDestination = TelepicDestination.Start.route,
         modifier = Modifier.fillMaxSize(),
+        enterTransition = { transitions.enter },
+        exitTransition = { transitions.exit },
+        popEnterTransition = { transitions.popEnter },
+        popExitTransition = { transitions.popExit },
     ) {
         composable(TelepicDestination.Photos.route) {
             // Factories are remembered per container so recomposition never hands `viewModel` a new

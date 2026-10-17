@@ -1,5 +1,15 @@
 package com.telepic.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,11 +30,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -36,6 +49,9 @@ import com.telepic.navigation.navigateToTopLevel
 import com.telepic.navigation.selectedIcon
 import com.telepic.di.AppContainer
 import com.telepic.settings.ThemeMode
+import com.telepic.ui.theme.LocalReduceMotion
+import com.telepic.ui.theme.NAV_FADE_ENTER_MILLIS
+import com.telepic.ui.theme.NAV_FADE_EXIT_MILLIS
 import com.telepic.ui.theme.TelepicTokens
 
 private const val NAV_PILL_RADIUS_DP = 28
@@ -79,7 +95,15 @@ fun TelepicApp(
     Scaffold(
         modifier = modifier,
         bottomBar = {
-            if (currentTab != null && !expanded) {
+            // Faded and slid rather than popped: the Viewer hides this bar, and its instant
+            // disappearance used to yank the grid up by the bar's height in a single frame.
+            AnimatedVisibility(
+                visible = currentTab != null && !expanded,
+                enter = fadeIn(tween(NAV_FADE_ENTER_MILLIS)) +
+                    slideInVertically(tween(NAV_FADE_ENTER_MILLIS)) { fullHeight -> fullHeight / 2 },
+                exit = fadeOut(tween(NAV_FADE_EXIT_MILLIS)) +
+                    slideOutVertically(tween(NAV_FADE_EXIT_MILLIS)) { fullHeight -> fullHeight / 2 },
+            ) {
                 // Google Photos-style floating bar: a rounded, elevated pill that sits above the
                 // system navigation bar with side/bottom margins. Selection stays a tonal pill.
                 Box(
@@ -120,12 +144,35 @@ fun TelepicApp(
         // system bars (chrome pads itself with the insets), so it must not receive the Scaffold's
         // content padding — that padding is what used to leave a light window-background strip
         // above the full-screen media. Every other route keeps the inset padding.
-        val navPadding =
-            if (route?.startsWith("viewer/") == true) PaddingValues(0.dp) else innerPadding
+        //
+        // Animated, not switched: the inset collapses to zero as the Viewer is entered and swells
+        // back on return, so the outgoing grid and the incoming Viewer share one shrinking margin
+        // instead of the grid snapping up by the bar's height in a single frame.
+        val reduceMotion = LocalReduceMotion.current
+        val viewerImmersion by animateFloatAsState(
+            targetValue = if (route?.startsWith("viewer/") == true) 1f else 0f,
+            animationSpec = if (reduceMotion) snap() else tween(NAV_FADE_ENTER_MILLIS),
+            label = "viewerImmersion",
+        )
+        val layoutDirection = LocalLayoutDirection.current
+        fun inset(value: Dp): Dp = value * (1f - viewerImmersion)
+        val navPadding = PaddingValues(
+            start = inset(innerPadding.calculateStartPadding(layoutDirection)),
+            top = inset(innerPadding.calculateTopPadding()),
+            end = inset(innerPadding.calculateEndPadding(layoutDirection)),
+            bottom = inset(innerPadding.calculateBottomPadding()),
+        )
         Row(modifier = Modifier.fillMaxSize()) {
-            if (currentTab != null && expanded) {
-                // The rail takes its own system-bar insets (the default `NavigationRail` behaviour),
-                // and `navPadding` still carries them to the content, so neither hides under a bar.
+            // The rail takes its own system-bar insets (the default `NavigationRail` behaviour), and
+            // `navPadding` still carries them to the content, so neither hides under a bar. Faded and
+            // expanded rather than popped, for the same no-jump reason as the bottom bar.
+            AnimatedVisibility(
+                visible = currentTab != null && expanded,
+                enter = fadeIn(tween(NAV_FADE_ENTER_MILLIS)) +
+                    expandHorizontally(tween(NAV_FADE_ENTER_MILLIS), expandFrom = Alignment.Start),
+                exit = fadeOut(tween(NAV_FADE_EXIT_MILLIS)) +
+                    shrinkHorizontally(tween(NAV_FADE_EXIT_MILLIS), shrinkTowards = Alignment.Start),
+            ) {
                 NavigationRail {
                     TelepicDestination.tabs.forEach { destination ->
                         val selected = destination == currentTab
