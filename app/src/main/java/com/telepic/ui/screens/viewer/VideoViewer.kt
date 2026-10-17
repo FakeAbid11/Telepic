@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import com.telepic.domain.media.DurationLabel
@@ -205,13 +209,23 @@ fun VideoViewer(
     }
 
     val spacing = TelepicTokens.spacing
+    val density = LocalDensity.current
+    // While the chrome is up, its bottom band belongs to the transport, not to the page/level
+    // gestures: the gesture detector skips any press that starts down there. Measured in px so the
+    // detector can compare against its own pointer-space height.
+    val controlsBandPx = if (controlsVisible) {
+        with(density) { spacing.videoTransportHeight.toPx() } +
+            with(density) { WindowInsets.navigationBars.getBottom(this).toPx() }
+    } else {
+        0f
+    }
 
     // Full-bleed: the video fills the window, and every control is drawn *over* it, exactly as the
     // photo chrome floats over the image. Reserving a band for the transport used to keep the surface
     // clear of the chrome, but it shrank the picture and blocked the NextPlayer-style gestures (a
     // surface padded out of the transport band could not see a vertical drag that started on it).
     // Instead the transport is composed on top with its own scrim, and the full-surface gesture
-    // detector yields to any control already consuming a drag (see `videoPlayerGestures`).
+    // detector simply skips a press that starts in the transport's band (see `videoPlayerGestures`).
     val brightness = rememberScreenBrightnessController()
     val audioManager = remember(context) {
         context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -327,6 +341,7 @@ fun VideoViewer(
                     onSeekBy = applySeek,
                     onSpeedBoost = applySpeed,
                     onLevel = applyLevel,
+                    excludeBottomPx = controlsBandPx,
                 ),
         )
 
@@ -366,12 +381,15 @@ fun VideoViewer(
                 modifier = Modifier
                     .fillMaxWidth()
                     // Fades from clear at the top to a dark base under the controls, so white glyphs
-                    // stay legible over a bright frame without blackening the whole band.
+                    // stay legible over a bright frame without blackening the whole band. The
+                    // navigation-bar inset keeps the transport clear of the system bar the video
+                    // now runs behind.
                     .background(
                         Brush.verticalGradient(
                             listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
                         ),
-                    ),
+                    )
+                    .windowInsetsPadding(WindowInsets.navigationBars),
             ) {
                 Spacer(modifier = Modifier.height(spacing.lg))
                 VideoTransport(

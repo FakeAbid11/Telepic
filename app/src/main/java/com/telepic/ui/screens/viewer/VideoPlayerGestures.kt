@@ -7,7 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import com.telepic.navigation.MediaSource
 import kotlin.math.abs
@@ -20,15 +20,16 @@ private enum class DragAxis { HORIZONTAL, VERTICAL }
  * (or plays/pauses in the centre), long-press holds a speed boost, a horizontal drag pages to the next
  * or previous clip, and a vertical drag tunes brightness (left half) or volume (right half).
  *
- * Built from two pointer handlers that shadow each other cleanly:
+ * Two handlers run together, split so neither can starve the other:
  *
- * * **taps** run through [detectTapGestures], which asks for an *unconsumed* down — so a tap that
- *   lands on the transport (the play button, the seek slider, the save action) is claimed by that
- *   control and never reaches here.
- * * **drags** run through one [awaitEachGesture] pass that commits to a single axis the moment the
- *   pointer clears the touch slop, then stays on it. A drag that some overlay (the seek slider) is
- *   already consuming is abandoned — checked per move via `change.isConsumed` — so scrubbing never
- *   also pages or changes the volume.
+ * * **drags** run one [awaitEachGesture] pass on the [PointerEventPass.Initial] pass. Observing on
+ *   `Initial` — and consuming there — means the drag reads the raw, *unconsumed* movement and claims it
+ *   before the tap detector (which runs on the later `Main` pass and would otherwise consume the same
+ *   moves while deciding a press is not a tap) ever sees them. That is what makes the horizontal page
+ *   reliable rather than order-dependent. A drag that begins over the visible transport is skipped
+ *   entirely ([excludeBottomPx]) so consuming on `Initial` never breaks the seek slider.
+ * * **taps** run through [detectTapGestures] on the normal pass. A drag's movement is already consumed
+ *   by then, so it cancels its own tap; a real tap carries no movement and is delivered untouched.
  *
  * [onLevel] receives a *signed fraction delta* for each vertical move (a full-height drag sweeps the
  * whole range); the caller owns the current brightness/volume and clamps. [previous], [next] and every
@@ -46,6 +47,7 @@ internal fun Modifier.videoPlayerGestures(
     onSeekBy: (Long) -> Unit,
     onSpeedBoost: (Boolean) -> Unit,
     onLevel: (LevelKind, Float) -> Unit,
+    excludeBottomPx: Float = 0f,
 ): Modifier {
     val currentPrevious by rememberUpdatedState(previous)
     val currentNext by rememberUpdatedState(next)
@@ -55,8 +57,60 @@ internal fun Modifier.videoPlayerGestures(
     val currentOnSeekBy by rememberUpdatedState(onSeekBy)
     val currentOnSpeed by rememberUpdatedState(onSpeedBoost)
     val currentOnLevel by rememberUpdatedState(onLevel)
+    val currentExcludeBottom by rememberUpdatedState(excludeBottomPx)
 
     return this
+        .pointerInput(key) {
+            awaitEachGesture {
+                val down = awaitFirstDown(
+                    requireUnconsumed = false,
+                    pass = PointerEventPass.Initial,
+                )
+                val width = size.width.toFloat()
+                val height = size.height.toFloat()
+                // A press that starts on the transport belongs to the transport (the seek slider,
+                // the buttons); claiming it here would fight the slider for the same drag.
+                if (down.position.y >= height - currentExcludeBottom) return@awaitEachGesture
+
+                val kind = VideoGestureMath.levelKindFor(down.position.x, width)
+                var axis: DragAxis? = null
+                var totalX = 0f
+                var totalY = 0f
+                var last = down.position
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val pressed = event.changes.filter { it.pressed }
+                    if (pressed.isEmpty()) break
+                    val change = pressed.first()
+                    val delta = change.position - last
+                    last = change.position
+                    if (axis == null) {
+                        totalX += delta.x
+                        totalY += delta.y
+                        val slop = viewConfiguration.touchSlop
+                        if (abs(totalX) > slop || abs(totalY) > slop) {
+                            axis = if (abs(totalX) > abs(totalY)) DragAxis.HORIZONTAL else DragAxis.VERTICAL
+                        }
+                    }
+                    when (axis) {
+                        DragAxis.HORIZONTAL -> change.consume()
+                        DragAxis.VERTICAL -> {
+                            change.consume()
+                            currentOnLevel(kind, VideoGestureMath.levelDelta(delta.y, height))
+                        }
+                        null -> Unit
+                    }
+                }
+                if (axis == DragAxis.HORIZONTAL) {
+                    SwipeResolver.resolve(
+                        deltaPx = totalX,
+                        widthPx = width,
+                        previous = currentPrevious,
+                        next = currentNext,
+                    )?.let(currentOnNavigate)
+                }
+            }
+        }
         .pointerInput(key) {
             detectTapGestures(
                 onTap = { currentOnToggle() },
@@ -76,53 +130,5 @@ internal fun Modifier.videoPlayerGestures(
                     currentOnSpeed(false)
                 },
             )
-        }
-        .pointerInput(key) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                val width = size.width.toFloat()
-                val height = size.height.toFloat()
-                val kind = VideoGestureMath.levelKindFor(down.position.x, width)
-                var axis: DragAxis? = null
-                var totalX = 0f
-                var totalY = 0f
-                var last = down.position
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val pressed = event.changes.filter { it.pressed }
-                    if (pressed.isEmpty()) break
-                    val change = pressed.first()
-                    // An overlay (the seek slider) is driving this drag — leave it alone, and drop any
-                    // axis we had started to claim so a half-swipe never pages by accident.
-                    if (change.isConsumed) {
-                        axis = null
-                        break
-                    }
-                    val position = change.position
-                    val delta = if (last != Offset.Unspecified) position - last else Offset.Zero
-                    last = position
-                    if (axis == null) {
-                        totalX += delta.x
-                        totalY += delta.y
-                        val slop = viewConfiguration.touchSlop
-                        if (abs(totalX) > slop || abs(totalY) > slop) {
-                            axis = if (abs(totalX) > abs(totalY)) DragAxis.HORIZONTAL else DragAxis.VERTICAL
-                        }
-                    }
-                    when (axis) {
-                        DragAxis.VERTICAL -> currentOnLevel(kind, VideoGestureMath.levelDelta(delta.y, height))
-                        else -> Unit
-                    }
-                    if (axis != null) change.consume()
-                }
-                if (axis == DragAxis.HORIZONTAL) {
-                    SwipeResolver.resolve(
-                        deltaPx = totalX,
-                        widthPx = width,
-                        previous = currentPrevious,
-                        next = currentNext,
-                    )?.let(currentOnNavigate)
-                }
-            }
         }
 }
