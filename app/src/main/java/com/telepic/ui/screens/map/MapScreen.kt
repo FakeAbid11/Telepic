@@ -66,7 +66,6 @@ import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.screens.viewer.formatCoordinate
 import com.telepic.ui.theme.TelepicTokens
-import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
@@ -303,13 +302,15 @@ private fun OsmMap(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
-                val prefs = context.getSharedPreferences("telepic_osmdroid", android.content.Context.MODE_PRIVATE)
-                val config = Configuration.getInstance()
-                config.load(context, prefs)
-                if (config.userAgentValue.isNullOrBlank()) config.userAgentValue = context.packageName
+                // osmdroid is configured once in TelepicApplication (User-Agent + tile cache).
+                // Calling Configuration.load() here would reset the User-Agent to the bare package
+                // name on every map, which is what left the UA non-descriptive and the map blank.
                 MapView(context).apply {
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
+                    // This screen exists to show online tiles; be explicit rather than relying on the
+                    // configuration default.
+                    setUseDataConnection(true)
                     controller.setZoom(2.0)
                     setExpectedCenter(GeoPoint(20.0, 0.0))
                     addMapListener(zoomListener)

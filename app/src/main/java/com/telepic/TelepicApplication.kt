@@ -13,6 +13,7 @@ import com.telepic.data.backup.work.TelepicWorkerFactory
 import com.telepic.di.AppContainer
 import com.telepic.di.DefaultAppContainer
 import com.telepic.diagnostics.TelepicLog
+import com.telepic.map.OsmdroidConfiguration
 import com.telepic.telegram.TelegramAuthState
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +45,9 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
     override fun onCreate() {
         super.onCreate()
         installCrashLogger()
+        // Configure osmdroid once, before any map exists, so its User-Agent and tile cache are the
+        // app's and not the library defaults.
+        OsmdroidConfiguration.initialize(this)
         container = DefaultAppContainer(this)
         // Initialize the Telegram session at startup to restore a persisted login. This opens
         // TDLib on a background scope and never blocks or crashes local startup (Photos works
