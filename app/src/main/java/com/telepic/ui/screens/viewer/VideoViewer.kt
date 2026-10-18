@@ -703,7 +703,7 @@ private fun chromeTint(enabled: Boolean): Color =
 private fun PauseGlyph(modifier: Modifier = Modifier) {
     Row(
         modifier = modifier.size(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.xs, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         repeat(2) {

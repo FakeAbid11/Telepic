@@ -854,7 +854,7 @@ private fun BackupControl(
 private fun BackupGlyph(description: String, glyph: @Composable () -> Unit) {
     Box(
         modifier = Modifier
-            .size(48.dp)
+            .size(TelepicTokens.spacing.touchTarget)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {

@@ -17,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,6 +51,7 @@ import com.telepic.ui.screens.settings.SettingsScreen
 import com.telepic.ui.screens.settings.SettingsViewModel
 import com.telepic.ui.screens.viewer.ViewerScreen
 import com.telepic.ui.screens.viewer.ViewerViewModel
+import com.telepic.ui.theme.TelepicTokens
 import kotlinx.coroutines.flow.combine
 
 /**
@@ -469,7 +469,7 @@ private fun InvalidRouteFallback(onBack: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.lg),
         ) {
             Text(
                 text = stringResource(R.string.nav_invalid_title),

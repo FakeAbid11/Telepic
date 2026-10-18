@@ -404,6 +404,6 @@ private fun CloudBadge(modifier: Modifier = Modifier) {
             .size(22.dp)
             .clip(CircleShape)
             .background(TelepicTokens.colors.chromeScrim)
-            .padding(4.dp),
+            .padding(TelepicTokens.spacing.xs),
     )
 }

@@ -72,7 +72,7 @@ fun OnboardingScaffold(
                     .padding(horizontal = spacing.xs, vertical = spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.size(spacing.touchTarget), contentAlignment = Alignment.Center) {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
                             Icon(
@@ -89,7 +89,7 @@ fun OnboardingScaffold(
                     progressLabel = progressLabel,
                     modifier = Modifier.weight(1f),
                 )
-                Box(modifier = Modifier.size(48.dp))
+                Box(modifier = Modifier.size(spacing.touchTarget))
             }
 
             Box(
