@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="Telepic — local-first photo library with Telegram-powered cloud backup" width="100%">
-
 **A local-first Android photo & video library with Telegram-powered cloud backup.**
 
 [![Android CI](https://github.com/FakeAbid11/Telepic/actions/workflows/android-ci.yml/badge.svg)](https://github.com/FakeAbid11/Telepic/actions/workflows/android-ci.yml)
