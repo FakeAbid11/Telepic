@@ -9,12 +9,12 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.paging.LoadParams
-import androidx.paging.LoadResult
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.PagingSource
+import androidx.paging.PagingSource.LoadParams
+import androidx.paging.PagingSource.LoadResult
 import androidx.paging.PagingState
 import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.media.AlbumRepository
