@@ -57,8 +57,9 @@ jobs:
 
       # Still no *publishing* step: nothing here reaches Play. The debug APK uploaded below is the
       # artifact this workflow exists to produce while the project is being tested. The
-      # `release-smoke` job that compiles the R8 configuration and builds an AAB is manual-only (see
-      # its own note) — and its artifacts were for inspection rather than distribution anyway.
+      # `release-smoke` job that compiles the R8 configuration and builds an AAB also runs on every
+      # push to main (see its own note) — and its artifacts are for inspection rather than
+      # distribution anyway.
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -124,17 +125,15 @@ jobs:
   # configuration *and* builds the AAB that Play actually consumes, so the release path is exercised
   # rather than assumed.
   #
-  # Manual only, deliberately. The project is in its testing phase: the debug APK is what gets
-  # installed, so this job spent 76-289 seconds of runner time on every push building an AAB nobody
-  # consumes. It ran in parallel with the build job, so it did not always extend the wall clock — the
-  # cost was runner minutes, not latency — but it was pure waste either way while testing.
-  #
-  # Nothing is lost by deferring it: the check is one click away (Actions -> Android CI -> Run
-  # workflow, or `gh workflow run "Android CI"`), and it should be run before any release attempt.
-  # Re-enable it on push by deleting the `if:` below once a shippable build is the goal again.
+  # It runs on every push to main (and on manual dispatch) as a smoke test: an R8 or ProGuard
+  # regression that only surfaces at release time is exactly the failure this job exists to catch
+  # early, and it runs in parallel with the build job — the cost is runner minutes, not wall clock
+  # for the common case. It is skipped on pull_request runs, where the debug job already gates the
+  # merge. Nothing is published: the artifacts are for inspection, and the AAB is unsigned unless
+  # RELEASE_KEYSTORE_BASE64 is configured (the verify step below says so explicitly).
   release-smoke:
     name: Release build (R8 & resource shrinking)
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       # Real credentials when the secrets exist; a non-zero placeholder otherwise, because the
