@@ -1,5 +1,6 @@
 package com.telepic.data.cloud
 
+import com.telepic.domain.backup.RemoteMediaIdentity
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudPreview
 import com.telepic.domain.cloud.CloudStatus
@@ -32,6 +33,19 @@ interface CloudRepository {
 
     /** Resolve the Telepic Backup destination (reuse → discover → create), persisting it. */
     suspend fun ensureDestination(): TelepicCloudDestination?
+
+    /**
+     * Recognition's manifest lookup, exposed for the upload path's pre-send backstop: the remote
+     * identity whose content hash and byte count match exactly, or null when this install knows of
+     * none. The default null ("nothing known") keeps test fakes honest — only a manifest-backed
+     * implementation can ever answer with a match.
+     *
+     * The real implementation **rebuilds the manifest from the channel's history first** when this
+     * install holds no rows for the destination yet — the reinstall case, where Room is wiped but
+     * the channel is not. A lookup against a manifest that was never rebuilt would answer "nothing
+     * known" and invite a second copy of everything already uploaded.
+     */
+    suspend fun findRemoteByContent(contentHash: String, sizeBytes: Long): RemoteMediaIdentity? = null
 
     /**
      * Confirms the same-name channel offered by [CloudStatus.DestinationConfirmation]: persists it as

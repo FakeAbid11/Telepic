@@ -3,6 +3,8 @@ package com.telepic.data.cloud
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.telepic.data.cloud.db.CloudDestinationEntity
+import com.telepic.data.cloud.db.CloudMediaManifestEntity
 import com.telepic.data.cloud.db.TelepicDatabase
 import com.telepic.domain.cloud.ChatCandidate
 import com.telepic.domain.cloud.CloudMedia
@@ -146,7 +148,11 @@ class TelegramCloudRepositoryTest {
     private fun candidate(chatId: Long = 100L, canPost: Boolean = true, channel: Boolean = true, owned: Boolean = true) =
         ChatCandidate(chatId, "Telepic Backup", channel, canPost, true, owned)
 
-    private fun mediaItem(id: Long) = CloudMedia(
+    private fun mediaItem(
+        id: Long,
+        contentHash: String? = null,
+        contentSizeBytes: Long? = null,
+    ) = CloudMedia(
         messageId = id,
         chatId = 100L,
         mediaType = CloudMediaType.IMAGE,
@@ -159,6 +165,28 @@ class TelegramCloudRepositoryTest {
         dateEpochSec = 1_700_000_000L,
         previewFileId = null,
         originalFileId = null,
+        contentHash = contentHash,
+        contentSizeBytes = contentSizeBytes,
+    )
+
+    private fun manifestRow(messageId: Long) = CloudMediaManifestEntity(
+        chatId = 100L,
+        messageId = messageId,
+        mediaType = "IMAGE",
+        mimeType = "image/jpeg",
+        fileName = "p$messageId.jpg",
+        sizeBytes = 10L,
+        width = null,
+        height = null,
+        durationMs = null,
+        dateEpochSec = 1_700_000_000L,
+        previewFileId = null,
+        originalFileId = null,
+        isDownloaded = false,
+        contentHash = null,
+        contentSizeBytes = null,
+        createdAt = 1L,
+        updatedAt = 1L,
     )
 
     @Test
@@ -170,6 +198,63 @@ class TelegramCloudRepositoryTest {
         assertEquals(2, db.cloudMediaManifestDao().count())
         val stored = db.cloudDestinationDao().find("telegram")
         assertTrue(stored != null && stored.validated && stored.chatId == 100L)
+    }
+
+    @Test
+    fun `findRemoteByContent rebuilds an empty manifest from the channel's history before answering`() = runBlocking {
+        // The reinstall shape: Room starts empty (destination row and manifest wiped) while the
+        // channel holds every earlier upload. The upload path asks this question right before
+        // sending, so the walk must happen here — answering "nothing known" from a never-rebuilt
+        // manifest is exactly what produced a second copy of everything.
+        val source = FakeDataSource(
+            candidates = listOf(candidate()),
+            media = listOf(
+                mediaItem(1, contentHash = "hash-1", contentSizeBytes = 7L),
+                mediaItem(2, contentHash = "hash-2", contentSizeBytes = 8L),
+            ),
+        )
+        val r = repo(source)
+
+        // processOne's order: resolve the destination first (no history read of its own)...
+        val destination = r.ensureDestination()
+        assertEquals(100L, destination?.chatId)
+        assertEquals(0, source.mediaPageCalls)
+
+        // ...then ask whether the bytes are already remote: the lookup walks what it does not hold.
+        val match = r.findRemoteByContent("hash-1", 7L)
+        assertEquals(1L, match?.messageId)
+        assertEquals(100L, match?.chatId)
+        assertEquals("the history must actually be walked", 1, source.mediaPageCalls)
+        val manifest = db.cloudMediaManifestDao()
+        assertEquals(2, manifest.count())
+        assertEquals(2L, manifest.findByContentHashAndSize("hash-2", 8L)?.messageId)
+
+        // A second question on the now-populated manifest never walks again.
+        assertNull(r.findRemoteByContent("no-such-hash", 1L))
+        assertEquals(1, source.mediaPageCalls)
+    }
+
+    @Test
+    fun `findRemoteByContent reads no history when the manifest is already populated`() = runBlocking {
+        // Steady state: the manifest already records this destination's content, so the backstop
+        // question must not walk the channel — the rebuild's stop rule would end that walk after
+        // one page anyway, and the upload path asks before every run.
+        db.cloudDestinationDao().upsert(
+            CloudDestinationEntity(
+                provider = "telegram",
+                chatId = 100L,
+                title = "Telepic Backup",
+                validated = true,
+                createdAt = 1L,
+                updatedAt = 1L,
+            ),
+        )
+        db.cloudMediaManifestDao().upsertAll(listOf(manifestRow(messageId = 1L)))
+        val source = FakeDataSource(media = listOf(mediaItem(2)))
+        val r = repo(source)
+
+        assertNull(r.findRemoteByContent("unknown-hash", 999L))
+        assertEquals(0, source.mediaPageCalls)
     }
 
     @Test

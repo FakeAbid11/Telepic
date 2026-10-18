@@ -2,6 +2,7 @@ package com.telepic.data.backup
 
 import com.telepic.data.ScanCursorStore
 import com.telepic.data.backup.work.BackupWorkScheduler
+import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.MediaPageLoader
 import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.backup.BackupRecognitionResult
@@ -67,6 +68,11 @@ interface BackupCoordinator {
  * whole-library scan into memory). Recognition runs **before** enqueueing, so a repeated scan
  * recognizes existing content instead of uploading a second copy.
  *
+ * Before anything is judged, [backup], [backupAll] and the automatic pass first call
+ * `CloudRepository.prepare()` (guarded — a failed pre-sync never aborts the pass). That matters
+ * after a reinstall: Room is wiped but the channel is not, and the manifest — recognition's only
+ * remote source — has to be rebuilt from the channel's history before the first item is judged.
+ *
  * What that dedup can and cannot do: the manifest's `contentHash` is written by the upload path
  * (`TelegramCloudRepository`) and, for a manifest rebuilt from the channel's history, recovered from
  * the message caption (`CloudBackupMarker`) — so after a reinstall recognition still matches, because
@@ -74,7 +80,10 @@ interface BackupCoordinator {
  * recognise media backed up by a build that predates the caption marker: those rows carry no hash, and
  * `findHashlessByNameAndSize` only recovers the kinds Telegram gives a filename to (videos, GIFs and
  * documents — never a photo). Within one install, dedup is by content hash, and identical bytes
- * reached through a different local id are caught by `BackupQueueDao.findActiveByContentHash`.
+ * reached through a different local id are caught by `BackupQueueDao.findActiveByContentHash`. The
+ * upload path independently re-checks the manifest right before sending (the pre-send backstop in
+ * `DefaultBackupRepository.processOne`), so even a pass that raced a rebuild never uploads a copy the
+ * channel already holds.
  *
  * Discovery excludes **trashed** media only, never archived: see `AppContainer.backupDiscoveryLoader`.
  *
@@ -89,11 +98,13 @@ class DefaultBackupCoordinator(
     private val onboardingRepository: OnboardingRepository,
     private val pageLoaderFactory: (bucketId: Long?) -> MediaPageLoader,
     private val cursorStore: ScanCursorStore,
+    private val cloudRepository: CloudRepository? = null,
     private val discoveryPageSize: Int = 100,
     private val discoveryMaxItems: Int = 25_000,
 ) : BackupCoordinator {
 
     override suspend fun backup(media: LocalMedia): BulkBackupSummary {
+        ensureManifestFresh()
         val result = recognizeAndMaybeEnqueue(media)
         if (result.queued > 0) scheduler.schedule()
         return result
@@ -101,6 +112,7 @@ class DefaultBackupCoordinator(
 
     override suspend fun backupAll(media: List<LocalMedia>): BulkBackupSummary {
         var total = BulkBackupSummary.Empty
+        if (media.isNotEmpty()) ensureManifestFresh()
         for (item in media) {
             total += recognizeAndMaybeEnqueue(item)
         }
@@ -136,9 +148,37 @@ class DefaultBackupCoordinator(
         }
     }
 
+    /**
+     * Rebuild the cloud manifest before a pass judges anything. The manifest is recognition's only
+     * remote source, and a reinstall starts with an empty one while the channel still holds every
+     * earlier upload — [CloudRepository.prepare] resolves the destination and walks that history,
+     * recovering content hashes from the message captions, so `AlreadyBackedUp` is reachable at all.
+     *
+     * Never throws for a non-cancellation reason: an offline or otherwise failed pre-sync degrades
+     * to exactly the old behaviour (recognition misses; the upload path's pre-send backstop catches
+     * the content once a later run has the manifest) and the pass still runs. A cancellation is the
+     * caller's own scope tearing down, so it is rethrown — as everywhere else in this class.
+     */
+    private suspend fun ensureManifestFresh() {
+        val cloud = cloudRepository ?: return
+        try {
+            cloud.prepare()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn(
+                "BackupCoordinator",
+                "cloud manifest pre-sync failed; recognition continues with the stored manifest",
+                throwable,
+            )
+        }
+    }
+
     private suspend fun applyPreference() {
         when (onboardingRepository.backupPreference.first()) {
             BackupPreference.BACKUP_ALL -> {
+                // Rebuild the manifest before the first item is judged (see [ensureManifestFresh]).
+                ensureManifestFresh()
                 // Install the recurring 12h discovery cadence while automatic backup is on; the KEEP
                 // policy makes this idempotent, and the worker re-checks the preference on every tick.
                 scheduler.schedulePeriodic()
@@ -152,8 +192,10 @@ class DefaultBackupCoordinator(
             }
             BackupPreference.SELECT_FOLDER -> {
                 val buckets = onboardingRepository.backupBucketIds.first()
-                // Honest equivalence: "only these folders" with no folders picked backs up nothing.
+                // Honest equivalence: "only these folders" with no folders picked backs up nothing —
+                // and no cloud pre-sync either: a pass that will not judge anything reads nothing.
                 if (buckets.isEmpty()) return
+                ensureManifestFresh()
                 scheduler.schedulePeriodic()
                 val enqueuedAny = try {
                     var any = false

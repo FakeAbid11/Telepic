@@ -9,6 +9,7 @@ import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.cloud.CloudUploadRejectedException
 import com.telepic.data.cloud.db.TelepicDatabase
 import com.telepic.domain.backup.BackupState
+import com.telepic.domain.backup.RemoteMediaIdentity
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
 import com.telepic.domain.cloud.CloudPreview
@@ -74,16 +75,23 @@ class DefaultBackupRepositoryTest {
          * upload is "in flight" — the mid-flight user cancel the repository has to report honestly.
          */
         var beforeUploadReturn: (suspend () -> Unit)? = null,
+        /** The manifest match the pre-send backstop should find, when a test wants one. */
+        var remoteByContent: RemoteMediaIdentity? = null,
     ) : CloudRepository {
         override val status = MutableStateFlow<CloudStatus>(CloudStatus.Ready)
         override val media = kotlinx.coroutines.flow.flowOf<List<CloudMedia>>(emptyList())
         override val destinationTitle = MutableStateFlow<String?>("Telepic Backup")
         var uploadCalls = 0
         var confirmCalls = 0
+        var findRemoteCalls = 0
 
         override suspend fun prepare() = Unit
         override suspend fun refresh() = Unit
         override suspend fun ensureDestination() = destination
+        override suspend fun findRemoteByContent(contentHash: String, sizeBytes: Long): RemoteMediaIdentity? {
+            findRemoteCalls++
+            return remoteByContent
+        }
         override suspend fun confirmDestination(): TelepicCloudDestination? = null
         override suspend fun createNewDestination(): TelepicCloudDestination? = null
         override suspend fun getPreview(media: CloudMedia): CloudPreview? = null
@@ -238,6 +246,47 @@ class DefaultBackupRepositoryTest {
         val row = db.backupQueueDao().observeAll().first().first()
         assertEquals(BackupState.WAITING_FOR_NETWORK.name, row.state)
         assertEquals(0, cloud.uploadCalls)
+    }
+
+    @Test
+    fun `pre-send backstop completes the row when the manifest already holds the bytes`() = runBlocking {
+        // The reinstall race: recognition enqueued against a manifest this install had not yet
+        // rebuilt from the channel. findRemoteByContent rebuilds it before answering on this path,
+        // and the backstop must finish the row WITHOUT sending — else every item queued pre-rebuild
+        // becomes a duplicate.
+        val cloud = FakeCloud(remoteByContent = RemoteMediaIdentity(100L, 600L))
+        val r = repo(cloud)
+        assertTrue(r.enqueue(media(1), "hash-1", 1000L))
+
+        val summary = r.processPendingWork(maxItems = 1)
+
+        assertEquals(1, cloud.findRemoteCalls)
+        assertEquals(0, cloud.uploadCalls)
+        assertEquals(1, summary.recognized)
+        assertEquals(0, summary.uploaded)
+        assertEquals(1, summary.processed)
+        val row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(BackupState.BACKED_UP.name, row.state)
+        assertEquals(100L, row.telegramChatId)
+        assertEquals(600L, row.telegramMessageId)
+    }
+
+    @Test
+    fun `pre-send backstop uploads when the manifest has no match`() = runBlocking {
+        // The default fake knows of no remote content: the ordinary path must be untouched —
+        // destination, upload, identity persisted — and the run must report a real upload.
+        val cloud = FakeCloud()
+        val r = repo(cloud)
+        assertTrue(r.enqueue(media(1), "hash-1", 1000L))
+
+        val summary = r.processPendingWork(maxItems = 1)
+
+        assertEquals(1, cloud.findRemoteCalls)
+        assertEquals(1, summary.uploaded)
+        assertEquals(0, summary.recognized)
+        val row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(BackupState.BACKED_UP.name, row.state)
+        assertEquals(500L, row.telegramMessageId)
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.telepic.data.cloud.db.CloudMediaManifestDao
 import com.telepic.data.cloud.CloudMapping.toDomain
 import com.telepic.data.cloud.CloudMapping.toEntity
 import com.telepic.diagnostics.TelepicLog
+import com.telepic.domain.backup.RemoteMediaIdentity
 import com.telepic.domain.cloud.ChatCandidate
 import com.telepic.domain.cloud.ChatValidator
 import com.telepic.domain.cloud.CloudMedia
@@ -168,6 +169,36 @@ class TelegramCloudRepository(
             _status.value = CloudStatus.Failed(safeMessage(throwable))
         }
     }
+
+    /**
+     * Rebuild the manifest from the channel's history when this install has no rows for
+     * [destination] yet — the reinstall case: Room (destination row included until it was just
+     * re-discovered) starts empty while the channel does not. Recognition and the upload path's
+     * pre-send backstop both answer "already backed up?" from the manifest, so a lookup against a
+     * manifest never rebuilt from the channel would treat an established channel as empty and invite
+     * a second copy of everything already in it.
+     *
+     * Only the "no rows for this chat" case walks. A populated manifest is known territory — the
+     * walk's own stop rule would end it after a single page anyway. A failed walk (offline)
+     * degrades to exactly the old behaviour: [refreshLocked] reports the status and swallows the
+     * error, and the caller decides for itself whether the network exists. Callers must hold
+     * [mutex] — the same contract every [refreshLocked] site obeys.
+     */
+    private suspend fun rebuildManifestIfMissing(destination: TelepicCloudDestination) {
+        if (manifestDao.messageIds(destination.chatId).isEmpty()) refreshLocked()
+    }
+
+    override suspend fun findRemoteByContent(contentHash: String, sizeBytes: Long): RemoteMediaIdentity? =
+        withContext(dispatcher) {
+            mutex.withLock {
+                // Rebuild-first, under the mutex like every other refresh site: this is the question
+                // the upload path asks right before sending, and answering it from a manifest this
+                // install has not yet rebuilt (a reinstall) would let a duplicate out the door.
+                currentDestination()?.let { rebuildManifestIfMissing(it) }
+                manifestDao.findByContentHashAndSize(contentHash, sizeBytes)
+                    ?.let { RemoteMediaIdentity(it.chatId, it.messageId) }
+            }
+        }
 
     override suspend fun ensureDestination(): TelepicCloudDestination? = withContext(dispatcher) {
         if (!isAuthorized()) {

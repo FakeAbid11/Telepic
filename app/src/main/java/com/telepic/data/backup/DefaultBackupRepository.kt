@@ -123,6 +123,7 @@ class DefaultBackupRepository(
                 var processed = 0
                 var waitingForAuth = 0
                 var superseded = 0
+                var recognized = 0
                 // One fetch for the whole pass. The previous shape re-issued this query on every
                 // iteration — up to `maxItems` (100 at BackupWorker's batch size) identical SELECTs
                 // per run, each re-materialising up to 100 rows — even though the only rows that
@@ -139,6 +140,7 @@ class DefaultBackupRepository(
                         ProcessOutcome.WaitingForAuth -> waitingForAuth++
                         ProcessOutcome.PermanentFailure -> failed++
                         ProcessOutcome.Superseded -> superseded++
+                        ProcessOutcome.RecognizedRemote -> recognized++
                     }
                 }
                 BackupProcessSummary(
@@ -148,6 +150,7 @@ class DefaultBackupRepository(
                     processed = processed,
                     waitingForAuth = waitingForAuth,
                     superseded = superseded,
+                    recognized = recognized,
                 )
             }
         }
@@ -248,6 +251,30 @@ class DefaultBackupRepository(
                 dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, now)
                 return ProcessOutcome.Waiting
             }
+
+        // The pre-send backstop: the manifest may have gained this content *after* the row was
+        // queued — recognition at enqueue time judged against a manifest this install had not yet
+        // rebuilt from the channel (a reinstall), or an offline enqueue came back to a channel a
+        // later pass already covered. [CloudRepository.findRemoteByContent] rebuilds that manifest
+        // from the channel's history before answering when this install does not hold it, so the
+        // lookup is against the channel's real contents, and a match is proof the bytes are already
+        // remote: the row completes through `confirmRemoteMatch` — the write allowed to carry
+        // remote evidence — and not one byte is uploaded twice. The size uses `contentSizeBytes`
+        // (the count the hash was computed over, matching the caption marker) with the same
+        // provider-size fallback as `confirmUpload`.
+        val remote = item.contentHash?.let {
+            cloudRepository.findRemoteByContent(it, item.contentSizeBytes ?: item.sizeBytes)
+        }
+        if (remote != null) {
+            val applied = dao.confirmRemoteMatch(item.id, remote.chatId, remote.messageId, clock())
+            if (applied == 0) {
+                TelepicLog.debug(
+                    "BackupRepository",
+                    "row ${item.id} already recorded the remote match the manifest just proved",
+                )
+            }
+            return ProcessOutcome.RecognizedRemote
+        }
 
         dao.markPreparing(item.id, now)
         val staged = stager?.stage(item.localMediaId, item.contentUri)
@@ -365,6 +392,13 @@ class DefaultBackupRepository(
          * terminal (the user cancelled mid-flight). Neither an upload nor something to retry.
          */
         data object Superseded : ProcessOutcome
+
+        /**
+         * The remote manifest already held these exact bytes, so the row completed without sending
+         * anything. Neither an upload (nothing left the device) nor something to retry (the content
+         * is provably remote).
+         */
+        data object RecognizedRemote : ProcessOutcome
     }
 
     companion object {

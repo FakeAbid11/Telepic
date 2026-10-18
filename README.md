@@ -400,7 +400,10 @@ stateDiagram-v2
 - **WorkManager-driven** with a network constraint and an honest foreground notification; offline
   rows simply resume when the connection returns.
 - **Content-hash dedup** (streaming SHA-256) means identical bytes reached through two local ids are
-  never uploaded twice, and a reinstall recognises the channel's existing contents.
+  never uploaded twice. A backup pass first rebuilds the manifest from the channel's history
+  (recovering each hash from its message caption), and the upload path re-checks the manifest right
+  before sending — so a reinstall recognises the channel's existing contents instead of uploading a
+  second copy.
 
 The full phase-by-phase history of the engine (staging, crash recovery, recognition, folder picker)
 is in [docs/development-history.md](docs/development-history.md).

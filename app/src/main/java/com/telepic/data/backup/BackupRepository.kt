@@ -57,6 +57,15 @@ data class BackupProcessSummary(
      * nothing left to retry and nothing parked on a missing session.
      */
     val superseded: Int = 0,
+    /**
+     * Rows that completed **without sending anything**, because the remote manifest already held
+     * exactly these bytes (the pre-send backstop in `DefaultBackupRepository.processOne` — the
+     * proof is the same remote evidence recognition records). Counted apart from [uploaded] so a
+     * run never claims bytes it did not upload, and apart from the failure counts because there
+     * is nothing left to retry; like [superseded] it deliberately counts toward neither
+     * [hasRetryableWork] nor [blockedOnAuth].
+     */
+    val recognized: Int = 0,
 ) {
     val hasRetryableWork: Boolean get() = waiting > 0
 

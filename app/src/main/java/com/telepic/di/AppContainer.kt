@@ -377,6 +377,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             // Persists how far each loader's discovery pass reached, so a library larger than the
             // per-pass cap converges over successive ticks instead of re-scanning its newest slice.
             cursorStore = PreferencesScanCursorStore(appContext.telepicDataStore),
+            // The manifest recognition judges against: rebuilt via prepare() before any pass runs,
+            // so a reinstall re-learns the channel's contents instead of re-uploading them.
+            cloudRepository = cloudRepository,
         )
     }
 }

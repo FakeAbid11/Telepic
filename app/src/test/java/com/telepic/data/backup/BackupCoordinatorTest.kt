@@ -3,16 +3,27 @@ package com.telepic.data.backup
 import android.net.Uri
 import com.telepic.data.ScanCursorStore
 import com.telepic.data.backup.work.BackupWorkScheduler
+import com.telepic.data.cloud.CloudRepository
 import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.backup.BackupRecognitionResult
 import com.telepic.domain.backup.RemoteMediaIdentity
+import com.telepic.domain.cloud.CloudMedia
+import com.telepic.domain.cloud.CloudMediaType
+import com.telepic.domain.cloud.CloudPreview
+import com.telepic.domain.cloud.CloudStatus
+import com.telepic.domain.cloud.CloudUploadProgress
+import com.telepic.domain.cloud.CloudUploadRequest
+import com.telepic.domain.cloud.CloudUploadResult
+import com.telepic.domain.cloud.LocalDownloadedMedia
+import com.telepic.domain.cloud.TelepicCloudDestination
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import com.telepic.onboarding.BackupPreference
 import com.telepic.onboarding.OnboardingRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -84,6 +95,55 @@ class BackupCoordinatorTest {
         override suspend fun markRecognized(media: LocalMedia, remote: RemoteMediaIdentity, hash: String, sizeBytes: Long) = Unit
     }
 
+    /** Recognition that also marks when it ran, for ordering against the cloud pre-sync. */
+    private class EventRecognition(private val events: MutableList<String>) : BackupRecognitionRepository {
+        override suspend fun recognize(media: LocalMedia): BackupRecognitionResult {
+            events.add("recognize")
+            return BackupRecognitionResult.NeedsBackup("hash-${media.id}", media.sizeBytes)
+        }
+        override suspend fun markRecognized(media: LocalMedia, remote: RemoteMediaIdentity, hash: String, sizeBytes: Long) = Unit
+    }
+
+    /**
+     * Records `prepare` on [events] (shared with recognition) to prove the manifest pre-sync lands
+     * before anything is judged; [failPrepare] stands in for an offline or otherwise broken cloud.
+     */
+    private class RecordingCloud(
+        private val events: MutableList<String>? = null,
+        private val failPrepare: Boolean = false,
+    ) : CloudRepository {
+        var prepareCalls = 0
+        override val status = MutableStateFlow(CloudStatus.Initializing)
+        override val media: Flow<List<CloudMedia>> = flowOf(emptyList())
+        override val destinationTitle = MutableStateFlow<String?>(null)
+
+        override suspend fun prepare() {
+            prepareCalls++
+            events?.add("prepare")
+            if (failPrepare) throw IllegalStateException("telegram unreachable")
+        }
+
+        override suspend fun refresh() = Unit
+        override suspend fun ensureDestination(): TelepicCloudDestination? = null
+        override suspend fun confirmDestination(): TelepicCloudDestination? = null
+        override suspend fun createNewDestination(): TelepicCloudDestination? = null
+        override suspend fun getPreview(media: CloudMedia): CloudPreview? = null
+        override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? = null
+        override suspend fun uploadMedia(
+            request: CloudUploadRequest,
+            onProgress: (CloudUploadProgress) -> Unit,
+            onSent: suspend (chatId: Long, messageId: Long) -> Unit,
+        ): CloudUploadResult? = null
+
+        override suspend fun confirmUpload(
+            chatId: Long,
+            messageId: Long,
+            mediaType: CloudMediaType,
+            contentHash: String?,
+            contentSizeBytes: Long?,
+        ): CloudUploadResult = error("confirmUpload is not exercised by coordinator tests")
+    }
+
     /** Serves [pages] and then fails, like a provider that stops answering part-way through a scan. */
     private class FailingLoader(private val pages: List<List<LocalMedia>>, private val pageSize: Int) :
         com.telepic.data.media.MediaPageLoader {
@@ -119,6 +179,7 @@ class BackupCoordinatorTest {
         buckets: Set<Long> = emptySet(),
         loaderFactory: ((Long?) -> com.telepic.data.media.MediaPageLoader)? = null,
         cursorStore: ScanCursorStore = ScanCursorStore.NoOp,
+        cloud: CloudRepository? = null,
     ) = DefaultBackupCoordinator(
         repository = repo,
         recognition = recognition,
@@ -126,6 +187,7 @@ class BackupCoordinatorTest {
         onboardingRepository = FakeOnboarding(preference, buckets),
         pageLoaderFactory = loaderFactory ?: { FakeLoader(pages, pageSize) },
         cursorStore = cursorStore,
+        cloudRepository = cloud,
         discoveryPageSize = pageSize,
     )
 
@@ -347,6 +409,64 @@ class BackupCoordinatorTest {
         val scheduler = FakeScheduler()
         coordinator(RecordingRepo(), scheduler, BackupPreference.BACKUP_ALL).syncFromPreference()
         assertEquals(1, scheduler.scheduled)
+    }
+
+    @Test
+    fun `automatic pass prepares the manifest before recognizing anything`() = runBlocking {
+        // The reinstall shape: recognition must judge against a manifest rebuilt from the channel's
+        // history, so the pre-sync has to land BEFORE the first item is judged — not race it.
+        val events = mutableListOf<String>()
+        val cloud = RecordingCloud(events)
+        val repo = RecordingRepo()
+        coordinator(
+            repo, FakeScheduler(), BackupPreference.BACKUP_ALL,
+            EventRecognition(events),
+            cloud = cloud,
+        ).syncFromPreference()
+
+        assertEquals(listOf("prepare", "recognize", "recognize"), events)
+        assertEquals(1, cloud.prepareCalls)
+        assertEquals(2, repo.enqueuedWithHash.size)
+    }
+
+    @Test
+    fun `a failed manifest pre-sync still runs the pass`() = runBlocking {
+        // Offline (or any cloud failure) degrades to the old behaviour: recognition continues with
+        // whatever is stored and the pass still enqueues — a broken pre-sync never kills the pass.
+        val cloud = RecordingCloud(failPrepare = true)
+        val repo = RecordingRepo()
+        val scheduler = FakeScheduler()
+        coordinator(repo, scheduler, BackupPreference.BACKUP_ALL, cloud = cloud).syncFromPreference()
+
+        assertEquals(1, cloud.prepareCalls)
+        assertEquals(2, repo.enqueuedWithHash.size)
+        assertEquals(1, scheduler.scheduled)
+    }
+
+    @Test
+    fun `opted-out and empty selections never touch the cloud`() = runBlocking {
+        val notNowCloud = RecordingCloud()
+        coordinator(RecordingRepo(), FakeScheduler(), BackupPreference.NOT_NOW, cloud = notNowCloud)
+            .syncFromPreference()
+        assertEquals(0, notNowCloud.prepareCalls)
+
+        val emptyFolderCloud = RecordingCloud()
+        coordinator(RecordingRepo(), FakeScheduler(), BackupPreference.SELECT_FOLDER, cloud = emptyFolderCloud)
+            .syncFromPreference()
+        assertEquals(0, emptyFolderCloud.prepareCalls)
+    }
+
+    @Test
+    fun `manual backup prepares the manifest before recognizing`() = runBlocking {
+        val events = mutableListOf<String>()
+        val cloud = RecordingCloud(events)
+        coordinator(
+            RecordingRepo(), FakeScheduler(), BackupPreference.NOT_NOW,
+            EventRecognition(events),
+            cloud = cloud,
+        ).backup(media(9))
+
+        assertEquals(listOf("prepare", "recognize"), events)
     }
 
     private class InMemoryCursorStore : ScanCursorStore {
