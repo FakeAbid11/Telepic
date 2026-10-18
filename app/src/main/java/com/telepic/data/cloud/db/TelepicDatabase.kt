@@ -20,7 +20,7 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  * recognition; Phase 10 favorites/archive/trash organization + geotagged-location cache; user-created
  * albums).
  *
- * Version 10 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
+ * Version 11 with **no destructive fallback**. Each version bump adds an explicit [Migration] so
  * Phase 5 destination/manifest rows, Phase 6 queue rows and Phase 7 hashes always survive:
  * - `1 → 2` ([MIGRATION_1_2]): introduces `backup_queue`.
  * - `2 → 3` ([MIGRATION_2_3]): adds `contentSizeBytes` + `hashedAt` and the `contentHash` indexes
@@ -36,6 +36,8 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  *   sorted/filtered by. Additive only — no table or column changes.
  * - `9 → 10` ([MIGRATION_9_10]): adds `cloud_media_manifest.contentSizeBytes`, the byte count a
  *   recovered content hash was computed over. Additive only.
+ * - `10 → 11` ([MIGRATION_10_11]): adds `backup_queue.pendingWaitAttempts`, the durable
+ *   "still sending" wait counter, so the pending-send wait cap survives process death. Additive only.
  */
 @Database(
     entities = [
@@ -48,7 +50,7 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         CustomAlbumEntity::class,
         CustomAlbumMediaEntity::class,
     ],
-    version = 10,
+    version = 11,
     // Schema JSON is exported to app/schemas (see the `ksp` block in app/build.gradle.kts) and
     // committed, so Room's migration checker can verify each migration against the real schema
     // instead of trusting the hand-written SQL in this file.
@@ -261,6 +263,22 @@ abstract class TelepicDatabase : RoomDatabase() {
         val MIGRATION_9_10: Migration = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `cloud_media_manifest` ADD COLUMN `contentSizeBytes` INTEGER")
+            }
+        }
+
+        /**
+         * Durable pending-send wait cap: adds the nullable `backup_queue.pendingWaitAttempts`
+         * column — how many consecutive "still sending" confirmations the row has parked on.
+         *
+         * Purely additive: every existing row survives with the column NULL, meaning "no parked
+         * waits". The counter previously lived in a process-scoped map inside
+         * `DefaultBackupRepository`, which meant every process death silently granted a stuck send
+         * another full cap of waits; on the row it is bounded across restarts, which is the whole
+         * point of the cap.
+         */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `backup_queue` ADD COLUMN `pendingWaitAttempts` INTEGER")
             }
         }
     }

@@ -495,4 +495,54 @@ class DefaultBackupRepositoryTest {
         assertEquals(500L, row.pendingTelegramMessageId)
         assertEquals(1, cloud.uploadCalls)
     }
+
+    @Test
+    fun `parked pending waits live on the row so a restart cannot reset the wait cap`() = runBlocking {
+        val cloud = FakeCloud(sentIdentity = 100L to 500L, uploadError = CloudNetworkException("timeout"))
+        var r = repo(cloud)
+        r.enqueue(media(1))
+        r.processPendingWork(maxItems = 1) // run 1: send accepted, timeout → pending identity persisted
+        cloud.uploadError = null
+        cloud.confirmError = com.telepic.data.cloud.CloudMessagePendingException()
+        repeat(3) { r.processPendingWork(maxItems = 1) }
+        var row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(3, row.pendingWaitAttempts)
+        assertEquals(1, row.retryCount) // parked waits never burn the budget
+
+        // Process death: a fresh repository over the same database resumes the count. The old
+        // process-scoped map restarted at zero here, granting the stuck send another full cap of
+        // waits on every restart — exactly the unbounded edge the column closes.
+        r = repo(cloud)
+        r.processPendingWork(maxItems = 1)
+        row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(4, row.pendingWaitAttempts)
+        assertEquals(1, row.retryCount)
+        assertEquals(1, cloud.uploadCalls) // still confirmed, never re-sent
+    }
+
+    @Test
+    fun `the pending wait cap burns the retry budget once and resets the counter for the next cycle`() = runBlocking {
+        val cloud = FakeCloud(sentIdentity = 100L to 500L, uploadError = CloudNetworkException("timeout"))
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        r.processPendingWork(maxItems = 1) // run 1: transient timeout — retryCount 1, no parked waits yet
+        cloud.uploadError = null
+        cloud.confirmError = com.telepic.data.cloud.CloudMessagePendingException()
+
+        // Just under the cap: each parked confirmation adds a wait without failing the row.
+        repeat(DefaultBackupRepository.MAX_PENDING_WAIT_ATTEMPTS - 1) { r.processPendingWork(maxItems = 1) }
+        var row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(DefaultBackupRepository.MAX_PENDING_WAIT_ATTEMPTS - 1, row.pendingWaitAttempts)
+        assertEquals(1, row.retryCount)
+
+        // The cap boundary: one confirmation past the cap is a bounded transient failure — the
+        // budget finally decrements and the counter resets so the next cycle starts clean.
+        r.processPendingWork(maxItems = 1)
+        row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(2, row.retryCount)
+        assertNull(row.pendingWaitAttempts)
+        assertEquals(BackupState.WAITING_FOR_NETWORK.name, row.state)
+        assertEquals(500L, row.pendingTelegramMessageId) // still confirmable, never re-sent
+        assertEquals(1, cloud.uploadCalls)
+    }
 }

@@ -112,7 +112,11 @@ class IndexMigration8To9Test {
 
             // Act: reopen the same file at version 9 through the real migration.
             val db = Room.databaseBuilder(context, TelepicDatabase::class.java, dbFile)
-                .addMigrations(TelepicDatabase.MIGRATION_8_9, TelepicDatabase.MIGRATION_9_10)
+                .addMigrations(
+                    TelepicDatabase.MIGRATION_8_9,
+                    TelepicDatabase.MIGRATION_9_10,
+                    TelepicDatabase.MIGRATION_10_11,
+                )
                 .allowMainThreadQueries()
                 .build()
 

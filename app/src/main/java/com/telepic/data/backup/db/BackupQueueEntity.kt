@@ -60,6 +60,14 @@ data class BackupQueueEntity(
     val hashedAt: Long? = null,
     val pendingTelegramChatId: Long? = null,
     val pendingTelegramMessageId: Long? = null,
+    /**
+     * How many consecutive "still sending" confirmations this row has parked on without burning its
+     * retry budget (nullable: NULL means no parked waits). Persisted so the pending-send wait cap
+     * holds across process death instead of silently restarting — a process-scoped counter granted
+     * a stuck send another full cap of waits on every restart. Reset by the repository whenever the
+     * pending identity resolves (confirmed, proven gone, or failed) — added in migration 10 → 11.
+     */
+    val pendingWaitAttempts: Int? = null,
 )
 
 /**

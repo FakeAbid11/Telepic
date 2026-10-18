@@ -139,6 +139,18 @@ interface BackupQueueDao {
     )
     suspend fun clearPendingRemote(id: Long, now: Long): Int
 
+    /**
+     * Persist the parked-wait counter of the pending-send confirmation loop (the wait cap in
+     * `DefaultBackupRepository`). Its own statement rather than folded into a state write: every
+     * resolve path resets it, and some of those (a successful confirm on an already-terminal row)
+     * no-op the guarded state update — the counter still has to go back to NULL.
+     *
+     * [attempts] is nullable on purpose: NULL is "no parked waits", the same thing a reset restores
+     * and what rows migrated from a version without this column read as.
+     */
+    @Query("UPDATE backup_queue SET pendingWaitAttempts = :attempts WHERE id = :id")
+    suspend fun setPendingWaitAttempts(id: Long, attempts: Int?)
+
     @Query(
         "UPDATE backup_queue SET state = :state, updatedAt = :now " +
             "WHERE id = :id AND state NOT IN ('BACKED_UP', 'CANCELLED', 'FAILED')",

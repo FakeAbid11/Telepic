@@ -50,26 +50,6 @@ class DefaultBackupRepository(
 
     private val processMutex = Mutex()
 
-    /**
-     * How many consecutive "still sending" confirmations a row may accumulate before it stops
-     * waiting for free and consumes the bounded retry budget instead.
-     *
-     * `CloudMessagePendingException` is deliberately cheap: a large video can legitimately spend a
-     * long time in TDLib's send queue, so the first [MAX_PENDING_WAIT_ATTEMPTS] confirmations park the
-     * row in WAITING_FOR_NETWORK *without* touching `retryCount` and without failing. Without a cap,
-     * though, a send stuck forever made `hasRetryableWork` always true, so the worker retried every
-     * backoff period indefinitely (each time raising the foreground notification) and the item never
-     * surfaced as stalled. After the cap the row takes a normal transient failure: it keeps the
-     * pending remote identity (so it is still confirmable and never re-sent) but its retry budget now
-     * decrements, and it surfaces as STALLED when exhausted.
-     *
-     * Access is serialized by [processMutex] (only [processOne] reads/writes it, and only under the
-     * lock). The counter is process-scoped: a process death clears it, which at worst grants another
-     * cap's worth of waits after restart — still bounded, never infinite. A durable bound would need a
-     * persisted column and a migration; this is the deliberate no-schema-change mitigation.
-     */
-    private val pendingAttempts = mutableMapOf<Long, Int>()
-
     override fun observeQueue(): Flow<List<BackupItem>> = dao.observeAll().map { rows -> rows.map { it.toDomain() } }
 
     override fun observeStats(): Flow<BackupQueueStats> = dao.observeAll().map { rows -> rows.toStats(maxRetries) }
@@ -201,10 +181,10 @@ class DefaultBackupRepository(
                 // Same guard as the send path: a row cancelled while this confirmation was in flight
                 // keeps its CANCELLED state and must not be reported as an upload.
                 if (recorded > 0) {
-                    pendingAttempts.remove(item.id)
+                    dao.setPendingWaitAttempts(item.id, null)
                     ProcessOutcome.Uploaded
                 } else {
-                    pendingAttempts.remove(item.id)
+                    dao.setPendingWaitAttempts(item.id, null)
                     TelepicLog.warn(
                         "BackupRepository",
                         "confirmation landed but the queue row was already terminal; not counted as uploaded",
@@ -217,12 +197,16 @@ class DefaultBackupRepository(
                 // queue. Past the cap the row takes a bounded transient failure instead, so a send
                 // that is stuck (not merely slow) can never loop forever. The pending remote identity
                 // is untouched either way, so the item is still confirmed rather than re-sent.
-                val attempts = (pendingAttempts[item.id] ?: 0) + 1
+                //
+                // The count lives on the row (pendingWaitAttempts), not in this process: a restart
+                // resumes the count instead of granting the stuck send another full cap of waits.
+                // Access is serialized by [processMutex] (only [processOne] touches it, under the lock).
+                val attempts = (item.pendingWaitAttempts ?: 0) + 1
                 if (attempts < MAX_PENDING_WAIT_ATTEMPTS) {
-                    pendingAttempts[item.id] = attempts
+                    dao.setPendingWaitAttempts(item.id, attempts)
                     dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, clock())
                 } else {
-                    pendingAttempts.remove(item.id)
+                    dao.setPendingWaitAttempts(item.id, null)
                     dao.recordTransientFailure(
                         item.id,
                         "Upload still pending after $MAX_PENDING_WAIT_ATTEMPTS confirmations.",
@@ -232,21 +216,21 @@ class DefaultBackupRepository(
                 ProcessOutcome.Waiting
             } catch (gone: CloudMessageGoneException) {
                 // Provably never landed: clear the pending id and fall through to a real upload.
-                pendingAttempts.remove(item.id)
+                dao.setPendingWaitAttempts(item.id, null)
                 dao.clearPendingRemote(item.id, clock())
                 null
             } catch (network: CloudNetworkException) {
-                pendingAttempts.remove(item.id)
+                dao.setPendingWaitAttempts(item.id, null)
                 dao.recordTransientFailure(item.id, safeError(network), clock())
                 ProcessOutcome.Waiting
             } catch (rejected: CloudUploadRejectedException) {
-                pendingAttempts.remove(item.id)
+                dao.setPendingWaitAttempts(item.id, null)
                 dao.markFailed(item.id, safeError(rejected), clock())
                 ProcessOutcome.PermanentFailure
             } catch (cancellation: kotlinx.coroutines.CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
-                pendingAttempts.remove(item.id)
+                dao.setPendingWaitAttempts(item.id, null)
                 // An unclassified confirm failure is not provably permanent. This mirrors the upload
                 // path's own Throwable handler: without it, one unexpected throwable out of
                 // confirmUpload (a Room/SQLite error from manifestDao.upsertAll, say) escaped
@@ -388,8 +372,9 @@ class DefaultBackupRepository(
 
         /**
          * Consecutive "still sending" confirmations tolerated before the pending send is treated as a
-         * bounded transient failure (see [pendingAttempts]). Generous on purpose: the data source's
-         * own send-confirmation window is ~60s per attempt, so this is minutes of waiting before the
+         * bounded transient failure (counted per row in `BackupQueueEntity.pendingWaitAttempts`, so
+         * the bound holds across process death). Generous on purpose: the data source's own
+         * send-confirmation window is ~60s per attempt, so this is minutes of waiting before the
          * budget starts to decrement.
          */
         const val MAX_PENDING_WAIT_ATTEMPTS = 20
