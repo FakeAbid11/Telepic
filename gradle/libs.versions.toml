@@ -6,14 +6,16 @@ agp = "9.4.1"
 # `org.jetbrains.kotlin.android` plugin. This version only pins the Compose compiler plugin, which
 # must match the Kotlin version AGP 9.4.1 bundles (2.2.10) — it is not free to drift.
 kotlin = "2.2.10"
-coreKtx = "1.19.1"
-lifecycle = "2.11.0"
+# core, lifecycle and navigation are held at their newest compileSdk-36 lines: the next release
+# (core 1.19, lifecycle 2.11, navigation 2.10) declares minCompileSdk=37 and fails checkAarMetadata.
+coreKtx = "1.18.0"
+lifecycle = "2.10.0"
 activityCompose = "1.13.0"
 # App-lock device-credential prompt. 1.1.0 is the current stable line (1.2.x is still alpha) and is
 # the first to expose BiometricManager.Authenticators.DEVICE_CREDENTIAL on API 26+.
 biometric = "1.1.0"
 composeBom = "2024.10.01"
-navigationCompose = "2.10.2"
+navigationCompose = "2.9.8"
 datastore = "1.2.1"
 junit = "4.13.2"
 coroutines = "1.11.0"
