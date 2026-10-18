@@ -288,7 +288,7 @@ app/src/main/java/com/telepic/
 
 ### Database
 
-Room is at **version 10**, with explicit migrations and **no destructive fallback**:
+Room is at **version 11**, with explicit migrations and **no destructive fallback**:
 
 | Table | Purpose | Introduced |
 |---|---|---|
@@ -301,7 +301,7 @@ Room is at **version 10**, with explicit migrations and **no destructive fallbac
 | `custom_album_media` | Album membership, keyed `(albumId, localMediaId)`, cascading on delete | 6 → 7 |
 | `media_location_scan` | Which items the map has already examined for GPS — including those that carry none | 7 → 8 |
 
-Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, `5 → 6`, `6 → 7`, `7 → 8`, `8 → 9` (index-only) and `9 → 10` (adds `cloud_media_manifest.contentSizeBytes`). Each has a migration test that builds the previous version and proves existing rows survive. Note that `TelepicDatabase` is always the latest version, so each of those tests chains *every* migration from its starting version — a version bump therefore touches all of them.
+Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, `5 → 6`, `6 → 7`, `7 → 8`, `8 → 9` (index-only), `9 → 10` (adds `cloud_media_manifest.contentSizeBytes`) and `10 → 11` (adds `backup_queue.pendingWaitAttempts` — the pending-wait counter kept on the row, so a process restart cannot silently reset the retry cap). Each has a migration test that builds the previous version and proves existing rows survive. Note that `TelepicDatabase` is always the latest version, so each of those tests chains *every* migration from its starting version — a version bump therefore touches all of them.
 
 The schema JSON Room exports per version lives in `app/schemas/`, and CI uploads it as the
 `telepic-room-schemas` artifact. **It must be committed with the migration that produced it**: the
@@ -529,7 +529,7 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 - **App lock re-locks on a grace window, not instantly.** Returning to the foreground within 30 seconds does not re-prompt, because launching a system activity (the photo picker, the delete-consent dialog, the Telegram link) stops this activity and an instant re-lock would interrupt the user's own flow. It locks on cold start and after longer background trips; see `AppLockTimer` for the exact rule.
 - **Reinstall recognition cannot cover media backed up by a build without the caption marker.** Those manifest rows carry no hash, so only the kinds Telegram gives a filename to (videos, GIFs, documents) can be recovered by name and size; photos backed up by such a build are re-uploaded once and then carry the marker themselves.
 - **Hiding videos or GIFs does not change what gets backed up.** The Media preferences filter the library *views* only; backup eligibility stays governed by the backup preference. The folder picker therefore lists folders by what a backup would take, not by what the timeline happens to show.
-- **No instrumented tests.** All tests are JVM/Robolectric; there is no `app/src/androidTest` source set, so nothing device-bound is covered by automated tests.
+- **No instrumented tests, and no emulator job in CI.** All tests are JVM/Robolectric; there is no `app/src/androidTest` source set, and an emulator running on every push was deliberately deferred — it would multiply CI minutes for coverage the JVM suite largely overlaps. Nothing device-bound is covered by automated tests.
 - **Logging is minimal.** One seam exists (`diagnostics/TelepicLog`), and it is wired only at the fallbacks that used to be invisible — an aborted backup pass, a denied foreground notification, a swallowed TDLib request failure, a refused MediaStore delete. There is no analytics, no crash reporting, and no log of the happy path, so a device-gated failure is still easier to reproduce than to diagnose from the outside.
 - **No offline map tiles.** The map requires connectivity.
 - **`SELECT_FOLDER` is keyed to MediaStore buckets.** A folder *is* a bucket, and the bucket id is derived from the folder's path — so a folder renamed or moved outside the app drops out of the selection and has to be picked again. Only folders that currently hold photos or videos are offered (an empty folder produces no bucket), and on Android 9 and below there is no `RELATIVE_PATH`, so two folders sharing a name cannot be told apart in the picker there.
@@ -538,13 +538,13 @@ This phase attacked the long-standing device-gated Telegram blocker first, then 
 - **An unreadable app-lock preference fails closed.** If the persisted lock setting cannot be read, Telepic hides the library behind a recovery screen with a retry instead of assuming the lock is off and opening the content it protects. The window is also protected (`FLAG_SECURE`) whenever the state is unknown.
 - **The open-source licence list is hand-maintained** (`OpenSourceLicenses.kt`), so it has to be updated whenever a runtime dependency changes. It mirrors `gradle/libs.versions.toml` rather than being generated.
 - **ARM-only**, `minSdk 26`.
-- **No shipping release is built.** Only the debug APK is produced on every push, because that is the artifact being installed while the project is being tested. The `release-smoke` job that compiles the R8/minified configuration and builds an AAB is **manual-only** — run it from *Actions → Android CI → Run workflow* before any release attempt, so shrinking and the bundle path cannot rot unnoticed in the meantime.
+- **No shipping release is built.** The artifact installed while the project is tested is the debug APK. The `release-smoke` job compiles the R8/minified configuration and builds an AAB on **every push to `main`** (and on manual dispatch), so shrinking and the bundle path cannot rot — but nothing is signed for distribution unless `RELEASE_KEYSTORE_BASE64` is configured, and nothing is published.
 
 ---
 
 ## Testing
 
-All tests are JVM-based and run in CI; no instrumented tests exist yet.
+The suite is **808 tests across 115 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
 
 ```bash
 # Unit tests (JUnit 4 + kotlinx-coroutines-test + Robolectric)
@@ -560,21 +560,25 @@ All tests are JVM-based and run in CI; no instrumented tests exist yet.
 These are exactly the commands the [CI workflow](.github/workflows/android-ci.yml) runs on every push.
 If you build locally, you will need JDK 17 and the Android SDK; if you don't, CI will run them for you.
 
-The release configuration is checked separately, on demand:
+The release configuration is smoke-tested on the same push:
 
 ```bash
-# R8 + resource shrinking + the AAB Play consumes (not run on push)
+# R8 + resource shrinking + the AAB Play consumes
 ./gradlew assembleRelease bundleRelease
 ```
 
-That is the `release-smoke` job, triggered by *Actions → Android CI → Run workflow*. It also fails any
-release task when `TELEGRAM_API_ID`/`TELEGRAM_API_HASH` are absent, so a credential-less release cannot
-be produced by accident.
+That is the `release-smoke` job, which runs on **every push to `main`** in parallel with the test job
+(and on demand via *Actions → Android CI → Run workflow*). It fails any release task when
+`TELEGRAM_API_ID`/`TELEGRAM_API_HASH` are absent, so a credential-less release cannot be produced by
+accident, and it warns loudly when the AAB ends up unsigned.
 
-What the suite covers: the backup state machine, all Room migrations, hashing and recognition/dedup,
-viewer race conditions, navigation, permission policy, persistence, and the pure logic seams
-(`MediaDay`, `AlbumGrouper`, `MapClusterer`, `GpsCoordinates`, `ZoomState`). Device-bound paths
-(MediaStore write/delete, TDLib round-trips, ExoPlayer, osmdroid) are **not** covered.
+What the suite covers: the backup state machine (including the durable pending-wait cap that keeps
+its retry budget across a restart), every Room migration proven from its previous schema through
+v11, hashing and recognition/dedup, viewer race conditions, the builder ↔ pattern ↔ argument route
+contract, settings / app-lock / organization / album-contents UI states, permission policy,
+persistence, and the pure logic seams (`MediaDay`, `AlbumGrouper`, `MapClusterer`, `GpsCoordinates`,
+`ZoomState`). Device-bound paths (MediaStore write/delete, TDLib round-trips, ExoPlayer, osmdroid)
+are **not** covered.
 
 ---
 
@@ -587,7 +591,7 @@ contribute.
 
 1. Fork the repository and create a branch for your change.
 2. Make your change, following the conventions below.
-3. Push (or open a pull request). **CI must be green** — it runs `testDebugUnitTest`, `lintDebug`, and `assembleDebug`.
+3. Push (or open a pull request). **CI must be green** — it runs `testDebugUnitTest`, `lintDebug`, and `assembleDebug`, plus the `release-smoke` R8/AAB build on pushes to `main`.
 4. Open a pull request describing what changed and why.
 
 **Conventions to follow**
@@ -611,9 +615,12 @@ whether it involves Telegram or backup, and the exact steps to reproduce.
 
 ## License
 
-**No license has been chosen yet.** There is no `LICENSE` file in this repository, which means the
-code is under default copyright — all rights reserved. If you would like to use this code, please
-open an issue to discuss licensing.
+Licensed under the **Apache License, Version 2.0** — see [`LICENSE`](LICENSE).
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing permissions and limitations under the
+License.
 
 ---
 
