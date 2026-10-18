@@ -412,6 +412,11 @@ class TelegramSessionManager(
      * The published state is cleared as well. Leaving it at `Authorized` would keep telling every
      * caller — the backup engine's auth gate included — that a usable session exists after the client
      * behind it has gone.
+     *
+     * Production deliberately never calls this: Android offers no reliable process-teardown hook,
+     * and the session is process-scoped by design (the TDLib client's own threads also outlive any
+     * close, see `TdLibClientGateway`). The call sites are the tests, which need a deterministic
+     * shutdown between cases.
      */
     fun close() {
         closed = true

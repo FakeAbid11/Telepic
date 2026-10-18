@@ -82,6 +82,10 @@ class MediaStoreBackupStager(
     private fun queryRowCount(uri: Uri): Boolean = try {
         val cursor: Cursor? = contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)
         cursor?.use { it.count > 0 } ?: false
+    } catch (cancellation: CancellationException) {
+        // Cancellation is control flow, not an unreadable source: rethrow it so a torn-down
+        // staging attempt is not recorded as a permanent "media is gone" failure.
+        throw cancellation
     } catch (throwable: Throwable) {
         // Not silent: `false` here makes `stage` return null, which the queue records as a *permanent*
         // "local media is no longer available" failure. A provider error (a revoked or limited media

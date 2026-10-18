@@ -588,7 +588,7 @@ class ViewerViewModel(
                 }
                 // Cloud items have no organization flags; reset so the flag bar never leaks across items.
                 if (resolved.item is ViewerItem.Local) {
-                    loadFlags((resolved.item as ViewerItem.Local).media.id)
+                    loadFlags(resolved.item.media.id)
                 } else {
                     _flags.value = ViewerFlags()
                 }

@@ -6,8 +6,9 @@ import kotlinx.coroutines.flow.StateFlow
  * The UI-facing contract for Telegram authentication. The UI depends only on this interface —
  * never on [org.drinkless.tdlib.Client] directly.
  *
- * Phase 4 provides [TdLibTelegramAuthController] (real). [UnavailableTelegramAuthController]
- * remains as a fallback when no backend is wired, and never fakes success.
+ * Implemented by [TdLibTelegramAuthController] (real). [isBackendAvailable] stays the seam the UI
+ * reads to render an honest "unavailable in this build" state instead of faking sign-in — it is
+ * exercised by the UI tests through fake controllers.
  */
 interface TelegramAuthController {
     val state: StateFlow<TelegramAuthState>

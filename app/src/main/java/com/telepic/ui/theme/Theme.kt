@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -145,10 +146,14 @@ fun TelepicTheme(
 ) {
     val colorScheme = if (darkTheme) TelepicDarkColorScheme else TelepicLightColorScheme
     val extended = if (darkTheme) DarkExtended else LightExtended
-    // Read once per theme pass, not per animated value. `null` on a ROM that will not answer simply
-    // means "animate normally", which is the safe direction for a cosmetic switch.
+    // Re-read on every configuration change: the animator-duration scale that drives this is itself
+    // a configuration value, so a user who flips "Remove animations" in system settings while
+    // Telepic is backgrounded must not keep the stale answer until the next process start. `null`
+    // on a ROM that will not answer simply means "animate normally", which is the safe direction
+    // for a cosmetic switch.
     val context = LocalContext.current
-    val reduceMotion = remember {
+    val configuration = LocalConfiguration.current
+    val reduceMotion = remember(configuration) {
         runCatching {
             Settings.Global.getFloat(
                 context.contentResolver,

@@ -8,15 +8,13 @@
     <string name="nav_albums">Albums</string>
     <string name="nav_map">Map</string>
     <string name="nav_settings">Settings</string>
-    <!-- Neutral label for a pushed screen's back affordance. `albums_back` ("Back to albums") is
-         only correct on the album screens; the shared ScreenHeader is also used by Settings, Map,
-         Cloud and Backup Center, where announcing "Back to albums" is simply wrong. -->
+    <!-- Neutral label for a pushed screen's back affordance: the shared ScreenHeader serves
+         Settings, Map, Cloud, Backup Center and the album screens alike, so anything more specific
+         would announce the wrong destination everywhere else. -->
     <string name="nav_back">Back</string>
 
     <!-- Photos -->
     <string name="photos_title">Telepic</string>
-    <string name="photos_empty_title">Your photos will appear here</string>
-    <string name="photos_empty_description">This is your local media timeline. Telepic will organize your photos and videos here in a fast, beautiful grid.</string>
 
     <!-- Cloud -->
     <string name="cloud_title">Cloud</string>
@@ -223,7 +221,6 @@
     <string name="onboarding_telegram_not_connected_body">Telegram sign-in is unavailable in this build. You can continue now and connect later from Settings — cloud backup stays off until then.</string>
     <string name="onboarding_telegram_skip">Set up later</string>
     <string name="telegram_connecting">Connecting to Telegram…</string>
-    <string name="telegram_authorizing">Signed in. Loading your account…</string>
     <string name="telegram_phone_label">Phone number</string>
     <string name="telegram_country_label">Country code</string>
     <string name="telegram_phone_hint">Enter your number — the country code is added for you</string>
@@ -354,14 +351,12 @@
     <string name="backup_queue_state_cancelled">Cancelled</string>
     <string name="backup_queue_state_waiting_network">Waiting for network</string>
     <string name="backup_queue_state_waiting_auth">Waiting for Telegram sign-in</string>
-    <string name="backup_start_backup">Start backup</string>
     <string name="backup_settings_entry">Backup Center</string>
     <string name="backup_settings_entry_summary">View the backup queue, progress and failures</string>
 
     <!-- ============================ Photos UI (Phase 8) ============================ -->
     <string name="settings_action">Settings</string>
     <string name="photos_partial_access_banner">Showing only the photos and videos you selected. You can grant full access in Settings.</string>
-    <string name="photos_open_backup_center">Backup</string>
     <string name="photos_loading_more">Loading more photos…</string>
     <string name="photos_load_more_error">Couldn\'t load more</string>
     <string name="photos_refresh_failed">Couldn\'t refresh. Showing what\'s already loaded.</string>
@@ -388,7 +383,6 @@
         <item quantity="other">%1$d items</item>
     </plurals>
     <string name="albums_open_album">Open album %1$s</string>
-    <string name="albums_back">Back to albums</string>
 
     <!-- ============================ User-created albums ============================ -->
     <string name="albums_create">New album</string>
@@ -484,7 +478,6 @@
     <string name="viewer_backup_queued_message">Queued for backup</string>
     <string name="viewer_backup_already_message">Already backed up</string>
 
-    <string name="library_title">Library</string>
     <string name="library_favorites">Favorites</string>
     <string name="library_archive">Archive</string>
     <string name="library_trash">Trash</string>
@@ -538,7 +531,6 @@
         <item quantity="one">%1$d removed from this album</item>
         <item quantity="other">%1$d removed from this album</item>
     </plurals>
-    <string name="organization_deleted_message">This item is still on your device. Telepic does not have permission to delete it from media storage.</string>
 
     <string name="trash_delete_title">Delete permanently?</string>
     <!-- Numbered, because Delete forever now acts on the whole selection: the singular sentence would
@@ -549,7 +541,6 @@
         <item quantity="other">This deletes %1$d files from your device through the system. It cannot be undone. Your Telegram backup copies are not affected.</item>
     </plurals>
     <string name="trash_delete_confirm">Delete from device</string>
-    <string name="trash_delete_consent_needed">Android asked you to confirm this deletion.</string>
     <plurals name="trash_delete_failed_count">
         <item quantity="one">Android didn\'t allow the deletion. The item stays in trash.</item>
         <item quantity="other">Android didn\'t allow the deletion. The items stay in trash.</item>

@@ -61,7 +61,10 @@ class AndroidContentHasher(
 
     override suspend fun isReadable(uri: Uri): Boolean = withContext(dispatcher) {
         try {
-            contentResolver.openInputStream(uri)?.close()
+            // A null stream means the provider refused the open, which is "unreadable", not
+            // "readable": swallowing it with `?.` and reporting true would tell the caller a
+            // refused read was a hashable source, losing the SOURCE_UNREADABLE/HASH_FAILED split.
+            contentResolver.openInputStream(uri)?.use { } ?: return@withContext false
             true
         } catch (cancellation: CancellationException) {
             // Cancellation is control flow, not "unreadable". The rest of the app rethrows it, and
