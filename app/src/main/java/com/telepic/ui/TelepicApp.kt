@@ -46,6 +46,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.telepic.navigation.TelepicDestination
 import com.telepic.navigation.TelepicNavHost
+import com.telepic.navigation.ViewerRoute
 import com.telepic.navigation.icon
 import com.telepic.navigation.navigateToTopLevel
 import com.telepic.navigation.selectedIcon
@@ -152,7 +153,7 @@ fun TelepicApp(
         // instead of the grid snapping up by the bar's height in a single frame.
         val reduceMotion = LocalReduceMotion.current
         val viewerImmersion by animateFloatAsState(
-            targetValue = if (route?.startsWith("viewer/") == true) 1f else 0f,
+            targetValue = if (route?.startsWith(ViewerRoute.PREFIX) == true) 1f else 0f,
             animationSpec = if (reduceMotion) snap() else tween(NAV_FADE_ENTER_MILLIS),
             label = "viewerImmersion",
         )

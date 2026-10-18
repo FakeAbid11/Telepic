@@ -236,4 +236,26 @@ class RouteContractTest {
         assertFalse(ViewerRoute.LOCAL.contains("?{"))
         assertFalse(AlbumRoute.CUSTOM_PATTERN.contains("?{"))
     }
+
+    @Test
+    fun `every viewer route lives under the prefix the app shell fades on`() {
+        // TelepicApp fades the chrome when the current route starts with [ViewerRoute.PREFIX], so
+        // the namespace is spelled once and every viewer route must sit under it — while no tab
+        // route may, or the fade would fire on a top-level destination.
+        val routes = listOf(
+            ViewerRoute.LOCAL,
+            ViewerRoute.CLOUD,
+            ViewerRoute.local(1L),
+            ViewerRoute.localInBucket(1L, 2L),
+            ViewerRoute.localInCollection(1L, OrganizationKind.TRASH),
+            ViewerRoute.localInCustomAlbum(1L, 2L),
+            ViewerRoute.cloud(1L, 2L),
+        )
+        routes.forEach {
+            assertTrue("route must start with ${ViewerRoute.PREFIX}: $it", it.startsWith(ViewerRoute.PREFIX))
+        }
+        TelepicDestination.entries.forEach {
+            assertFalse("tab ${it.route} must not sit under the viewer prefix", it.route.startsWith(ViewerRoute.PREFIX))
+        }
+    }
 }

@@ -39,6 +39,12 @@ object ViewerRoute {
     const val ARG_ORG_KIND = "orgKind"
     const val ARG_ALBUM_ID = "albumId"
 
+    // The one place the viewer namespace is spelled. LOCAL, CLOUD and every builder derive from it,
+    // and the app shell fades its chrome by matching this same prefix against the current route
+    // (see TelepicApp) — so the patterns and the shell's match cannot drift apart. No tab route
+    // starts with it, which is what keeps the fade from ever firing on a top-level destination.
+    const val PREFIX = "viewer/"
+
     // mediaId is required; the rest are optional query args (defaults registered in the nav graph) so
     // a plain local route still matches while albums and collections pass their own context. Exactly
     // one of them is ever supplied, and [scopeOf] fixes the precedence.
@@ -48,25 +54,25 @@ object ViewerRoute {
     // form, which hands the *entire* raw query string to every declared arg — Longs then fail to parse
     // back to their defaults and the scope collapses to [ViewerScope.Global].
     const val LOCAL =
-        "viewer/local/{$ARG_MEDIA_ID}?$ARG_BUCKET_ID={$ARG_BUCKET_ID}" +
+        "${PREFIX}local/{$ARG_MEDIA_ID}?$ARG_BUCKET_ID={$ARG_BUCKET_ID}" +
             "&$ARG_ORG_KIND={$ARG_ORG_KIND}&$ARG_ALBUM_ID={$ARG_ALBUM_ID}"
-    const val CLOUD = "viewer/cloud/{$ARG_CHAT_ID}/{$ARG_MESSAGE_ID}"
+    const val CLOUD = "${PREFIX}cloud/{$ARG_CHAT_ID}/{$ARG_MESSAGE_ID}"
 
-    fun local(mediaId: Long): String = "viewer/local/$mediaId"
+    fun local(mediaId: Long): String = "${PREFIX}local/$mediaId"
 
     /** Opens the Viewer scoped to one album bucket so next/previous stay inside it. */
     fun localInBucket(mediaId: Long, bucketId: Long): String =
-        "viewer/local/$mediaId?$ARG_BUCKET_ID=$bucketId"
+        "${PREFIX}local/$mediaId?$ARG_BUCKET_ID=$bucketId"
 
     /** Opens the Viewer scoped to a curated collection so next/previous follow that set's order. */
     fun localInCollection(mediaId: Long, kind: OrganizationKind): String =
-        "viewer/local/$mediaId?$ARG_ORG_KIND=${kind.name.lowercase()}"
+        "${PREFIX}local/$mediaId?$ARG_ORG_KIND=${kind.name.lowercase()}"
 
     /** Opens the Viewer scoped to a user-created album so next/previous stay inside that album. */
     fun localInCustomAlbum(mediaId: Long, albumId: Long): String =
-        "viewer/local/$mediaId?$ARG_ALBUM_ID=$albumId"
+        "${PREFIX}local/$mediaId?$ARG_ALBUM_ID=$albumId"
 
-    fun cloud(chatId: Long, messageId: Long): String = "viewer/cloud/$chatId/$messageId"
+    fun cloud(chatId: Long, messageId: Long): String = "${PREFIX}cloud/$chatId/$messageId"
 
     /**
      * Rebuilds the originating [ViewerScope] from the back stack args, defaulting to the global
