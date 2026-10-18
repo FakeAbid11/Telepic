@@ -6,22 +6,24 @@ agp = "9.4.1"
 # `org.jetbrains.kotlin.android` plugin. This version only pins the Compose compiler plugin, which
 # must match the Kotlin version AGP 9.4.1 bundles (2.2.10) — it is not free to drift.
 kotlin = "2.2.10"
-# core, lifecycle and navigation are held at their newest compileSdk-36 lines: the next release
-# (core 1.19, lifecycle 2.11, navigation 2.10) declares minCompileSdk=37 and fails checkAarMetadata.
+# core is held at its newest compileSdk-36 line: androidx.core 1.19 declares minCompileSdk=37
+# and fails checkAarMetadata. lifecycle/activity/navigation/paging are held at the Compose BOM
+# 2024.10.01 era: their newer lines declare compose ui/runtime 1.9-1.10 as real dependencies,
+# which resolves past the frozen BOM and breaks the compiled-vs-runtime FlowRow ABI in tests.
 coreKtx = "1.18.0"
-lifecycle = "2.10.0"
-activityCompose = "1.13.0"
+lifecycle = "2.8.6"
+activityCompose = "1.9.3"
 # App-lock device-credential prompt. 1.1.0 is the current stable line (1.2.x is still alpha) and is
 # the first to expose BiometricManager.Authenticators.DEVICE_CREDENTIAL on API 26+.
 biometric = "1.1.0"
 composeBom = "2024.10.01"
-navigationCompose = "2.9.8"
+navigationCompose = "2.8.3"
 datastore = "1.2.1"
 junit = "4.13.2"
 coroutines = "1.11.0"
 robolectric = "4.17"
 androidxTest = "1.7.0"
-paging = "3.5.3"
+paging = "3.3.2"
 coil = "2.7.0"
 media3 = "1.4.1"
 tdlib = "0.1.1"
