@@ -2,6 +2,7 @@ package com.telepic.ui.screens.settings
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -171,5 +172,19 @@ class SettingsUiTest {
         composeRule.onNodeWithText("Choose theme").assertIsDisplayed()
         composeRule.onNodeWithText("Dark").performClick()
         assertEquals(ThemeMode.DARK, chosen)
+    }
+
+    // The regroup: theme and the timeline toggles share one "Display" header, and the thin
+    // single-purpose section headers they replaced are gone (their rows moved into Backup).
+    @Test
+    fun `display section groups the theme with the timeline toggles and retires the old headers`() {
+        render()
+        composeRule.onNodeWithText("Display").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Theme").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Show videos").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("On this device").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Library").assertDoesNotExist()
+        composeRule.onNodeWithText("Media").assertDoesNotExist()
+        composeRule.onNodeWithText("Appearance").assertDoesNotExist()
     }
 }

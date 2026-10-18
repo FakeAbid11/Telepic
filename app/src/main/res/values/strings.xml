@@ -79,7 +79,7 @@
     <string name="settings_backup_now">Back up now</string>
     <string name="settings_backup_now_summary">Scan for new photos and back them up</string>
     <string name="settings_backup_now_unavailable">Choose a backup option first</string>
-    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_display">Display</string>
     <string name="settings_appearance_theme">Theme</string>
     <string name="settings_section_storage">Storage</string>
     <string name="settings_storage_telegram_cache">Telegram session cache</string>
@@ -107,7 +107,6 @@
     <string name="settings_backup_quality_value">Original — Telepic uploads your files exactly as they are and never re-compresses photos or videos.</string>
 
     <!-- Settings — library information (local vs cloud) -->
-    <string name="settings_section_library">Library</string>
     <string name="settings_library_local">On this device</string>
     <plurals name="settings_library_local_summary">
         <item quantity="one">%1$d photo &amp; video</item>
@@ -124,7 +123,6 @@
 
     <!-- Settings — media behaviour. Hiding a kind filters the library queries only; it never
          changes what gets backed up. -->
-    <string name="settings_section_media">Media</string>
     <string name="settings_media_show_videos">Show videos</string>
     <string name="settings_media_show_videos_summary">Include videos in the timeline and albums. Backups are unaffected.</string>
     <string name="settings_media_show_gifs">Show GIFs</string>

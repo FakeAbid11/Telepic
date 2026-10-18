@@ -289,9 +289,10 @@ fun SettingsScreen(
                         title = stringResource(R.string.settings_backup_quality),
                         summary = stringResource(R.string.settings_backup_quality_value),
                     )
-                }
-
-                SettingsSection(title = stringResource(R.string.settings_section_library)) {
+                    // The counts close the section: the source here, the result in the cloud — the
+                    // first thing anyone asking "did my backup work?" wants to read. They used to
+                    // live in a two-row section of their own, which separated the question from
+                    // the answers.
                     SettingsRow(
                         title = stringResource(R.string.settings_library_local),
                         summary = localLibrarySummary,
@@ -302,7 +303,13 @@ fun SettingsScreen(
                     )
                 }
 
-                SettingsSection(title = stringResource(R.string.settings_section_media)) {
+                SettingsSection(title = stringResource(R.string.settings_section_display)) {
+                    SettingsRow(
+                        title = stringResource(R.string.settings_appearance_theme),
+                        summary = stringResource(themeMode.labelRes),
+                        enabled = true,
+                        onClick = { showThemeDialog = true },
+                    )
                     SettingsToggleRow(
                         title = stringResource(R.string.settings_media_show_videos),
                         summary = stringResource(R.string.settings_media_show_videos_summary),
@@ -320,15 +327,6 @@ fun SettingsScreen(
                         summary = stringResource(R.string.settings_media_start_muted_summary),
                         checked = startMuted,
                         onCheckedChange = viewModel::setStartVideosMuted,
-                    )
-                }
-
-                SettingsSection(title = stringResource(R.string.settings_section_appearance)) {
-                    SettingsRow(
-                        title = stringResource(R.string.settings_appearance_theme),
-                        summary = stringResource(themeMode.labelRes),
-                        enabled = true,
-                        onClick = { showThemeDialog = true },
                     )
                 }
 
