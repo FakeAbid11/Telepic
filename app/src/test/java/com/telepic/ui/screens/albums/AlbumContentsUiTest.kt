@@ -9,7 +9,13 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.paging.LoadParams
+import androidx.paging.LoadResult
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import androidx.paging.PagingSource
+import androidx.paging.PagingState
 import com.telepic.data.backup.BackupStatusRepository
 import com.telepic.data.media.AlbumRepository
 import com.telepic.data.media.CustomAlbumRepository
@@ -32,6 +38,22 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
+ * Serves an empty album through the real Pager/PagingSource path. A bare `flowOf(PagingData.empty())`
+ * never emits the load-state event the screen keys off, so `refresh` stays `Loading` and the
+ * skeleton is shown forever — the opposite of what a real empty album does, where
+ * `LoadResult.Page(emptyList(), null, null)` completes to `NotLoading` + end-of-pagination and the
+ * empty state appears.
+ */
+private class EmptyPagingSource : PagingSource<Int, PhotosItem>() {
+    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, PhotosItem> =
+        LoadResult.Page(data = emptyList(), prevKey = null, nextKey = null)
+    override fun getRefreshKey(state: PagingState<Int, PhotosItem>): Int? = null
+}
+
+private fun emptyPaging(): Flow<PagingData<PhotosItem>> =
+    Pager(PagingConfig(pageSize = 40, enablePlaceholders = false)) { EmptyPagingSource() }.flow
+
+/**
  * Compose-level coverage for the album contents screen: the header carries the title the route
  * handed in (never a percent-escaped one), the folder and custom-album empty states each tell
  * their own honest story, and a tile tap reports the exact media back to the navigator. Fakes
@@ -47,7 +69,7 @@ class AlbumContentsUiTest {
 
     private class EmptyAlbumRepository : AlbumRepository {
         override suspend fun albums(): List<Album> = emptyList()
-        override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = emptyPaging()
         override fun refresh() = Unit
     }
 
@@ -73,7 +95,7 @@ class AlbumContentsUiTest {
         override fun observeName(albumId: Long): Flow<String?> = flowOf("Trip")
         override fun observeMediaIds(albumId: Long): Flow<List<Long>> = flowOf(emptyList())
         override suspend fun mediaIds(albumId: Long): List<Long> = emptyList()
-        override fun mediaInAlbum(albumId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun mediaInAlbum(albumId: Long): Flow<PagingData<PhotosItem>> = emptyPaging()
         override fun refresh() = Unit
     }
 
