@@ -5,13 +5,13 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import androidx.compose.ui.graphics.toArgb
 import androidx.test.core.app.ApplicationProvider
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import kotlin.math.abs
 
 /**
  * The map's markers, drawn rather than themed.
@@ -33,14 +33,13 @@ class MapPinBadgeTest {
     fun `the single pin is drawn in the brand blue with a white ring`() {
         val bitmap = (MapPinBadge.singlePinDrawable(context) as BitmapDrawable).bitmap
 
-        assertEquals(
-            "the fill must be the brand blue",
-            MapPinBadge.PinFill.toArgb(),
-            bitmap.getPixel(bitmap.width / 2, bitmap.height / 2),
+        assertTrue(
+            "the marker must be filled with the brand blue",
+            hasPixelNear(bitmap, MapPinBadge.PinFill.toArgb()),
         )
         assertTrue(
             "the marker must carry a white ring",
-            containsPixel(bitmap, MapPinBadge.PinRing.toArgb()),
+            hasPixelNear(bitmap, MapPinBadge.PinRing.toArgb()),
         )
     }
 
@@ -59,17 +58,17 @@ class MapPinBadgeTest {
         val cluster = (MapPinBadge.clusterDrawable(context, 12) as BitmapDrawable).bitmap
 
         // Same fill and ring as the single pin: one system on one map.
-        assertEquals(
-            MapPinBadge.PinFill.toArgb(),
-            single.getPixel(single.width / 2, single.height / 2),
+        assertTrue(
+            "the single pin must be filled with the brand blue",
+            hasPixelNear(single, MapPinBadge.PinFill.toArgb()),
         )
-        assertEquals(
-            MapPinBadge.PinFill.toArgb(),
-            cluster.getPixel(cluster.width / 2, cluster.height / 2),
+        assertTrue(
+            "the cluster bubble must be filled with the brand blue",
+            hasPixelNear(cluster, MapPinBadge.PinFill.toArgb()),
         )
         assertTrue(
             "the cluster bubble must carry the same white ring",
-            containsPixel(cluster, MapPinBadge.PinRing.toArgb()),
+            hasPixelNear(cluster, MapPinBadge.PinRing.toArgb()),
         )
     }
 
@@ -79,7 +78,7 @@ class MapPinBadgeTest {
         // The count is drawn on the fill, so the ring must survive around it.
         assertTrue(
             "a three-digit count must not swallow the ring",
-            containsPixel(bitmap, MapPinBadge.PinRing.toArgb()),
+            hasPixelNear(bitmap, MapPinBadge.PinRing.toArgb()),
         )
     }
 
@@ -106,10 +105,28 @@ class MapPinBadgeTest {
         )
     }
 
-    private fun containsPixel(bitmap: Bitmap, argb: Int): Boolean {
+    /**
+     * Whether the bitmap holds a pixel of (approximately) [argb].
+     *
+     * Approximate, because every edge in a drawn marker is antialiased: a blend of the fill and
+     * the ring is neither colour, and demanding an exact match would fail on the very pixels that
+     * prove the marker was drawn. The tolerance is tight enough to reject a fill/ring blend and
+     * loose enough to survive an antialiased outer edge.
+     */
+    private fun hasPixelNear(bitmap: Bitmap, argb: Int): Boolean {
+        val r = (argb shr 16) and 0xFF
+        val g = (argb shr 8) and 0xFF
+        val b = argb and 0xFF
         for (y in 0 until bitmap.height) {
             for (x in 0 until bitmap.width) {
-                if (bitmap.getPixel(x, y) == argb) return true
+                val pixel = bitmap.getPixel(x, y)
+                if (android.graphics.Color.alpha(pixel) < 200) continue
+                if (abs(((pixel shr 16) and 0xFF) - r) <= TOLERANCE &&
+                    abs(((pixel shr 8) and 0xFF) - g) <= TOLERANCE &&
+                    abs((pixel and 0xFF) - b) <= TOLERANCE
+                ) {
+                    return true
+                }
             }
         }
         return false
@@ -130,5 +147,10 @@ class MapPinBadgeTest {
         val g = channel((argb shr 8) and 0xFF)
         val b = channel(argb and 0xFF)
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    private companion object {
+        /** Per-channel tolerance for "is this pixel (approximately) that colour". */
+        const val TOLERANCE = 24
     }
 }

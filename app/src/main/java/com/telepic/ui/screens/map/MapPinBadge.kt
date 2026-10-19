@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.compose.ui.graphics.Color
@@ -49,6 +48,10 @@ object MapPinBadge {
      * The teardrop shape is kept because it carries meaning a circle does not — it points *at* a
      * spot — while the colour and the ring are what make it belong to the same family as the
      * cluster bubbles.
+     *
+     * Drawn as a disc and a tail rather than as one bezier path: the white backing is drawn first
+     * and slightly larger, and the blue on top of it, so the ring is an outline with no dependence
+     * on how the two shapes wind or on an arc's direction.
      */
     fun singlePinDrawable(
         context: Context,
@@ -59,31 +62,41 @@ object MapPinBadge {
         val radius = 8f * density
         val ring = 2f * density
         // From the head's centre down to the tip. Long enough that the point reads as a point and
-        // not as a bump on the circle.
+        // not as a bump on the disc.
         val tailLength = 14f * density
         val headCy = radius + ring
         val tipY = headCy + tailLength
         val width = (2f * (radius + ring)).toInt().coerceAtLeast(1)
         val height = (tipY + ring).toInt().coerceAtLeast(1)
+        val cx = width / 2f
+        // The tail starts inside the head, so it emerges from it rather than being stuck onto it.
+        val tailBase = headCy + radius * 0.5f
 
-        val path = teardropPath(cx = width / 2f, headCy = headCy, radius = radius, tipY = tipY)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        // Stroked first, then filled over it: the stroke is the ring, and it is drawn around the
-        // path so the tip gets its outline too.
-        canvas.drawPath(
-            path,
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = ring
-                strokeJoin = Paint.Join.ROUND
-                strokeCap = Paint.Cap.ROUND
-                color = ringColor
-            },
-        )
-        canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = fillColor })
+        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ringColor }
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = fillColor }
+
+        // The white backing: the disc plus a wider tail, so the white shows along the tail's flanks.
+        canvas.drawCircle(cx, headCy, radius + ring, ringPaint)
+        canvas.drawPath(tailPath(cx, tailBase, radius * 0.44f, tipY), ringPaint)
+
+        // The blue on top of it: the disc plus a narrower tail reaching the same tip, so the point
+        // stays blue and the ring is an outline.
+        canvas.drawCircle(cx, headCy, radius, fillPaint)
+        canvas.drawPath(tailPath(cx, tailBase, radius * 0.30f, tipY), fillPaint)
+
         return BitmapDrawable(context.resources, bitmap)
     }
+
+    /** The tail of the pin: a triangle from the head's lower flanks down to the tip. */
+    private fun tailPath(cx: Float, baseY: Float, halfWidth: Float, tipY: Float): Path = Path().apply {
+        moveTo(cx - halfWidth, baseY)
+        lineTo(cx + halfWidth, baseY)
+        lineTo(cx, tipY)
+        close()
+    }
+}
 
     /**
      * The count bubble for a cluster: a filled circle in [fillColor] with a white ring and the
@@ -138,35 +151,5 @@ object MapPinBadge {
         val baseline = centre - (textPaint.descent() + textPaint.ascent()) / 2f
         canvas.drawText(count.toString(), centre, baseline, textPaint)
         return BitmapDrawable(context.resources, bitmap)
-    }
-
-    /**
-     * The teardrop outline: a circular head with a point running down to the tip.
-     *
-     * Built from two cubics and an arc rather than a bitmap asset, so it scales with the density
-     * and the ring can be stroked around it in the same pass.
-     */
-    private fun teardropPath(cx: Float, headCy: Float, radius: Float, tipY: Float): Path {
-        val path = Path()
-        path.moveTo(cx, tipY)
-        // Up the left flank to the widest point of the head.
-        path.cubicTo(
-            cx - radius * 0.60f, headCy + radius * 0.60f,
-            cx - radius, headCy + radius * 0.45f,
-            cx - radius, headCy,
-        )
-        // Around the top of the head: 180° (left) → 90° (top) → 0° (right).
-        path.arcTo(
-            RectF(cx - radius, headCy - radius, cx + radius, headCy + radius),
-            180f, -180f, false,
-        )
-        // Down the right flank and back to the tip.
-        path.cubicTo(
-            cx + radius, headCy + radius * 0.45f,
-            cx + radius * 0.60f, headCy + radius * 0.60f,
-            cx, tipY,
-        )
-        path.close()
-        return path
     }
 }
