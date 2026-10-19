@@ -14,6 +14,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import com.telepic.ui.theme.TelepicTokens
 
 /** A titled group of settings rows. */
@@ -29,12 +31,17 @@ fun SettingsSection(
             text = title,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(
-                start = spacing.screenMargin,
-                end = spacing.screenMargin,
-                top = spacing.lg,
-                bottom = spacing.sm,
-            ),
+            modifier = Modifier
+                .padding(
+                    start = spacing.screenMargin,
+                    end = spacing.screenMargin,
+                    top = spacing.lg,
+                    bottom = spacing.sm,
+                )
+                // A heading, so a screen reader can jump between the sections. Every other titled
+                // block in the app publishes this; the settings screen is the one with the most
+                // sections, and it was the one that could not be navigated.
+                .semantics { heading() },
         )
         content()
     }
@@ -58,21 +65,27 @@ fun SettingsRow(
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    val contentColor = if (enabled) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    }
-    val supportingColor = if (enabled) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-    }
     // The clickable modifier is attached only when the row actually has an action. Attaching it
     // unconditionally meant an informational row ran through `clickable(enabled = false)`, which
     // publishes the Disabled accessibility state — so a row sitting at full contrast announced
     // itself as "disabled". `enabled` now only ever qualifies a real action.
     val action = onClick
+    // A row with **no action** is information, so it is never dimmed. Dimming it anyway (which is
+    // what `enabled = false` used to mean) painted a live readout — the connected Telegram account,
+    // the connection state — at 38% opacity, which measures 2.47:1 on the light surface and 3.14:1
+    // on the dark one: under the 4.5:1 floor for body text, on the app's only readout of which
+    // account is connected.
+    val dimmed = !enabled && action != null
+    val contentColor = if (dimmed) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val supportingColor = if (dimmed) {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
     val rowModifier = if (action == null) {
         modifier.fillMaxWidth()
     } else {

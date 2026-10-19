@@ -220,7 +220,9 @@ fun SettingsScreen(
                     SettingsRow(
                         title = stringResource(R.string.settings_account_telegram),
                         summary = accountSummary,
-                        enabled = !telegramAuthorized,
+                        // Connected, this row is a plain state read: it carries no action, and a row
+                        // with no action is not dimmed (it used to be, which put the account name
+                        // under the contrast floor). Disconnected, it is the app's only way to sign in.
                         onClick = if (telegramAuthorized) null else onOpenTelegramLogin,
                     )
                     SettingsRow(

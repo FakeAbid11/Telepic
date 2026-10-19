@@ -58,33 +58,42 @@ fun ErrorState(
                 // below the window and could not be tapped — the retry affordance lost exactly when
                 // it was needed. When the content fits, the scroll measures to it and the Box still
                 // centres, so short error states render unchanged.
-                .verticalScroll(rememberScrollState())
-                .semantics(mergeDescendants = true) {},
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(spacing.sm, Alignment.CenterVertically),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.error,
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .padding(top = spacing.md)
-                    .semantics { heading() },
-            )
-            Text(
-                text = explanation,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = spacing.md),
-            )
+            // The icon, the title and the explanation are one announcement. The **Retry button is
+            // deliberately outside this merge**: a merged semantics node keeps a single `onClick` —
+            // the last child's — so merging the button made the whole card one giant retry target,
+            // and double-tapping the *title* fired a retry. The button is its own focus stop.
+            Column(
+                modifier = Modifier.semantics(mergeDescendants = true) {},
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .padding(top = spacing.md)
+                        .semantics { heading() },
+                )
+                Text(
+                    text = explanation,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = spacing.md),
+                )
+            }
             if (onRetry != null) {
                 Button(
                     onClick = onRetry,

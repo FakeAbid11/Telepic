@@ -29,8 +29,20 @@ object TelepicBrand {
     /** Neutral text / outline tones. */
     val TextDark = Color(0xFF0F1216)
     val TextLight = Color(0xFFE7EAF0)
-    val OutlineDark = Color(0xFF2A2F37)
-    val OutlineLight = Color(0xFFC4C9D2)
+
+    /**
+     * Outline tones.
+     *
+     * These carry **meaning**, not decoration: `outline` paints the unselected radio glyph on the
+     * onboarding choice cards, so the user has to be able to see which option they are on.
+     *
+     * The values they replaced measured 1.45:1 (dark) and 1.66:1 (light) against their own
+     * surface — far under the 3:1 floor WCAG 1.4.11 sets for a graphical object, which left the
+     * unselected radio button effectively invisible. These measure 3.73:1 and 4.09:1: still quiet
+     * enough to read as an outline, strong enough to be seen.
+     */
+    val OutlineDark = Color(0xFF656D79)
+    val OutlineLight = Color(0xFF767E8C)
 }
 
 /** Material 3 dark color scheme — the Telepic default theme. */

@@ -49,6 +49,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -332,12 +333,16 @@ private fun SectionLabel(text: String) {
         text = text,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(
-            start = spacing.xs,
-            end = spacing.xs,
-            top = spacing.md,
-            bottom = spacing.xxs,
-        ),
+        modifier = Modifier
+            .padding(
+                start = spacing.xs,
+                end = spacing.xs,
+                top = spacing.md,
+                bottom = spacing.xxs,
+            )
+            // A heading: "My albums" and "Device folders" are the screen's two sections, and a
+            // screen reader has to be able to jump between them.
+            .semantics { heading() },
     )
 }
 

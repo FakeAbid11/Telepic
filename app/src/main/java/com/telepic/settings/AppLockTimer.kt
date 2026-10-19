@@ -8,6 +8,11 @@ package com.telepic.settings
  * a device test. Keeping it free of `Lifecycle`/`SystemClock` means it is covered by ordinary unit
  * tests instead.
  *
+ * **The injected clock must be monotonic.** The caller measures an *elapsed* interval, so a wall
+ * clock is the wrong instrument: an NTP correction or a manual clock change while the app is
+ * backgrounded makes the difference negative, the elapsed time reads as below the grace window, and
+ * the app does not re-lock. `SystemClock.elapsedRealtime()` is the correct source.
+ *
  * The grace window is not zero, and that is load-bearing rather than a nicety. Launching a system
  * activity — the photo picker, the MediaStore delete-consent dialog, the Telegram link — *stops* this
  * activity. Locking on every return would demand a credential prompt in the middle of the user's own

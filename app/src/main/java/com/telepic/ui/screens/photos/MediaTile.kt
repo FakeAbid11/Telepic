@@ -95,7 +95,15 @@ fun MediaTile(
             .aspectRatio(1f)
             .clip(RoundedCornerShape(spacing.gridItemRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .semantics {
+            // `mergeDescendants = true` so the description lands on the **actionable** node.
+            //
+            // `combinedClickable` publishes the click action and the Button role on a node of its
+            // own, and a `semantics { }` modifier placed *before* it is its *parent* — so the
+            // description ended up on a separate, un-actionable node and the tile became two
+            // accessibility stops: one announcing "Photo, 5 January 2024" and one announcing an
+            // unlabelled "Button". Merging puts the description, the role, the click action and
+            // the selected state on one node — the same pattern `AlbumTile` uses.
+            .semantics(mergeDescendants = true) {
                 contentDescription = label
                 // Only meaningful while selecting: outside selection mode the tile is not a
                 // toggle, and announcing "not selected" on every cell would be noise.
@@ -218,7 +226,13 @@ internal fun SelectionCheck(selected: Boolean, modifier: Modifier = Modifier) {
 private fun VideoOverlay(durationLabel: String?, modifier: Modifier = Modifier) {
     val spacing = TelepicTokens.spacing
     Row(
-        modifier = modifier,
+        modifier = modifier
+            // `chromeScrim` behind the glyph and the duration, like every other on-media overlay in
+            // this file. The video duration was the one overlay painted straight onto the photo, so on
+            // a bright frame the play arrow and the timestamp were invisible — the same contrast
+            // failure the GIF badge, the selection check and the backup badge were fixed for.
+            .background(TelepicTokens.colors.chromeScrim, RoundedCornerShape(4.dp))
+            .padding(horizontal = spacing.xs, vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
     ) {
@@ -233,6 +247,8 @@ private fun VideoOverlay(durationLabel: String?, modifier: Modifier = Modifier) 
                 text = durationLabel,
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.White,
+                // A long timestamp must not push the glyph out of the badge.
+                maxLines = 1,
             )
         }
     }
