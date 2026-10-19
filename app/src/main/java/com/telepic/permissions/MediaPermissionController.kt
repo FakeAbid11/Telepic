@@ -15,7 +15,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -46,13 +45,19 @@ fun rememberMediaPermissionState(): MediaPermissionUiState {
     val lifecycleOwner = LocalLifecycleOwner.current
     val sdkInt = Build.VERSION.SDK_INT
 
-    var hasRequested by rememberSaveable { mutableStateOf(false) }
     var refreshTick by rememberSaveable { mutableIntStateOf(0) }
+
+    // Whether the app has already asked for media access **on this install**.
+    //
+    // Persisted rather than kept in the composition. The flag used to be a `rememberSaveable` local,
+    // so every screen had its own copy: a user who permanently denied on the Map tab was told
+    // "Allow access" on the Photos tab, and tapping it launched a request the platform silently
+    // dropped — so the screen only corrected itself after the user had already been confused once.
+    val prefs = remember(context) { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) {
-        hasRequested = true
         refreshTick++
     }
 
@@ -64,7 +69,7 @@ fun rememberMediaPermissionState(): MediaPermissionUiState {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val state = remember(sdkInt, hasRequested, refreshTick, context, activity) {
+    val state = remember(sdkInt, refreshTick, context, activity, prefs) {
         MediaPermissionPolicy.resolve(
             sdkInt = sdkInt,
             isGranted = { permission ->
@@ -74,15 +79,20 @@ fun rememberMediaPermissionState(): MediaPermissionUiState {
             shouldShowRationale = { permission ->
                 activity?.shouldShowRequestPermissionRationale(permission) ?: false
             },
-            hasRequestedBefore = hasRequested,
+            // Read from the persisted flag on every recomputation, so a screen that was composed
+            // before the request still sees it.
+            hasRequestedBefore = prefs.getBoolean(KEY_REQUESTED, false),
         )
     }
 
-    return remember(state, context, sdkInt) {
+    return remember(state, context, sdkInt, prefs) {
         MediaPermissionUiState(
             state = state,
             requestPermission = {
-                hasRequested = true
+                // Recorded *before* the request is launched, so the state is right even if the
+                // platform shows no dialog at all (which is what a permanent denial looks like).
+                prefs.edit().putBoolean(KEY_REQUESTED, true).apply()
+                refreshTick++
                 launcher.launch(MediaPermissionPolicy.permissionsToRequest(sdkInt).toTypedArray())
             },
             openAppSettings = {
@@ -95,6 +105,10 @@ fun rememberMediaPermissionState(): MediaPermissionUiState {
         )
     }
 }
+
+/** Private file holding the facts the platform does not expose. */
+private const val PREFS = "telepic_permissions"
+private const val KEY_REQUESTED = "media_permission_requested"
 
 /**
  * A caller-forced snapshot for screens whose permission state is supplied by the test. It registers

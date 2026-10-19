@@ -51,7 +51,9 @@ import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
+import com.telepic.ui.components.MediaBackupStateSnapshot
 import com.telepic.ui.components.MediaGridSkeleton
+import com.telepic.ui.components.MediaIdSet
 import com.telepic.ui.components.PartialAccessBanner
 import com.telepic.ui.components.RefreshErrorBanner
 import com.telepic.ui.components.ScreenHeader
@@ -319,9 +321,14 @@ private fun MediaRegion(
     val isInitialLoading = refresh is LoadState.Loading && !hasContent
     val refreshFailed = refresh is LoadState.Error
     val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
-    val selectedIds = selectedItems.keys
     val selectionActive = selectedItems.isNotEmpty()
     val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
+    // The grid takes *stable* snapshots rather than raw maps and sets: `Map` and `Set` are
+    // interfaces, so the compiler infers them as unstable and the grid could never be skipped — it
+    // re-ran on every backup-progress tick, taking the date rail with it.
+    val backupSnapshot = MediaBackupStateSnapshot(backupStates)
+    val selectedIdSet = MediaIdSet(selectedItems.keys)
+    val favoriteIdSet = MediaIdSet(favoriteIds)
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
@@ -361,11 +368,11 @@ private fun MediaRegion(
             ) {
                 MediaGrid(
                     media = paging,
-                    backupStates = backupStates,
+                    backupStates = backupSnapshot,
                     onMediaSelected = onMediaSelected,
-                    selectedIds = selectedIds,
+                    selectedIds = selectedIdSet,
                     selectionActive = selectionActive,
-                    favoriteIds = favoriteIds,
+                    favoriteIds = favoriteIdSet,
                     onToggleSelect = viewModel::toggleSelection,
                     onLongSelect = viewModel::beginSelection,
                 )

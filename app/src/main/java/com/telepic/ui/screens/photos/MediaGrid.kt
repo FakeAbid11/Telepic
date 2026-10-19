@@ -34,10 +34,11 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import com.telepic.R
-import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
 import com.telepic.domain.media.localizedDateFormatter
+import com.telepic.ui.components.MediaBackupStateSnapshot
+import com.telepic.ui.components.MediaIdSet
 import com.telepic.ui.theme.TelepicTokens
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -115,13 +116,13 @@ internal class AnchorScanHolder {
 @Composable
 fun MediaGrid(
     media: LazyPagingItems<PhotosItem>,
-    backupStates: Map<Long, MediaBackupVisualState>,
+    backupStates: MediaBackupStateSnapshot,
     onMediaSelected: (LocalMedia) -> Unit,
     modifier: Modifier = Modifier,
     gridState: LazyGridState = rememberLazyGridState(),
-    selectedIds: Set<Long> = emptySet(),
+    selectedIds: MediaIdSet = MediaIdSet.Empty,
     selectionActive: Boolean = false,
-    favoriteIds: Set<Long> = emptySet(),
+    favoriteIds: MediaIdSet = MediaIdSet.Empty,
     onToggleSelect: (LocalMedia) -> Unit = {},
     onLongSelect: (LocalMedia) -> Unit = {},
 ) {
@@ -203,7 +204,7 @@ fun MediaGrid(
                         val onLongClick = remember(cell) { { currentOnLongSelect(cell) } }
                         MediaTile(
                             media = cell,
-                            backupState = backupStates[cell.id] ?: MediaBackupVisualState.NONE,
+                            backupState = backupStates[cell.id],
                             onClick = onClick,
                             onLongClick = onLongClick,
                             onLongClickLabel = longPressLabel,

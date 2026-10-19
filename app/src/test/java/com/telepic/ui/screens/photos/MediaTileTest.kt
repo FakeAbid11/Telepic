@@ -1,6 +1,7 @@
 package com.telepic.ui.screens.photos
 
 import android.net.Uri
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -12,6 +13,7 @@ import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import com.telepic.ui.theme.TelepicTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -84,5 +86,25 @@ class MediaTileTest {
         // Absent, not merely false: the cell is not a toggle outside selection mode, so announcing
         // "not selected" on every tile would be noise.
         tileNode().assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Selected))
+    }
+
+    @Test
+    fun `the tile is one node carrying both the description and the action`() {
+        tile(selected = false, selectionActive = false)
+
+        // The description used to sit on a *parent* of the clickable node — `combinedClickable`
+        // publishes the action and the Button role on a node of its own — so the tile was two
+        // accessibility stops and the actionable one had no label at all.
+        val node = tileNode().fetchSemanticsNode()
+        assertEquals(
+            "the actionable node must carry the description",
+            node.config.getOrNull(SemanticsProperties.ContentDescription)?.any { it.contains("Photo") },
+            true,
+        )
+        assertEquals(
+            "the node must be a button",
+            node.config.getOrNull(SemanticsProperties.Role),
+            Role.Button,
+        )
     }
 }

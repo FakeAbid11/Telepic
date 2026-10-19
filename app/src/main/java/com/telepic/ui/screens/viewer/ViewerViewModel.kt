@@ -1,5 +1,6 @@
 package com.telepic.ui.screens.viewer
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.backup.BackupCoordinator
@@ -52,6 +53,7 @@ sealed interface CloudDownload {
 }
 
 /** A resolved media item for display: a local content URI, or a cloud preview + optional original. */
+@Immutable
 sealed interface ViewerItem {
     data class Local(val media: LocalMedia) : ViewerItem
     data class Cloud(
@@ -62,6 +64,7 @@ sealed interface ViewerItem {
 }
 
 /** Organization flags for the current local item (Favorites / Archive / Trash). Independent of backup. */
+@Immutable
 data class ViewerFlags(
     val isFavorite: Boolean = false,
     val isArchived: Boolean = false,
@@ -92,6 +95,7 @@ sealed interface ViewerMessage {
     data object AlreadyBackedUp : ViewerMessage
 }
 
+@Immutable
 data class ViewerUiState(
     val source: MediaSource,
     val status: ViewerStatus = ViewerStatus.LOADING,

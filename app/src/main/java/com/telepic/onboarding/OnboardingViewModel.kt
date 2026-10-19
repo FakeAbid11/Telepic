@@ -141,14 +141,30 @@ class OnboardingViewModel(
         viewModelScope.launch {
             // Its own boundary, and its own flag: the completion is a different write from the backup
             // choice, and a failure of one says nothing about the other. Sharing the flag made the
-            // last step answer a failed completion with the backup copy.
+            // last step answer a failed completion with the backup copy, which pointed the user at
+            // the wrong control.
             try {
                 repository.setCompleted(true)
-                _completionFailed.value = false
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
                 TelepicLog.warn("OnboardingViewModel", "onboarding could not be completed", throwable)
+                _completionFailed.value = true
+                return@launch
+            }
+            // The chosen backup policy is applied **now**, not at the next launch — the same hook the
+            // backup-choice path uses, so the engine starts working the moment onboarding ends.
+            try {
+                onBackupChoiceChanged()
+                _completionFailed.value = false
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                TelepicLog.warn(
+                    "OnboardingViewModel",
+                    "onboarding was completed but the backup choice could not be applied",
+                    throwable,
+                )
                 _completionFailed.value = true
             }
         }

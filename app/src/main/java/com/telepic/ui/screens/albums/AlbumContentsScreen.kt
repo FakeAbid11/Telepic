@@ -40,7 +40,9 @@ import com.telepic.R
 import com.telepic.domain.media.LocalMedia
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
+import com.telepic.ui.components.MediaBackupStateSnapshot
 import com.telepic.ui.components.MediaGridSkeleton
+import com.telepic.ui.components.MediaIdSet
 import com.telepic.ui.components.RefreshErrorBanner
 import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SelectionActionBar
@@ -78,6 +80,11 @@ fun AlbumContentsScreen(
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
     val isRemoving by viewModel.isRemoving.collectAsStateWithLifecycle()
     val selectionActive = selectedItems.isNotEmpty()
+    // The grid takes *stable* snapshots rather than raw maps and sets: `Map` and `Set` are
+    // interfaces, so the compiler infers them as unstable and the grid could never be skipped.
+    val backupSnapshot = MediaBackupStateSnapshot(backupStates)
+    val selectedIdSet = MediaIdSet(selectedItems.keys)
+    val favoriteIdSet = MediaIdSet(favoriteIds)
     val customAlbumId = viewModel.customAlbumId
     val spacing = TelepicTokens.spacing
     val haptics = rememberTelepicHaptics()
@@ -186,11 +193,11 @@ fun AlbumContentsScreen(
                         )
                         else -> MediaGrid(
                             media = paging,
-                            backupStates = backupStates,
+                            backupStates = backupSnapshot,
                             onMediaSelected = onMediaSelected,
-                            selectedIds = selectedItems.keys,
+                            selectedIds = selectedIdSet,
                             selectionActive = selectionActive,
-                            favoriteIds = favoriteIds,
+                            favoriteIds = favoriteIdSet,
                             onToggleSelect = viewModel::toggleSelection,
                             onLongSelect = viewModel::beginSelection,
                             modifier = Modifier.fillMaxSize(),

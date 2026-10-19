@@ -169,4 +169,34 @@ class AppLockViewModelTest {
         vm.onForegrounded()
         assertEquals(AppLockState.RecoveryRequired, vm.state.value)
     }
+
+    @Test
+    fun `turning the lock on while the app is running arms it and protects the window`() = runTest {
+        // The preference used to be resolved once, at construction, so the Settings switch did
+        // nothing for the rest of the session: the app never locked and FLAG_SECURE was never
+        // applied, so the Recents snapshot still showed the library.
+        val settings = FakeSettings(AppLockPreference.Known(false))
+        val vm = viewModel(settings, deviceSecure = true)
+        assertEquals(AppLockState.Unlocked, vm.state.value)
+        assertFalse(vm.secureWindow.value)
+
+        settings.lock.value = AppLockPreference.Known(true)
+
+        assertTrue("the window must be protected once the lock is on", vm.secureWindow.value)
+        // Not locked *yet*: the Settings row promises the lock fires on the next foregrounding, and
+        // locking the user out mid-Settings would be a surprise.
+        assertEquals(AppLockState.Unlocked, vm.state.value)
+    }
+
+    @Test
+    fun `turning the lock off while the app is running unlocks it`() = runTest {
+        val settings = FakeSettings(AppLockPreference.Known(true))
+        val vm = viewModel(settings, deviceSecure = true)
+        assertEquals(AppLockState.Locked, vm.state.value)
+
+        settings.lock.value = AppLockPreference.Known(false)
+
+        assertEquals(AppLockState.Unlocked, vm.state.value)
+        assertFalse(vm.secureWindow.value)
+    }
 }
