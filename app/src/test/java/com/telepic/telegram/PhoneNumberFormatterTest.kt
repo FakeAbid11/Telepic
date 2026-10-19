@@ -36,8 +36,25 @@ class PhoneNumberFormatterTest {
     }
 
     @Test
+    fun `an international prefix written as 00 keeps its own country code`() {
+        // "00 44 20 ..." is a British number whatever the dropdown says. It used to be treated as a
+        // national number, which dropped the leading zeros and produced "+1442012345678" — a
+        // thirteen-digit United States number built from a British one.
+        assertEquals("+442012345678", normalizeE164("00 44 20 1234 5678", "+1"))
+    }
+
+    @Test
     fun `iso codes are unique`() {
         assertEquals(PhoneCountries.All.size, PhoneCountries.All.map { it.iso }.distinct().size)
+    }
+
+    @Test
+    fun `the table covers the countries a phone number realistically comes from`() {
+        // India was missing outright, so a user whose SIM was Indian got the United States default
+        // and had to type "+91" by hand.
+        for (iso in listOf("IN", "CN", "ID", "BR", "NG", "ZA", "PK", "BD", "VN", "TR", "UA")) {
+            assertTrue("missing $iso", PhoneCountries.byIso(iso) != null)
+        }
     }
 
     @Test

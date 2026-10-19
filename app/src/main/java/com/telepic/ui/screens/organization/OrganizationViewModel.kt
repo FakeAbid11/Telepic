@@ -76,6 +76,21 @@ class OrganizationViewModel(
     private val _message = MutableStateFlow<OrgMessage?>(null)
     val message: StateFlow<OrgMessage?> = _message.asStateFlow()
 
+    /**
+     * A counter that advances with every message, so two identical reports are still two events.
+     *
+     * The screen's bar is keyed on this. Keying it on the message *value* conflated two identical
+     * failures inside the bar's dismissal window: the second one produced no new bar, no new timer
+     * and no reject haptic.
+     */
+    private val _messageId = MutableStateFlow(0L)
+    val messageId: StateFlow<Long> = _messageId.asStateFlow()
+
+    private fun publishMessage(message: OrgMessage) {
+        _message.value = message
+        _messageId.value += 1
+    }
+
     /** True while a permanent-delete request (one item or many) is in flight. */
     private val _isDeleting = MutableStateFlow(false)
     val isDeleting: StateFlow<Boolean> = _isDeleting.asStateFlow()
@@ -186,7 +201,7 @@ class OrganizationViewModel(
                 // Reported only after the writes returned: the grid changing on its own is not a
                 // confirmation, and a count posted optimistically would be a claim about work that
                 // had not happened yet.
-                _message.value = OrgMessage.MembershipChanged(ids.size)
+                publishMessage(OrgMessage.MembershipChanged(ids.size))
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
@@ -243,7 +258,7 @@ class OrganizationViewModel(
                 DeleteRequest.Deleted -> {
                     onDeleteConfirmed(selection.map { it.id })
                     clearSelection()
-                    _message.value = OrgMessage.DeletedFromDevice(selection.size)
+                    publishMessage(OrgMessage.DeletedFromDevice(selection.size))
                     _isDeleting.value = false
                 }
                 DeleteRequest.Failed -> {
@@ -265,7 +280,7 @@ class OrganizationViewModel(
         if (success && ids.isNotEmpty()) {
             onDeleteConfirmed(ids)
             clearSelection()
-            _message.value = OrgMessage.DeletedFromDevice(ids.size)
+            publishMessage(OrgMessage.DeletedFromDevice(ids.size))
         }
         return success
     }
@@ -288,7 +303,7 @@ class OrganizationViewModel(
     }
 
     fun reportDeleteFailed(count: Int) {
-        _message.value = OrgMessage.DeleteFailed(count)
+        publishMessage(OrgMessage.DeleteFailed(count))
     }
 
     fun consumeMessage() {

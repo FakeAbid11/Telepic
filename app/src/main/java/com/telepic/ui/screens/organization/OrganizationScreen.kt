@@ -84,6 +84,7 @@ fun OrganizationScreen(
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val messageId by viewModel.messageId.collectAsStateWithLifecycle()
     val isDeleting by viewModel.isDeleting.collectAsStateWithLifecycle()
     val isRestoring by viewModel.isRestoring.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
@@ -226,9 +227,9 @@ fun OrganizationScreen(
                 }
             }
 
-            // Keyed on the message so a fresh report gets a fresh bar rather than inheriting the
-            // previous one's nearly-expired timer.
-            val messageId = remember(message) { System.nanoTime() }
+            // Keyed on the ViewModel's counter, not on the message: two identical reports are still two
+            // events, and keying on the value conflated them — the second one produced no new bar, no
+            // new timer and no reject haptic.
             message?.let { pending ->
                 TransientMessageBar(
                     message = orgMessageText(pending, viewModel.kind),

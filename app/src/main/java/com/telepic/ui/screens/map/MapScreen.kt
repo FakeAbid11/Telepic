@@ -383,12 +383,12 @@ private fun OsmMap(
                         when (pin) {
                             is MapClusterer.MapPin.Single -> {
                                 marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                                // TalkBack parity with the photo grids: the label rides on the marker's
-                                // title (osmdroid has no per-marker contentDescription), and the map view
-                                // itself announces how many pins are on screen. The coordinates make each
-                                // pin's label distinct — one shared "at this location" for every pin told
-                                // the user nothing about which photo it belonged to. osmdroid markers are
-                                // canvas overlays, so this fixes label identity, not per-pin navigation.
+                                // The marker's own label. osmdroid markers are canvas overlays with no
+                                // accessibility node, so this is the only per-marker text osmdroid has
+                                // — and the click listener below returns `true`, which suppresses
+                                // osmdroid's info window, so the title is *not* what a screen reader
+                                // reads either. The map view itself announces the photo count; the
+                                // individual pins are reachable by touch and by the preview sheet.
                                 marker.title = mapView.context.getString(
                                     R.string.map_marker_description,
                                     formatCoordinate(pin.latitude, pin.longitude),
