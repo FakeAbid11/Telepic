@@ -45,7 +45,7 @@ class ErrorStateTest {
             }
         }
 
-        composeRule.onNodeWithText("Retry").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("Try again").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
 
         assertEquals("the retry must run exactly once", 1, retries)
