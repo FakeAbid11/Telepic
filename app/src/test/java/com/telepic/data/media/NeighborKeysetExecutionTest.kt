@@ -83,8 +83,14 @@ class NeighborKeysetExecutionTest {
             filter = TimelineMediaFilter.All,
             mediaTypeSelection = mediaSelection,
         )
+        // The order rides along from MediaSortOrder in production, exactly as queryNeighbor applies it.
+        val order = if (direction == NeighborDirection.OLDER) {
+            MediaSortOrder.TIMELINE_DESC
+        } else {
+            MediaSortOrder.TIMELINE_ASC
+        }
         return db.rawQuery(
-            "SELECT ${MediaStore.MediaColumns._ID} FROM media WHERE ${keyset.selection}",
+            "SELECT ${MediaStore.MediaColumns._ID} FROM media WHERE ${keyset.selection} ORDER BY $order",
             keyset.args.toTypedArray(),
         ).use { cursor ->
             if (cursor.moveToFirst()) cursor.getLong(0) else null
