@@ -92,8 +92,10 @@ fun SelectionTopBar(
             text = stringResource(R.string.photos_selection_count, count),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
-            // Weighted so the select-all action sits at the trailing edge instead of hugging the count.
-            modifier = Modifier.weight(1f),
+            // Not weighted: a scrollable Row measures its content with an unbounded width, and a
+            // weighted child would then be handed that unbounded space. The count is short, so a
+            // fixed gap reads the same and keeps the layout predictable.
+            modifier = Modifier.padding(end = TelepicTokens.spacing.sm),
         )
         // Hidden once the count already covers the known total: an action that would select nothing
         // new is a dead control, and it is only knowable when the caller passed a total.
