@@ -38,6 +38,8 @@ import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.telepic.R
 import com.telepic.domain.media.LocalMedia
+import com.telepic.ui.components.BulkOrganizationMessageBar
+import com.telepic.ui.components.ConfirmTrashDialog
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.MediaBackupStateSnapshot
@@ -77,8 +79,11 @@ fun AlbumContentsScreen(
     val selectedItems by viewModel.selectedItems.collectAsStateWithLifecycle()
     val selectionReport by viewModel.selectionReport.collectAsStateWithLifecycle()
     val removalReport by viewModel.removalReport.collectAsStateWithLifecycle()
+    val organizationReport by viewModel.organizationReport.collectAsStateWithLifecycle()
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
     val isRemoving by viewModel.isRemoving.collectAsStateWithLifecycle()
+    val isFavoriting by viewModel.isFavoriting.collectAsStateWithLifecycle()
+    val isTrashing by viewModel.isTrashing.collectAsStateWithLifecycle()
     val selectionActive = selectedItems.isNotEmpty()
     // The grid takes *stable* snapshots rather than raw maps and sets: `Map` and `Set` are
     // interfaces, so the compiler infers them as unstable and the grid could never be skipped.
@@ -94,6 +99,8 @@ fun AlbumContentsScreen(
     var showActions by remember { mutableStateOf(false) }
     var showRename by rememberSaveable { mutableStateOf(false) }
     var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
+    // The bulk move to Trash is confirmed first — it hides the photos from the library.
+    var showTrashConfirm by rememberSaveable { mutableStateOf(false) }
 
     // Back exits selection first, before leaving the album.
     BackHandler(enabled = selectionActive) { viewModel.clearSelection() }
@@ -252,6 +259,8 @@ fun AlbumContentsScreen(
                         // removal ran, naming the wrong thing.
                         backupBusy = isBackingUp,
                         removeBusy = isRemoving,
+                        favoriteBusy = isFavoriting,
+                        trashBusy = isTrashing,
                         onBackup = viewModel::backupSelected,
                         onCancel = viewModel::clearSelection,
                         // Only a user-created album has membership the user can change.
@@ -260,6 +269,21 @@ fun AlbumContentsScreen(
                         } else {
                             null
                         },
+                        // The organisation actions live behind the bar's overflow, so the bar keeps
+                        // its width and "Back up" — the app's headline action — stays on screen.
+                        onFavorite = { viewModel.favoriteSelected() },
+                        // Trashing is confirmed first: it hides the photos from the library, and the
+                        // single-item trash in the Viewer confirms too.
+                        onTrash = { showTrashConfirm = true },
+                    )
+                }
+                // The outcome of a bulk favourite or trash. A trash offers an Undo, because it is
+                // reversible; a favourite does not, because the star is already on the tiles.
+                organizationReport?.let { report ->
+                    BulkOrganizationMessageBar(
+                        report = report,
+                        onUndo = viewModel::undoTrash,
+                        onDismiss = viewModel::consumeOrganizationMessage,
                     )
                 }
             }
@@ -276,6 +300,17 @@ fun AlbumContentsScreen(
                 viewModel.rename(name)
             },
             onDismiss = { showRename = false },
+        )
+    }
+
+    if (showTrashConfirm) {
+        ConfirmTrashDialog(
+            count = selectedItems.size,
+            onConfirm = {
+                showTrashConfirm = false
+                viewModel.trashSelected()
+            },
+            onDismiss = { showTrashConfirm = false },
         )
     }
 

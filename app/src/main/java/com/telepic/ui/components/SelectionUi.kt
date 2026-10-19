@@ -2,6 +2,7 @@ package com.telepic.ui.components
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,8 +14,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -22,10 +28,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.telepic.R
 import com.telepic.data.backup.BulkBackupSummary
@@ -127,7 +138,15 @@ fun SelectionTopBar(
  * [onAddToAlbum] and [onRemoveFromAlbum] are optional because they only apply where membership is the
  * user's to change: adding from the timeline, removing from a user-created album. A folder album passes
  * neither — its contents are the filesystem's, so there is nothing to add to or remove from. Callers
- * pass at most one, which is what keeps the bar inside a phone's width. */
+ * pass at most one, which is what keeps the bar inside a phone's width.
+ *
+ * [onFavorite] and [onTrash] are optional for the same reason, and they live behind an **overflow**
+ * rather than as two more text buttons. The bar is already a scrolling row — two or three text
+ * actions come to roughly 335dp, which fits a 360dp phone but not a 320dp one — and two more text
+ * buttons would push the app's headline action ("Back up", last in the row) off the screen first. A
+ * single 48dp overflow costs one icon instead of ~230dp of text, and it is the idiom the Viewer's own
+ * action cluster already uses.
+ */
 @Composable
 fun SelectionActionBar(
     canBackup: Boolean,
@@ -139,8 +158,14 @@ fun SelectionActionBar(
     removeBusy: Boolean = false,
     onAddToAlbum: (() -> Unit)? = null,
     onRemoveFromAlbum: (() -> Unit)? = null,
+    favoriteBusy: Boolean = false,
+    trashBusy: Boolean = false,
+    onFavorite: (() -> Unit)? = null,
+    onTrash: (() -> Unit)? = null,
 ) {
-    val anyBusy = backupBusy || addToAlbumBusy || removeBusy
+    val anyBusy = backupBusy || addToAlbumBusy || removeBusy || favoriteBusy || trashBusy
+    val hasOverflow = onFavorite != null || onTrash != null
+    var menuOpen by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -193,19 +218,60 @@ fun SelectionActionBar(
                     modifier = Modifier.padding(start = TelepicTokens.spacing.xs),
                 )
             }
+            if (hasOverflow) {
+                // The organisation actions, behind one icon. The glyph spins while either of them is
+                // running, so the bar never looks idle while a write is in flight.
+                Box {
+                    IconButton(onClick = { menuOpen = true }, enabled = !anyBusy) {
+                        ActionGlyph(
+                            busy = favoriteBusy || trashBusy,
+                            icon = Icons.Outlined.MoreVert,
+                        )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        onFavorite?.let { favorite ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.photos_selection_favorite)) },
+                                onClick = {
+                                    menuOpen = false
+                                    favorite()
+                                },
+                                leadingIcon = {
+                                    ActionGlyph(busy = favoriteBusy, icon = Icons.Outlined.StarBorder)
+                                },
+                            )
+                        }
+                        onTrash?.let { trash ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.photos_selection_trash)) },
+                                onClick = {
+                                    menuOpen = false
+                                    trash()
+                                },
+                                leadingIcon = {
+                                    ActionGlyph(busy = trashBusy, icon = Icons.Outlined.Delete)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 /**
  * A selection-bar button's leading glyph: a spinner while *its own* action runs, otherwise its icon.
- * Both are 18dp, so the button does not change width when it starts working.
+ *
+ * Both are the same size, so the button does not change width when it starts working. [size] is
+ * overridable because the overflow's own icon is the standard 24dp rather than a button's 18dp
+ * leading glyph.
  */
 @Composable
-private fun ActionGlyph(busy: Boolean, icon: ImageVector) {
+private fun ActionGlyph(busy: Boolean, icon: ImageVector, size: Dp = 18.dp) {
     if (busy) {
-        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        CircularProgressIndicator(modifier = Modifier.size(size), strokeWidth = 2.dp)
     } else {
-        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(size))
     }
 }

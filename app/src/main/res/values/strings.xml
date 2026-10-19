@@ -594,6 +594,23 @@
          caller already knows the total, so the number shown is always one the app actually has. -->
     <string name="photos_selection_select_all">Select all</string>
     <string name="photos_selection_select_all_count">Select all (%1$d)</string>
+    <!-- Bulk favourite / trash, behind the selection bar's overflow -->
+    <string name="photos_selection_favorite">Add to favorites</string>
+    <string name="photos_selection_trash">Move to trash</string>
+    <string name="photos_favorited_result">%1$d added to favorites · %2$d were already favorites</string>
+    <string name="photos_trash_confirm">Move to trash</string>
+    <plurals name="photos_trash_title">
+        <item quantity="one">Move to trash?</item>
+        <item quantity="other">Move %1$d items to trash?</item>
+    </plurals>
+    <plurals name="photos_trash_body">
+        <item quantity="one">This hides the photo from your library. You can restore it later from Trash - it is not deleted from your device.</item>
+        <item quantity="other">This hides %1$d items from your library. You can restore them later from Trash - they are not deleted from your device.</item>
+    </plurals>
+    <plurals name="photos_trashed_result">
+        <item quantity="one">Moved to Trash</item>
+        <item quantity="other">Moved %1$d items to Trash</item>
+    </plurals>
 
     <!-- ============================ Photos search ============================ -->
     <string name="photos_search_open">Search</string>

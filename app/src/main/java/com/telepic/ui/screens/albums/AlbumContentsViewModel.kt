@@ -15,6 +15,8 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.PhotosItem
 import com.telepic.navigation.AlbumSource
 import com.telepic.ui.components.BulkBackupReport
+import com.telepic.ui.components.BulkOrganizationController
+import com.telepic.ui.components.BulkOrganizationReport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -162,6 +164,58 @@ class AlbumContentsViewModel(
 
     fun clearSelection() {
         _selected.value = emptyMap()
+    }
+
+    // --- Bulk favourite / trash -----------------------------------------------------------------
+    //
+    // The same two verbs the Viewer's single-item actions offer, over a whole selection. The
+    // behaviour lives in a shared controller so the timeline does not write it a second time.
+
+    private val organizationController: BulkOrganizationController? =
+        organizationRepository?.let { BulkOrganizationController(it, viewModelScope) }
+
+    /** The outcome of the last bulk favourite / trash action, for the message bar. */
+    val organizationReport: StateFlow<BulkOrganizationReport?> =
+        organizationController?.report ?: MutableStateFlow(null)
+
+    /** True while a bulk favourite write is in flight. */
+    val isFavoriting: StateFlow<Boolean> =
+        organizationController?.isFavoriting ?: MutableStateFlow(false)
+
+    /** True while a bulk move to Trash is in flight. */
+    val isTrashing: StateFlow<Boolean> =
+        organizationController?.isTrashing ?: MutableStateFlow(false)
+
+    /**
+     * Mark every selected item as a favourite.
+     *
+     * **One-way**: a toggle would be ambiguous over a mixed selection. Un-favouriting lives in the
+     * Favorites collection, which already offers "Remove from favorites".
+     */
+    fun favoriteSelected() {
+        val controller = organizationController ?: return
+        val ids = _selected.value.keys.toList()
+        if (ids.isEmpty()) return
+        // The selection clears when the write lands, not when it is asked for: a failed write leaves
+        // the selection standing so the user can simply tap again.
+        controller.favorite(ids, favoriteIds.value) { clearSelection() }
+    }
+
+    /** Move every selected item to Trash. The file is preserved; it can be restored from Trash. */
+    fun trashSelected() {
+        val controller = organizationController ?: return
+        val ids = _selected.value.keys.toList()
+        if (ids.isEmpty()) return
+        controller.trash(ids) { clearSelection() }
+    }
+
+    /** Undo of [trashSelected]: restore exactly the items it moved. */
+    fun undoTrash() {
+        organizationController?.undoTrash()
+    }
+
+    fun consumeOrganizationMessage() {
+        organizationController?.consumeMessage()
     }
 
     /**

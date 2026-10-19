@@ -49,6 +49,8 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.permissions.MediaPermissionState
 import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
+import com.telepic.ui.components.BulkOrganizationMessageBar
+import com.telepic.ui.components.ConfirmTrashDialog
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.MediaBackupStateSnapshot
@@ -102,6 +104,9 @@ fun PhotosScreen(
     val customAlbums by viewModel.customAlbums.collectAsStateWithLifecycle()
     val isAddingToAlbum by viewModel.isAddingToAlbum.collectAsStateWithLifecycle()
     val albumReport by viewModel.albumReport.collectAsStateWithLifecycle()
+    val organizationReport by viewModel.organizationReport.collectAsStateWithLifecycle()
+    val isFavoriting by viewModel.isFavoriting.collectAsStateWithLifecycle()
+    val isTrashing by viewModel.isTrashing.collectAsStateWithLifecycle()
     // Dialog visibility survives rotation, like every other dialog in the app.
     // Both dialogs act on the current selection, which lives in memory and resets on process death.
     // Saved, they re-opened over an empty selection: the picker showed "no albums" and the create
@@ -112,6 +117,8 @@ fun PhotosScreen(
     // the one screen in the app that did it differently from every other.
     var showAlbumPicker by rememberSaveable { mutableStateOf(false) }
     var showNewAlbumForSelection by rememberSaveable { mutableStateOf(false) }
+    // The bulk move to Trash is confirmed first — it hides the photos from the library.
+    var showTrashConfirm by rememberSaveable { mutableStateOf(false) }
     // Whether the search field is open. Separate from the term itself, which lives in the ViewModel:
     // closing the field clears the term, but an empty field is still an open field.
     var searchOpen by rememberSaveable { mutableStateOf(false) }
@@ -261,6 +268,15 @@ fun PhotosScreen(
                         messageId = report.id,
                     )
                 }
+                // The outcome of a bulk favourite or trash. A trash offers an Undo, because it is
+                // reversible; a favourite does not, because the star is already on the tiles.
+                organizationReport?.let { report ->
+                    BulkOrganizationMessageBar(
+                        report = report,
+                        onUndo = viewModel::undoTrash,
+                        onDismiss = viewModel::consumeOrganizationMessage,
+                    )
+                }
                 if (selectionActive) {
                     SelectionActionBar(
                         canBackup = selectedItems.isNotEmpty(),
@@ -268,9 +284,17 @@ fun PhotosScreen(
                         // an add-to-album ran, naming the wrong thing.
                         backupBusy = isBackingUp,
                         addToAlbumBusy = isAddingToAlbum,
+                        favoriteBusy = isFavoriting,
+                        trashBusy = isTrashing,
                         onBackup = viewModel::backupSelected,
                         onCancel = viewModel::clearSelection,
                         onAddToAlbum = { showAlbumPicker = true },
+                        // The organisation actions live behind the bar's overflow, so the bar keeps
+                        // its width and "Back up" — the app's headline action — stays on screen.
+                        onFavorite = { viewModel.favoriteSelected() },
+                        // Trashing is confirmed first: it hides the photos from the library, and
+                        // the single-item trash in the Viewer confirms too.
+                        onTrash = { showTrashConfirm = true },
                     )
                 }
             }
@@ -301,6 +325,17 @@ fun PhotosScreen(
                 viewModel.createAlbumAndAddSelection(name)
             },
             onDismiss = { showNewAlbumForSelection = false },
+        )
+    }
+
+    if (showTrashConfirm) {
+        ConfirmTrashDialog(
+            count = selectedItems.size,
+            onConfirm = {
+                showTrashConfirm = false
+                viewModel.trashSelected()
+            },
+            onDismiss = { showTrashConfirm = false },
         )
     }
 }
