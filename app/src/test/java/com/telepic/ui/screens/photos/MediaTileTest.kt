@@ -5,7 +5,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -14,7 +13,6 @@ import com.telepic.domain.backup.MediaBackupVisualState
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import com.telepic.ui.theme.TelepicTheme
-import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
