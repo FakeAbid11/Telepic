@@ -17,6 +17,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,9 +45,15 @@ const val TAG_PERMISSIONS_ALLOW_NOTIFICATIONS = "onboarding_allow_notifications"
  *  * media access is required for the app to do anything at all;
  *  * notification access is optional, and only ever drives the backup progress line.
  *
- * They are separate cards with separate actions rather than one combined prompt, so the optional
- * one can never ride on the required one — the media action stays the scaffold's primary CTA while
- * the notification ask is scoped to its own card, and the user can decline it and still continue.
+ * The screen makes that relationship explicit rather than leaving it to be inferred: the intro names
+ * both asks, and each gets its own section headed by a `Required`/`Optional` badge, so the optional
+ * one can never ride on the required one. They are separate cards with separate actions, the media
+ * action stays the scaffold's primary CTA while the notification ask is scoped to its own card, and
+ * the user can decline notifications and still continue.
+ *
+ * The media section also carries the rationale for `ACCESS_MEDIA_LOCATION`, which is folded into the
+ * media request (API 29+) but has no visible prompt of its own — the only place the user is told why
+ * Telepic reads the GPS already embedded in their photos, and that it never leaves the device.
  *
  * The media request/open-settings actions are driven by the host scaffold using
  * [com.telepic.permissions.rememberMediaPermissionState].
@@ -110,12 +117,29 @@ fun PermissionsStep(
                     bodyRes = R.string.onboarding_permissions_state_blocked_body
                 }
             }
-            StateCard(
-                icon = icon,
-                titleRes = titleRes,
-                bodyRes = bodyRes,
-                isError = permissionState == MediaPermissionState.PermanentlyDenied,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                SectionHeader(
+                    titleRes = R.string.onboarding_permissions_media_section_title,
+                    badgeRes = R.string.onboarding_permissions_required,
+                    badgeEmphasized = true,
+                )
+                Text(
+                    text = stringResource(R.string.onboarding_permissions_media_purpose),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                StateCard(
+                    icon = icon,
+                    titleRes = titleRes,
+                    bodyRes = bodyRes,
+                    isError = permissionState == MediaPermissionState.PermanentlyDenied,
+                )
+                Text(
+                    text = stringResource(R.string.onboarding_permissions_media_location_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         // Hidden entirely below API 33, where notifications need no runtime permission: a
@@ -128,6 +152,62 @@ fun PermissionsStep(
                 onOpenSettings = onOpenNotificationSettings,
             )
         }
+
+        Text(
+            text = stringResource(R.string.onboarding_permissions_privacy_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * A section title with its `Required`/`Optional` badge. Shared by both permission sections so the
+ * two read as the same kind of statement, and so the required/optional distinction is stated rather
+ * than left for the user to guess from the copy.
+ */
+@Composable
+private fun SectionHeader(titleRes: Int, badgeRes: Int, badgeEmphasized: Boolean) {
+    val spacing = TelepicTokens.spacing
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(titleRes),
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
+        )
+        PermissionBadge(textRes = badgeRes, emphasized = badgeEmphasized)
+    }
+}
+
+/** The `Required`/`Optional` pill: a small label on a container, emphasized for the required ask. */
+@Composable
+private fun PermissionBadge(textRes: Int, emphasized: Boolean) {
+    val spacing = TelepicTokens.spacing
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = if (emphasized) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+    ) {
+        Text(
+            text = stringResource(textRes),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (emphasized) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.xxs),
+        )
     }
 }
 
@@ -143,11 +223,10 @@ private fun NotificationSection(
 ) {
     val spacing = TelepicTokens.spacing
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-        Text(
-            text = stringResource(R.string.onboarding_notifications_title),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.semantics { heading() },
+        SectionHeader(
+            titleRes = R.string.onboarding_notifications_title,
+            badgeRes = R.string.onboarding_permissions_optional,
+            badgeEmphasized = false,
         )
         Text(
             text = stringResource(R.string.onboarding_notifications_body),

@@ -185,9 +185,19 @@
     <!-- Screen 3 — Permissions -->
     <!-- Screen 3 — Permissions. The title is no longer "Media permissions": this screen now asks
          for notification access too, and a heading that named only one of the two would misdescribe
-         the screen. The media section is still the one the body text describes. -->
+         the screen. The body frames both asks up front and says which is required vs optional; each
+         then gets its own labelled section below so the relationship is explicit rather than implied. -->
     <string name="onboarding_permissions_title">Permissions</string>
-    <string name="onboarding_permissions_body">Telepic needs access to your photos and videos to show your local library and back up the media you choose.</string>
+    <string name="onboarding_permissions_body">Telepic needs access to your photos and videos to work. Notifications are optional — one progress line while a backup runs.</string>
+    <string name="onboarding_permissions_required">Required</string>
+    <string name="onboarding_permissions_optional">Optional</string>
+    <string name="onboarding_permissions_media_section_title">Photos &amp; videos</string>
+    <string name="onboarding_permissions_media_purpose">Show your library and back up the media you choose.</string>
+    <!-- The media request also asks for ACCESS_MEDIA_LOCATION on API 29+. That read is invisible to
+         the user, so its rationale lives with the media section: what it is for and that it never
+         leaves the device. -->
+    <string name="onboarding_permissions_media_location_note">Reads the location already saved in your photos — on this device, for the in-app map. It is never uploaded.</string>
+    <string name="onboarding_permissions_privacy_note">Your library stays on your device. Nothing is uploaded until you turn on backup, and then only the media you choose.</string>
     <string name="onboarding_permissions_grant">Allow photo &amp; video access</string>
     <string name="onboarding_permissions_try_again">Try again</string>
     <string name="onboarding_permissions_open_settings">Open settings</string>

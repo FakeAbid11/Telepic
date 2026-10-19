@@ -26,14 +26,15 @@ import org.robolectric.annotation.GraphicsMode
  * API 33) or has already been granted. Bundling them into one prompt is exactly what this design
  * avoids, so a regression that re-couples them is what these tests would catch.
  *
- * The viewport is widened deliberately: this is the only onboarding step with two sections, and at
- * Robolectric's default 320x470dp the notification card falls below the fold of the step's own
- * verticalScroll, so a click would never reach it. Asserting on a node that merely exists, off
- * screen, would not prove the button works.
+ * The viewport is widened deliberately: this is the only onboarding step with two labelled sections
+ * plus a privacy note, and at Robolectric's default 320x470dp the notification card falls below the
+ * fold of the step's own verticalScroll, so a click would never reach it. Asserting on a node that
+ * merely exists, off screen, would not prove the button works — so the viewport is tall enough for
+ * the whole step.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [33], qualifiers = "w411dp-h891dp")
+@Config(sdk = [33], qualifiers = "w411dp-h1200dp")
 class PermissionsStepTest {
 
     @get:Rule
@@ -102,5 +103,50 @@ class PermissionsStepTest {
         composeRule.onNodeWithText("Access blocked").assertIsDisplayed()
         composeRule.onNodeWithText("Notifications off").assertIsDisplayed()
         composeRule.onNodeWithTag(TAG_PERMISSIONS_ALLOW_NOTIFICATIONS).assertIsDisplayed()
+    }
+
+    @Test
+    fun `each section states whether it is required or optional`() {
+        render(
+            permissionState = MediaPermissionState.Granted,
+            notificationState = NotificationPermissionState.Denied,
+        )
+
+        // The relationship between the two asks is stated, not left to be inferred from the copy.
+        composeRule.onNodeWithText("Photos & videos").assertIsDisplayed()
+        composeRule.onNodeWithText("Required").assertIsDisplayed()
+        composeRule.onNodeWithText("Optional").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the location rationale and the privacy note are shown`() {
+        render()
+
+        // ACCESS_MEDIA_LOCATION is asked for as part of media access but has no prompt of its own;
+        // this line is the only place its purpose and its on-device-only guarantee are stated.
+        composeRule
+            .onNodeWithText(
+                "Reads the location already saved in your photos — on this device, for the in-app map. It is never uploaded.",
+            )
+            .assertIsDisplayed()
+        composeRule
+            .onNodeWithText(
+                "Your library stays on your device. Nothing is uploaded until you turn on backup, and then only the media you choose.",
+            )
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `before the media request there is no media section but the privacy note remains`() {
+        render(permissionState = MediaPermissionState.NotRequested)
+
+        // Nothing has been asked yet, so there is no state to report; the guidance still applies.
+        composeRule.onNodeWithText("Required").assertDoesNotExist()
+        composeRule.onNodeWithText("Photos & videos").assertDoesNotExist()
+        composeRule
+            .onNodeWithText(
+                "Your library stays on your device. Nothing is uploaded until you turn on backup, and then only the media you choose.",
+            )
+            .assertIsDisplayed()
     }
 }
