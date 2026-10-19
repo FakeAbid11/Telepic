@@ -60,7 +60,21 @@ fun rememberNotificationPermissionState(): NotificationPermissionUiState {
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { refreshTick++ }
+    ) { granted ->
+        // Count **denials**, not launches.
+        //
+        // The counter used to be incremented before the request was launched, so it recorded how
+        // many times the dialog was *shown*. The platform's own rule is "two denials", and a user who
+        // granted once, had the grant revoked in system Settings, and then denied the re-request
+        // had consumed two attempts for one denial — which put the app into "open settings" while the
+        // platform would still have shown the dialog.
+        if (!granted) {
+            val next = attempts + 1
+            prefs.edit().putInt(KEY_ATTEMPTS, next).apply()
+            attempts = next
+        }
+        refreshTick++
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -83,11 +97,9 @@ fun rememberNotificationPermissionState(): NotificationPermissionUiState {
             state = state,
             request = {
                 // Denied is the only state where the dialog can still appear; below API 33 the
-                // permission does not exist, and asking on a granted app is noise.
+                // permission does not exist, and asking on a granted app is noise. The attempt is
+                // counted by the launcher's *denial* callback, so it records denials.
                 if (state == NotificationPermissionState.Denied) {
-                    val next = attempts + 1
-                    prefs.edit().putInt(KEY_ATTEMPTS, next).apply()
-                    attempts = next
                     launcher.launch(NotificationPermissionPolicy.permissionToRequest())
                 }
             },

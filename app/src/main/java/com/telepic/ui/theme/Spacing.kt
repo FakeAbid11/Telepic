@@ -72,6 +72,18 @@ data class TelepicSpacing(
      * reserves this much at the bottom (and [chromeBarHeight] at the top) for it.
      */
     val videoTransportHeight: Dp get() = touchTarget * 2
+
+    /**
+     * Height of the selection action bar that overlays the bottom of a media grid.
+     *
+     * A Material 3 text button is 40dp tall, and the bar pads it by [sm] on each side. A grid that
+     * is in selection mode has to reserve this much at its bottom: otherwise the bar covers the last
+     * row of tiles and they can never be scrolled clear of it.
+     */
+    val selectionActionBarHeight: Dp get() = sm + MATERIAL_TEXT_BUTTON_HEIGHT + sm
 }
+
+/** The Material 3 text button's own minimum height. */
+private const val MATERIAL_TEXT_BUTTON_HEIGHT = 40.dp
 
 val LocalSpacing = staticCompositionLocalOf { TelepicSpacing() }

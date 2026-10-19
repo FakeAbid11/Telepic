@@ -128,9 +128,17 @@ internal fun Modifier.videoPlayerGestures(
                 onLongPress = { currentOnSpeed(true) },
                 // Runs for every press; releasing a press that was never a long-press is a cheap no-op
                 // in the caller (it only restores the speed when one was actually boosted).
+                //
+                // The release is in a `finally` so the boost is **always** undone. `tryAwaitRelease`
+                // can end without returning — the press can be cancelled, or the whole gesture
+                // coroutine can be cancelled (the item changed, the screen was left) — and a boost
+                // that outlived its gesture left the video running at 2x with no visible cue.
                 onPress = {
-                    tryAwaitRelease()
-                    currentOnSpeed(false)
+                    try {
+                        tryAwaitRelease()
+                    } finally {
+                        currentOnSpeed(false)
+                    }
                 },
             )
         }

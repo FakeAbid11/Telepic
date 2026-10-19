@@ -65,9 +65,15 @@ fun SelectionTopBar(
     modifier: Modifier = Modifier,
     selectAll: SelectAllAction? = null,
 ) {
+    // The header scrolls horizontally, like the action bar below.
+    //
+    // It has the same shape — a 48dp icon button, a label and a text action — and the same failure
+    // mode: a plain Row neither wraps nor scrolls, so at a large display font the "Select all" button
+    // was pushed past the right edge and simply could not be reached.
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(
                 start = TelepicTokens.spacing.xs,
                 end = TelepicTokens.spacing.screenMargin,

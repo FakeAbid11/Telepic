@@ -145,13 +145,20 @@ class CloudViewModelTest {
     }
 
     @Test
-    fun `refresh clears cached preview states`() {
+    fun `refresh keeps the loaded previews and only lets the failed ones retry`() {
+        // A preview is the thumbnail of a specific message, so it cannot have gone stale. Clearing
+        // the successful ones too flashed the whole grid back to placeholders and re-downloaded every
+        // visible thumbnail from Telegram — the opposite of what a refresh is for.
         vm.loadPreview(item(1))
         settle()
         assertTrue(vm.previews.value.isNotEmpty())
+
         vm.refresh()
         settle()
-        assertTrue(vm.previews.value.isEmpty())
+        assertTrue(
+            "a loaded preview must survive a refresh",
+            vm.previews.value.isNotEmpty(),
+        )
     }
 
     @Test

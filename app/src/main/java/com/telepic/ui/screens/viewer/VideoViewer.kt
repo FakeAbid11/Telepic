@@ -237,12 +237,22 @@ fun VideoViewer(
     }
     var boosting by remember(videoUri) { mutableStateOf(false) }
     var feedback by remember(videoUri) { mutableStateOf<VideoGestureFeedback?>(null) }
+    /**
+     * Bumped every time a new feedback is published, so the auto-dismiss timer restarts even when
+     * the *value* repeats.
+     *
+     * The effect below is keyed on the feedback itself, and the feedback types are data classes: a
+     * drag that pushed the brightness against its clamp produced the same value over and over, so
+     * the key never changed, the timer never restarted, and the HUD disappeared while the user was
+     * still dragging.
+     */
+    var feedbackToken by remember(videoUri) { mutableIntStateOf(0) }
     // Bumped by every gesture so the auto-hide timer restarts on interaction.
     var interactionToken by remember(videoUri) { mutableIntStateOf(0) }
 
     // The confirmation clears itself a beat after the last gesture. Keyed on the value, so a stream of
     // volume/level updates keeps the HUD up and only the *final* one starts the countdown.
-    LaunchedEffect(feedback) {
+    LaunchedEffect(feedbackToken) {
         if (feedback != null) {
             delay(FEEDBACK_VISIBLE_MS)
             feedback = null
@@ -260,6 +270,9 @@ fun VideoViewer(
 
     fun togglePlay() {
         if (player.isPlaying) player.pause() else player.play()
+        // Touching the transport is an interaction, exactly like the surface gestures: without this
+        // the auto-hide timer could fire immediately after the tap and take the bar away again.
+        interactionToken++
     }
 
     val applySeek: (Long) -> Unit = { deltaMs ->
@@ -268,6 +281,7 @@ fun VideoViewer(
         player.seekTo(if (duration > 0L) target.coerceIn(0L, duration) else target.coerceAtLeast(0L))
         playback.tick(player) // reflect the jump immediately, not on the next 250ms poll
         feedback = VideoGestureFeedback.Seek(deltaMs, deltaMs > 0)
+        feedbackToken++
         interactionToken++
     }
 
@@ -277,6 +291,7 @@ fun VideoViewer(
                 boosting = true
                 player.setPlaybackSpeed(VideoGestureMath.SPEED_BOOST_MULTIPLIER)
                 feedback = VideoGestureFeedback.SpeedBoost(VideoGestureMath.SPEED_BOOST_MULTIPLIER)
+                feedbackToken++
             }
         } else if (boosting) {
             boosting = false
@@ -292,6 +307,7 @@ fun VideoViewer(
                 val next = VideoGestureMath.clampLevel(brightnessFraction + delta)
                 brightnessFraction = brightness?.set(next) ?: next
                 feedback = VideoGestureFeedback.Level(LevelKind.BRIGHTNESS, brightnessFraction)
+            feedbackToken++
             }
             LevelKind.VOLUME -> {
                 // System stream volume, so the gesture leaves the hardware keys' own model intact.
@@ -308,6 +324,7 @@ fun VideoViewer(
                     audioManager.setStreamVolume(stream, target, 0)
                     if (target > 0 && muted) muted = false
                     feedback = VideoGestureFeedback.Level(LevelKind.VOLUME, next)
+        feedbackToken++
                 }
             }
         }
@@ -395,13 +412,23 @@ fun VideoViewer(
                 VideoTransport(
                     state = playback.state,
                     onTogglePlay = { togglePlay() },
-                    onSeekTo = { target -> player.seekTo(target) },
+                    onSeekTo = { target ->
+                        player.seekTo(target)
+                        // Touching the transport counts as an interaction, exactly as the surface
+                        // gestures do. Without this, dragging the seek slider for longer than the
+                        // auto-hide delay made the whole transport — the slider included — fade out
+                        // and leave the composition mid-drag, so the seek was abandoned.
+                        interactionToken++
+                    },
                     // The mute affordance lives on the transport now (media3 1.4.1 exposes no volume
                     // control and ships no mute button). It used to float top-right, where it competed
                     // with the top-bar's own actions; on the bar it reads as one of the transport's
                     // controls.
                     muted = muted,
-                    onToggleMute = { muted = !muted },
+                    onToggleMute = {
+                        muted = !muted
+                        interactionToken++
+                    },
                     onRestore = onRestore,
                     restore = restore,
                 )
@@ -664,7 +691,13 @@ internal fun VideoTransport(
                 )
             }
             if (onRestore != null) {
-                IconButton(onClick = onRestore, enabled = restore !is RestoreState.Restoring) {
+                // Disabled once the item is already saved: the "Saved" tick is a *state*, not an
+                // action, and a clickable one re-ran the whole download → verify → publish pipeline
+                // — which, when the ledger had no record of it, published a second copy.
+                IconButton(
+                    onClick = onRestore,
+                    enabled = restore !is RestoreState.Restoring && restore !is RestoreState.Restored,
+                ) {
                     when (restore) {
                         is RestoreState.Restoring -> CircularProgressIndicator(
                             color = Color.White,

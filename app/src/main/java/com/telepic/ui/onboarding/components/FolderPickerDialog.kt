@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -101,7 +102,15 @@ fun FolderPickerDialog(
                     )
                 }
                 else -> {
-                    LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    // Bounded to the shared dialog-body token, like the album picker and the
+                    // licence list. Without it this list grew to fill the whole screen on a device
+                    // with many MediaStore buckets, while the two sibling dialogs stayed at 400dp —
+                    // the same kind of body, three different heights.
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = TelepicTokens.spacing.dialogMaxHeight),
+                    ) {
                         items(folders, key = { it.bucketId }) { album ->
                             val isChecked = album.bucketId in selected
                             Row(

@@ -30,26 +30,32 @@ data class OpenSourceLibrary(
  * is that it must be updated whenever a runtime dependency changes — which is why the versions here
  * are the exact ones from the version catalog rather than ranges.
  *
+ * The versions below are the ones in `gradle/libs.versions.toml` as of this change. They had drifted
+ * (Kotlin, Coroutines, Core KTX, DataStore, Room, WorkManager and ExifInterface were all several
+ * releases behind), and `androidx.biometric` — which ships in the APK for the app-lock prompt — was
+ * missing from the list entirely, which is a missing third-party notice rather than a cosmetic gap.
+ *
  * Test-only libraries (JUnit, Robolectric, the Compose UI test artifacts) are deliberately absent:
  * they are not distributed in the APK, so they are not part of what a user is running.
  */
 val TelepicOpenSourceLibraries: List<OpenSourceLibrary> = listOf(
-    OpenSourceLibrary("Kotlin Standard Library & Coroutines", "2.0.21 · 1.9.0", "Apache License 2.0"),
-    OpenSourceLibrary("AndroidX Core KTX", "1.13.1", "Apache License 2.0"),
+    OpenSourceLibrary("Kotlin Standard Library & Coroutines", "2.2.10 · 1.11.0", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX Core KTX", "1.18.0", "Apache License 2.0"),
     OpenSourceLibrary("AndroidX Lifecycle", "2.8.6", "Apache License 2.0"),
     OpenSourceLibrary("AndroidX Activity Compose", "1.9.3", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX Biometric (app lock)", "1.1.0", "Apache License 2.0"),
     OpenSourceLibrary("Jetpack Compose (UI, Foundation, Runtime)", "BOM 2024.10.01", "Apache License 2.0"),
     OpenSourceLibrary("Material 3 (Compose)", "BOM 2024.10.01", "Apache License 2.0"),
     OpenSourceLibrary("AndroidX Navigation Compose", "2.8.3", "Apache License 2.0"),
-    OpenSourceLibrary("AndroidX DataStore", "1.1.1", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX DataStore", "1.2.1", "Apache License 2.0"),
     OpenSourceLibrary("AndroidX Paging 3", "3.3.2", "Apache License 2.0"),
-    OpenSourceLibrary("AndroidX Room", "2.6.1", "Apache License 2.0"),
-    OpenSourceLibrary("AndroidX WorkManager", "2.9.1", "Apache License 2.0"),
-    OpenSourceLibrary("AndroidX ExifInterface", "1.3.7", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX Room", "2.8.5", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX WorkManager", "2.12.0", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX ExifInterface", "1.4.2", "Apache License 2.0"),
     OpenSourceLibrary("AndroidX Media3 / ExoPlayer", "1.4.1", "Apache License 2.0"),
     OpenSourceLibrary("Coil (image loading)", "2.7.0", "Apache License 2.0"),
     OpenSourceLibrary("osmdroid", "6.1.20", "Apache License 2.0"),
-    OpenSourceLibrary("TDLib (Telegram Database Library)", "1.8.x via tdlib-android 0.1.1", "Boost Software License 1.0"),
+    OpenSourceLibrary("TDLib (Telegram Database Library)", "tdlib-android 0.1.1", "Boost Software License 1.0"),
 )
 
 /**

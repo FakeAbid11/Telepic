@@ -98,6 +98,7 @@ import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.components.rememberSharedMediaModifier
 import com.telepic.ui.components.rememberTelepicHaptics
 import com.telepic.ui.theme.TelepicTokens
+import kotlin.math.abs
 import java.io.File
 
 /**
@@ -355,6 +356,13 @@ private fun ViewerContent(
     startMuted: Boolean = true,
 ) {
     if (state.kind == ViewerKind.VIDEO) {
+        // The video path deliberately has **no** `BackHandler` of its own.
+        //
+        // On a photo the chrome stays where the user left it, so "Back reveals the hidden chrome
+        // first" is a real second step. On a video the chrome auto-hides after a few seconds, so
+        // "hidden" is a transient state rather than one the user chose to be in — making Back
+        // reveal it would mean most presses did not leave the screen, and the user would have to
+        // press Back twice to get out. Back leaves the video straight away.
         VideoViewer(
             state = state,
             onDownload = onDownload,
@@ -458,6 +466,7 @@ private fun ViewerContent(
                     // snap while dragging, spring back through animateFloatAsState when released.
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
+                        val slop = viewConfiguration.touchSlop
                         var dragTotalX = 0f
                         var pinched = false
                         var lastPinchDist = 0f
@@ -507,6 +516,14 @@ private fun ViewerContent(
                                     // approximation: the true limit is the image's painted size, which
                                     // differs per axis under ContentScale.Fit — viewport bounds still
                                     // make "drag it permanently away" impossible without painter metrics.
+                                    if (!dragging && (abs(delta.x) > slop || abs(delta.y) > slop)) {
+                                        dragging = true
+                                    }
+                                    if (!dragging) {
+                                        // Not past the slop yet: leave the event alone so the tap
+                                        // detector below still sees it.
+                                        continue
+                                    }
                                     zoom = zoom.onPan(
                                         delta.x,
                                         delta.y,
@@ -515,14 +532,23 @@ private fun ViewerContent(
                                     )
                                     change.consume()
                                 } else if (!pinched) {
-                                    dragging = true
                                     dragTotalX += delta.x
-                                    swipeOffsetX = dragTotalX
-                                    change.consume()
+                                    // Claim the gesture only once it has moved past the touch slop.
+                                    //
+                                    // Consuming from the first pixel of movement made a 1-2px finger
+                                    // jitter cancel the tap detector registered below, so the chrome
+                                    // toggle — the screen's primary interaction — stopped firing.
+                                    // The video path has always gated on the slop; the photo path did
+                                    // not.
+                                    if (!dragging && abs(delta.x) > slop) dragging = true
+                                    if (dragging) {
+                                        swipeOffsetX = dragTotalX
+                                        change.consume()
+                                    }
                                 }
                             }
                         }
-                        if (!pinched && !zoom.isZoomed && dragTotalX != 0f) {
+                        if (!pinched && !zoom.isZoomed && dragging) {
                             val target = SwipeResolver.resolve(
                                 deltaPx = dragTotalX,
                                 widthPx = size.width.toFloat(),

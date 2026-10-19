@@ -167,7 +167,14 @@ fun MediaGrid(
                 start = spacing.gridGutter,
                 end = spacing.gridGutter,
                 top = spacing.xs,
-                bottom = spacing.xl,
+                // Room for the selection action bar, which overlays the bottom of the grid while a
+                // selection is active. Without it the bar covered the last row of tiles and they
+                // could never be scrolled clear of it.
+                bottom = if (selectionActive) {
+                    spacing.xl + spacing.selectionActionBarHeight
+                } else {
+                    spacing.xl
+                },
             ),
             horizontalArrangement = Arrangement.spacedBy(spacing.gridGutter),
             verticalArrangement = Arrangement.spacedBy(spacing.gridGutter),

@@ -81,6 +81,17 @@ class OnboardingViewModel(
     private val _setupFailed = MutableStateFlow(false)
     val setupFailed: StateFlow<Boolean> = _setupFailed.asStateFlow()
 
+    /**
+     * True when the **completion** write failed.
+     *
+     * Kept apart from [setupFailed] because the two failures need different words: a failed backup
+     * choice is fixed by choosing again, a failed completion is fixed by pressing the button again.
+     * Sharing one flag made the last step answer a failed completion with the *backup* copy, which
+     * pointed the user at the wrong control.
+     */
+    private val _completionFailed = MutableStateFlow(false)
+    val completionFailed: StateFlow<Boolean> = _completionFailed.asStateFlow()
+
     init {
         // The first emission from DataStore means persisted state is available.
         viewModelScope.launch {
@@ -128,7 +139,18 @@ class OnboardingViewModel(
     /** Persists completion and applies the chosen backup policy now; the router then leaves onboarding. */
     fun completeOnboarding() {
         viewModelScope.launch {
-            persistChoice { repository.setCompleted(true) }
+            // Its own boundary, and its own flag: the completion is a different write from the backup
+            // choice, and a failure of one says nothing about the other. Sharing the flag made the
+            // last step answer a failed completion with the backup copy.
+            try {
+                repository.setCompleted(true)
+                _completionFailed.value = false
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("OnboardingViewModel", "onboarding could not be completed", throwable)
+                _completionFailed.value = true
+            }
         }
     }
 

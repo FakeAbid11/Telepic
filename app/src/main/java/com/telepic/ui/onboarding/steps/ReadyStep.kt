@@ -41,6 +41,11 @@ fun ReadyStep(
     backupPreference: BackupPreference?,
     modifier: Modifier = Modifier,
     setupFailed: Boolean = false,
+    /**
+     * The completion write failed — a different problem from a failed backup choice, and it needs
+     * different words.
+     */
+    completionFailed: Boolean = false,
 ) {
     val spacing = TelepicTokens.spacing
     Column(
@@ -97,7 +102,17 @@ fun ReadyStep(
         // A failed persist used to be invisible on this last step: tapping "Start using Telepic" did
         // nothing, the flow never advanced, and there was no explanation — the exact case step 4
         // already reports. Same copy, same rule: never leave a dead button unexplained.
-        if (setupFailed) {
+        //
+        // The two failures get different words. A failed *completion* is fixed by pressing this
+        // button again; a failed backup choice is fixed by choosing again. Answering a failed
+        // completion with the backup copy pointed the user at the wrong control.
+        if (completionFailed) {
+            Text(
+                text = stringResource(R.string.onboarding_completion_failed),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        } else if (setupFailed) {
             Text(
                 text = stringResource(R.string.onboarding_backup_setup_failed),
                 style = MaterialTheme.typography.bodySmall,

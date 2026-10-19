@@ -84,12 +84,14 @@ fun TelepicRoot(
                 val folders by onboardingViewModel.folders.collectAsStateWithLifecycle()
                 val foldersLoaded by onboardingViewModel.foldersLoaded.collectAsStateWithLifecycle()
                 val setupFailed by onboardingViewModel.setupFailed.collectAsStateWithLifecycle()
+                val completionFailed by onboardingViewModel.completionFailed.collectAsStateWithLifecycle()
                 OnboardingScreen(
                     backupPreference = onboarding.backupPreference,
                     backupBucketIds = onboarding.backupBucketIds,
                     folders = folders,
                     foldersLoaded = foldersLoaded,
                     backupSetupFailed = setupFailed,
+                    completionFailed = completionFailed,
                     telegramController = telegramController,
                     onBackupPreferenceChange = onboardingViewModel::setBackupPreference,
                     onNeedFolders = onboardingViewModel::loadFolders,
