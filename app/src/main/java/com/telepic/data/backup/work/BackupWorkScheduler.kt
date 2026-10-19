@@ -35,6 +35,20 @@ interface BackupWorkScheduler {
 
     /** Ensure the recurring discovery+processing cadence is installed (unique; idempotent). */
     suspend fun schedulePeriodic()
+
+    /**
+     * Hand the rest of a drain to a **fresh** run, without inheriting this run's backoff.
+     *
+     * `Result.retry()` re-runs the *same* WorkSpec, so WorkManager's exponential backoff grows with
+     * every attempt and pins at its five-hour cap. That is the right behaviour for an item that
+     * keeps failing, and the wrong behaviour for a queue that simply has more items than one batch
+     * holds: a ten-thousand-item library needs a hundred batches, and the drain took about twenty
+     * days. A continuation is a new spec, so it starts with a fresh backoff.
+     *
+     * The default implementation delegates to [schedule], which is the right thing for a scheduler
+     * that does not distinguish the two.
+     */
+    suspend fun scheduleContinuation() = schedule()
 }
 
 const val BACKUP_WORK_NAME = "telepic_backup"
@@ -82,6 +96,22 @@ class WorkManagerBackupScheduler(
         // UPDATE rewrites the existing spec in place without cancelling a running discovery pass, so
         // a changed constraint applies from the next period on and an in-flight pass is never cut off.
         workManager.enqueueUniquePeriodicWork(BACKUP_PERIODIC_WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
+    }
+
+    /**
+     * Continue a drain with a fresh run.
+     *
+     * `REPLACE`, not `KEEP`: the caller is the run that is finishing *right now*, and `KEEP` drops
+     * the continuation because that run is still marked RUNNING. `REPLACE` swaps the finished run
+     * for the new spec, which also resets the exponential backoff — the whole point of a
+     * continuation.
+     */
+    override suspend fun scheduleContinuation() {
+        val request = OneTimeWorkRequestBuilder<BackupWorker>()
+            .setConstraints(transportConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
+            .build()
+        workManager.enqueueUniqueWork(BACKUP_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
     }
 
     /**

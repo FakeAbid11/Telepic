@@ -3,7 +3,6 @@ package com.telepic.telegram
 import android.content.Context
 import android.os.Build
 import com.telepic.diagnostics.TelepicLog
-import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
@@ -62,13 +61,30 @@ class TelegramSessionManager(
     val state: StateFlow<TelegramAuthState> = _state.asStateFlow()
 
     private val authorizedUser = MutableStateFlow<TelegramUser?>(null)
+
+    /**
+     * The last authorization state TDLib reported.
+     *
+     * Written by the update collector and by the re-drive path, both of which run on
+     * [Dispatchers.Default] — a multi-threaded dispatcher — and read by [publishMappedState] from
+     * either. Without `@Volatile` a reader could observe a stale (or `null`) value and publish
+     * `NotConnected` over a live state.
+     */
+    @Volatile
     private var lastAuthorizationState: TdApi.AuthorizationState? = null
 
     @Volatile
     private var collectorJob: kotlinx.coroutines.Job? = null
 
-    @Volatile
-    private var parametersSent = false
+    /**
+     * Whether `SetTdlibParameters` has already been sent for the current attempt.
+     *
+     * An atomic flag rather than a plain `Boolean` because the read-modify-write is not atomic and
+     * two coroutines can reach it at once: the update collector and the re-drive path. A plain
+     * `var` let both observe "not sent yet" and send the request twice, which TDLib rejects with
+     * "Unexpected setTdlibParameters" and turns a healthy session into a failure.
+     */
+    private val parametersSent = AtomicBoolean(false)
 
     /**
      * Single-flight guard for [initialize]. The work it kicks off runs *inside* a coroutine, so
@@ -169,9 +185,9 @@ class TelegramSessionManager(
     private suspend fun driveFromCurrentState() {
         val current = safeRequest(TdApi.GetAuthorizationState())
         if (current is TdApi.AuthorizationState) {
-            // A prior SetTdlibParameters may have errored and TDLib won't re-emit the wait, so allow the
-            // parameters to be re-sent for this attempt instead of latching on the earlier send.
-            if (current is TdApi.AuthorizationStateWaitTdlibParameters) parametersSent = false
+            // A prior SetTdlibParameters may have errored and TDLib won't re-emit the wait. The flag
+            // is *not* reset here: [sendParameters] clears it itself whenever a send fails, so a
+            // retry re-sends, and a send that is still in flight is never duplicated by this path.
             onAuthorizationState(current)
         }
     }
@@ -188,6 +204,12 @@ class TelegramSessionManager(
         // SetTdlibParameters), fail() writes Failed as the terminal update; publishing first means that
         // failure is not overwritten back to Initializing by a later map of the same wait state.
         publishMappedState()
+        if (state is TdApi.AuthorizationStateClosed) {
+            // TDLib has torn the client down and the Java binding has just unregistered its update
+            // handler, so this session can never be driven again. Everything the old session knew
+            // has to go with it — see [handleSessionClosed].
+            handleSessionClosed()
+        }
         if (state is TdApi.AuthorizationStateWaitTdlibParameters) {
             sendParameters()
         }
@@ -196,12 +218,44 @@ class TelegramSessionManager(
         }
     }
 
+    /**
+     * Reset everything a closed TDLib session leaves behind.
+     *
+     * TDLib closes its client when the authorization state reaches
+     * [TdApi.AuthorizationStateClosed] — which is what a sign-out produces — and the Java binding
+     * unregisters that client's update handler at the same moment. Two things therefore had to
+     * change, and neither did before:
+     *
+     * 1. **The client.** [TdLibClientGatewayImpl.open] returns early while a client reference
+     *    exists, so a dead client meant no new one was ever created and "Connect" after a sign-out
+     *    could never work again — an unrecoverable dead end that only an app restart fixed.
+     * 2. **The account.** [authorizedUser] used to survive the sign-out, so a later
+     *    re-authorization would skip [fetchAccount] and report the **previous** account as
+     *    [TelegramAuthState.Authorized] — which would have the backup engine upload to the wrong
+     *    account's channel.
+     *
+     * The collector is dropped as well: it is collecting from a client that will never emit again,
+     * and [startOnce] has to see a null collector so that the next sign-in starts a fresh one.
+     */
+    private fun handleSessionClosed() {
+        authorizedUser.value = null
+        parametersSent.set(false)
+        // A fresh client can now be created. Done before the collector is stopped so the reset is
+        // not left half-applied if the cancellation below interrupts the flow.
+        gateway.reset()
+        val stale = collectorJob
+        collectorJob = null
+        stale?.cancel()
+        TelepicLog.warn("TelegramAuth", "the Telegram session was closed; signing in again will open a fresh client")
+    }
+
     private suspend fun sendParameters() {
-        // Single choke-point guard: never send twice for the same attempt, even if the update stream and
-        // the re-drive both observe the parameters wait. A retry clears the flag in driveFromCurrentState.
-        if (parametersSent) return
-        parametersSent = true
-        val dir = File(appContext.noBackupFilesDir, "tdlib").apply { mkdirs() }
+        // Single choke-point guard: never send twice for the same attempt, even if the update stream
+        // and the re-drive both observe the parameters wait. The compare-and-set is what makes that
+        // true — a plain read-then-write let both coroutines through and TDLib rejected the second
+        // `SetTdlibParameters` with "Unexpected setTdlibParameters", failing a healthy session.
+        // A failed send clears the flag again, so a retry can re-send it.
+        if (!parametersSent.compareAndSet(false, true)) return
         // Resolving the database key reaches the Android Keystore, which can fail for reasons outside
         // the app's control: a hardware-backed key is invalidated by a screen-lock or secure-lock
         // change, and an OEM keystore can throw on a device whose secure hardware was reset. This runs
@@ -217,10 +271,14 @@ class TelegramSessionManager(
             throw cancellation
         } catch (throwable: Throwable) {
             TelepicLog.error("TelegramAuth", "the TDLib database key could not be provided", throwable)
-            parametersSent = false
+            parametersSent.set(false)
             fail(TelegramError.Initialization("Telegram could not be securely initialised on this device."))
             return
         }
+        // The directory is created *after* the key is resolved on purpose: the key provider has to
+        // be able to tell "there is no local session cache yet" from "the cache exists but its key
+        // is gone", and an empty directory it created itself would answer the wrong question.
+        val dir = TelegramPaths.databaseDir(appContext).apply { mkdirs() }
         val request = TdApi.SetTdlibParameters(
             /* useTestDc = */ false,
             /* databaseDirectory = */ dir.absolutePath,
@@ -238,7 +296,12 @@ class TelegramSessionManager(
             /* applicationVersion = */ applicationVersion,
         )
         when (val response = safeRequest(request)) {
-            is TdApi.Error -> fail(TelegramError.classify(response.code, response.message))
+            // A rejected parameter set (bad credentials, a database that cannot be opened) is
+            // recoverable by a retry, so the flag is cleared and the failure is reported honestly.
+            is TdApi.Error -> {
+                parametersSent.set(false)
+                fail(TelegramError.classify(response.code, response.message))
+            }
             else -> Unit
         }
     }
@@ -273,8 +336,8 @@ class TelegramSessionManager(
             when (val response = safeRequest(TdApi.SetAuthenticationPhoneNumber(normalized, settings))) {
                 // A rejected number is recoverable: TDLib stays at the phone wait and does not re-emit,
                 // so keep the input visible and surface the reason inline instead of a dead-end Failed.
-                is TdApi.Error -> _state.value = TelegramAuthState.WaitingForPhoneNumber(
-                    error = TelegramError.classify(response.code, response.message, TelegramError.AuthStage.PhoneNumber).message,
+                is TdApi.Error -> publishPhoneNumberError(
+                    TelegramError.classify(response.code, response.message, TelegramError.AuthStage.PhoneNumber).message,
                 )
                 else -> Unit
             }
@@ -284,8 +347,8 @@ class TelegramSessionManager(
     fun submitCode(code: String) {
         scope.launch {
             when (val response = safeRequest(TdApi.CheckAuthenticationCode(code.trim()))) {
-                is TdApi.Error -> _state.value = TelegramAuthState.WaitingForCode(
-                    error = TelegramError.classify(response.code, response.message, TelegramError.AuthStage.Code).message,
+                is TdApi.Error -> publishCodeError(
+                    TelegramError.classify(response.code, response.message, TelegramError.AuthStage.Code).message,
                 )
                 else -> Unit
             }
@@ -296,8 +359,8 @@ class TelegramSessionManager(
         scope.launch {
             // The password is passed straight to TDLib and never stored or logged.
             when (val response = safeRequest(TdApi.CheckAuthenticationPassword(password))) {
-                is TdApi.Error -> _state.value = TelegramAuthState.WaitingForPassword(
-                    error = TelegramError.classify(response.code, response.message, TelegramError.AuthStage.Password).message,
+                is TdApi.Error -> publishPasswordError(
+                    TelegramError.classify(response.code, response.message, TelegramError.AuthStage.Password).message,
                 )
                 else -> Unit
             }
@@ -316,8 +379,8 @@ class TelegramSessionManager(
         if (normalized.isEmpty()) return
         scope.launch {
             when (val response = safeRequest(TdApi.SetAuthenticationEmailAddress(normalized))) {
-                is TdApi.Error -> _state.value = TelegramAuthState.WaitingForEmailAddress(
-                    error = TelegramError.classify(
+                is TdApi.Error -> publishEmailAddressError(
+                    TelegramError.classify(
                         response.code,
                         response.message,
                         TelegramError.AuthStage.EmailAddress,
@@ -392,6 +455,47 @@ class TelegramSessionManager(
         )
     }
 
+    /**
+     * Publish a recoverable failure for each input step — but only while the session is **still**
+     * waiting for that input.
+     *
+     * TDLib moves on the moment an input is accepted, so a slow or duplicated response — a second tap
+     * on Submit, a request that timed out *after* Telegram had already accepted it — would
+     * otherwise drag a signed-in session back to an input screen. Every further attempt would then be
+     * rejected as "no code pending", and the backup engine would see the session as unauthorized and
+     * park the whole queue. That is precisely the dead end these flows exist to remove, so a stale
+     * reply is dropped rather than rendered.
+     *
+     * [publishEmailCode] is the same contract for the email-code step.
+     */
+    private fun publishPhoneNumberError(error: String?) {
+        if (_state.value !is TelegramAuthState.WaitingForPhoneNumber) return
+        _state.value = TelegramAuthState.WaitingForPhoneNumber(error = error)
+    }
+
+    private fun publishCodeError(error: String?) {
+        if (_state.value !is TelegramAuthState.WaitingForCode) return
+        _state.value = TelegramAuthState.WaitingForCode(error = error)
+    }
+
+    private fun publishPasswordError(error: String?) {
+        if (_state.value !is TelegramAuthState.WaitingForPassword) return
+        _state.value = TelegramAuthState.WaitingForPassword(error = error)
+    }
+
+    private fun publishEmailAddressError(error: String?) {
+        if (_state.value !is TelegramAuthState.WaitingForEmailAddress) return
+        _state.value = TelegramAuthState.WaitingForEmailAddress(error = error)
+    }
+
+    /**
+     * Sign the account out.
+     *
+     * TDLib answers with a closing session and the client is then torn down for good — see
+     * [handleSessionClosed], which is where the local state is actually reset. Nothing is cleared
+     * here: the request has to reach the *live* client first, and the state that follows (LoggingOut
+     * → Closed) is the honest report of what Telegram is doing.
+     */
     fun logout() {
         scope.launch {
             safeRequest(TdApi.LogOut())
@@ -461,7 +565,7 @@ class TelegramSessionManager(
         gateway.close()
         scope.cancel()
         collectorJob = null
-        parametersSent = false
+        parametersSent.set(false)
         lastAuthorizationState = null
         authorizedUser.value = null
         _state.value = TelegramAuthState.NotConnected

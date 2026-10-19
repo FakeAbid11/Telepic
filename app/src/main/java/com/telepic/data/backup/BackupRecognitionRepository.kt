@@ -185,7 +185,13 @@ class DefaultBackupRecognitionRepository(
         // metadata-only rewrite) therefore reuses a stale hash. Keying on the real modified time needs
         // its own column and a migration; until then this is a known, narrow limitation rather than a
         // guarantee the code should claim.
-        return contentSizeBytes == media.sizeBytes && modifiedTimeSeconds == media.dateMillis / 1000L && hash.isNotEmpty()
+        //
+        // The size compared here is the **provider's** size (`sizeBytes`), not `contentSizeBytes`.
+        // `contentSizeBytes` is the count the hash was computed over, and the two disagree whenever
+        // the provider reports SIZE as 0 or stale — which is exactly the case the cached hash exists
+        // to cover. Comparing them made the cache unreachable for the files it was written for, so
+        // the whole file was re-hashed on every scan.
+        return sizeBytes == media.sizeBytes && modifiedTimeSeconds == media.dateMillis / 1000L && hash.isNotEmpty()
     }
 
     override suspend fun markRecognized(media: LocalMedia, remote: RemoteMediaIdentity, hash: String, sizeBytes: Long) {

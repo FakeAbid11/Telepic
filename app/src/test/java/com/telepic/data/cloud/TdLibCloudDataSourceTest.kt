@@ -288,7 +288,10 @@ class TdLibCloudDataSourceTest {
     }
 
     @Test
-    fun `confirmation that never arrives times out as transient`() = runBlocking {
+    fun `a confirmation that never arrives is reported as pending, not as a failure`() = runBlocking {
+        // The message is still uploading on Telegram's side. That is a *pending* state, not a
+        // failure: the caller must keep the staged file (TDLib is reading it), keep the pending
+        // remote identity, and confirm the same message later instead of re-sending it.
         val (ds, _) = source { req ->
             when (req) {
                 is TdApi.SendMessage -> message(600L, photoContent(1, 2)).apply { sendingState = TdApi.MessageSendingStatePending() }
@@ -299,9 +302,9 @@ class TdLibCloudDataSourceTest {
         val request = CloudUploadRequest("/tmp/x", "x", "image/jpeg", CloudMediaType.IMAGE, 10L, 1, 1, null, 1L)
         try {
             ds.upload(100L, request, onProgress = {})
-            fail("expected timeout")
-        } catch (e: CloudNetworkException) {
-            assertTrue(e.message!!.contains("timed out"))
+            fail("expected pending")
+        } catch (e: CloudMessagePendingException) {
+            assertTrue(e.message!!.contains("uploading"))
         }
     }
 
@@ -320,9 +323,9 @@ class TdLibCloudDataSourceTest {
         val request = CloudUploadRequest("/tmp/x", "x", "image/jpeg", CloudMediaType.IMAGE, 10L, 1, 1, null, 1L)
         try {
             ds.upload(100L, request, onProgress = {}, onSent = { chatId, messageId -> sent += chatId to messageId })
-            fail("expected timeout")
-        } catch (e: CloudNetworkException) {
-            assertTrue(e.message!!.contains("timed out"))
+            fail("expected pending")
+        } catch (e: CloudMessagePendingException) {
+            assertTrue(e.message!!.contains("uploading"))
         }
         // The key guarantee: despite the throw, the caller learned the real sent identity — the
         // queue persists it and the next run CONFIRMS instead of re-sending a duplicate.

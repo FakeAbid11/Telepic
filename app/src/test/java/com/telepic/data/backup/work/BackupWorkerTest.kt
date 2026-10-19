@@ -107,14 +107,23 @@ class BackupWorkerTest {
     }
 
     @Test
-    fun `a full batch with a longer queue asks for another run instead of reporting success`() = runBlocking {
+    fun `a full batch is drained inside the same run instead of asking WorkManager to retry`() = runBlocking {
+        // The regression this guards: a first backup longer than one batch used to be handed back to
+        // WorkManager as Result.retry(), which re-runs the *same* WorkSpec — so the exponential
+        // backoff grew between batches (10s, 20s, 40s, … capped at five hours) and a ten-thousand
+        // item library needed about a hundred batches, i.e. roughly twenty days. The drain now
+        // happens inside one run.
         val repo = FakeRepo(
-            mutableListOf(BackupProcessSummary(uploaded = 100, processed = 100)),
+            mutableListOf(
+                BackupProcessSummary(uploaded = 100, processed = 100),
+                BackupProcessSummary(uploaded = 40, processed = 40),
+            ),
             stats = BackupQueueStats(queued = 40),
         )
-        // The regression this guards: a first backup longer than one batch used to report success
-        // here and stop for good, because nothing else re-schedules a still-queued library.
-        assertEquals(ListenableWorker.Result.retry(), worker(repo).doWork())
+        assertEquals(ListenableWorker.Result.success(), worker(repo).doWork())
+        // Three passes, one run: the second batch picked up what the first one left, and the third
+        // found nothing actionable — which is what ends the drain.
+        assertEquals(3, repo.calls)
     }
 
     @Test

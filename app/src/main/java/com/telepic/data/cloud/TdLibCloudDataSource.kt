@@ -11,6 +11,7 @@ import com.telepic.domain.cloud.CloudUploadRequest
 import com.telepic.domain.cloud.CloudUploadResult
 import com.telepic.domain.cloud.LocalDownloadedMedia
 import com.telepic.telegram.TdLibClientGateway
+import com.telepic.telegram.TdLibRequestTimeoutException
 import com.telepic.telegram.TelegramAuthState
 import java.io.File
 import kotlinx.coroutines.delay
@@ -50,20 +51,23 @@ class TdLibCloudDataSource(
 
     override suspend fun searchDestinationCandidates(): List<ChatCandidate> {
         requireAuth()
-        val response = gateway.request(TdApiCloudRequests.searchChannels(destinationTitle, SEARCH_LIMIT))
-        if (response is TdApi.Error) throw CloudNetworkException("Chat search failed: ${response.message}")
+        val response = request(TdApiCloudRequests.searchChannels(destinationTitle, SEARCH_LIMIT))
+        if (response is TdApi.Error) throw classifyRequestError(response, "Chat search failed")
         val chats = response as? TdApi.Chats ?: return emptyList()
+        // The account's own id is read ONCE for the whole search, not once per candidate: a search
+        // over the limit used to issue twenty `GetMe` round trips inside the network mutex.
+        val accountId = currentUserId()
         val candidates = ArrayList<ChatCandidate>(chats.chatIds.size)
         for (chatId in chats.chatIds) {
-            candidateFor(chatId)?.let { candidates += it }
+            candidateFor(chatId, accountId)?.let { candidates += it }
         }
         return candidates
     }
 
     override suspend fun createDestination(): ChatCandidate? {
         requireAuth()
-        val response = gateway.request(TdApiCloudRequests.createChannel(destinationTitle, ""))
-        if (response is TdApi.Error) throw CloudNetworkException("Create destination failed: ${response.message}")
+        val response = request(TdApiCloudRequests.createChannel(destinationTitle, ""))
+        if (response is TdApi.Error) throw classifyRequestError(response, "Create destination failed")
         val chat = response as? TdApi.Chat ?: return null
         // We just created it, so the account is its creator and may post — confirmed by the API.
         return TdApiCloudMapper.chatToCandidate(chat, canPost = true, isOwnedByAccount = true, accessible = true)
@@ -80,8 +84,8 @@ class TdLibCloudDataSource(
         var exhausted = false
         while (collected.size < limit && pages < MAX_PAGES) {
             pages++
-            val response = gateway.request(TdApiCloudRequests.history(chatId, cursor, 0, PAGE_SIZE))
-            if (response is TdApi.Error) throw CloudNetworkException("History failed: ${response.message}")
+            val response = request(TdApiCloudRequests.history(chatId, cursor, 0, PAGE_SIZE))
+            if (response is TdApi.Error) throw classifyRequestError(response, "History failed")
             val messages = (response as? TdApi.Messages)?.messages
             if (messages.isNullOrEmpty()) {
                 exhausted = true
@@ -134,7 +138,7 @@ class TdLibCloudDataSource(
     ): CloudUploadResult {
         requireAuth()
         val content = TdApiCloudMapper.uploadContent(request)
-        val response = gateway.request(TdApiCloudRequests.sendMessage(chatId, content))
+        val response = request(TdApiCloudRequests.sendMessage(chatId, content))
         if (response is TdApi.Error) throw classifySendError(response)
         val sent = response as? TdApi.Message ?: throw CloudNetworkException("Unexpected sendMessage response")
         // TDLib accepted the send: hand the real identity to the caller *now*, before polling.
@@ -155,11 +159,18 @@ class TdLibCloudDataSource(
 
     override suspend fun confirmSend(chatId: Long, messageId: Long, mediaType: CloudMediaType): CloudUploadResult {
         requireAuth()
-        val response = gateway.request(TdApiCloudRequests.getMessage(chatId, messageId))
+        val response = request(TdApiCloudRequests.getMessage(chatId, messageId))
         if (response is TdApi.Error) {
-            // "message id invalid" (400) is the one TDLib code that proves the send never landed —
-            // anything else (network, temporary) stays retryable without clearing the pending id.
-            if (response.code == 400) throw CloudMessageGoneException("Telegram has no message $messageId: ${response.message}")
+            // "Message not found" is the one outcome that proves the send never landed — anything
+            // else (network, temporary) stays retryable without clearing the pending id.
+            //
+            // The check is on the *message*, not on the code: TDLib answers 400 for a lot of
+            // reasons ("Chat not found", "Wrong chat id", "message can't be deleted"), and treating
+            // every 400 as "the message is gone" made the caller clear the pending identity and
+            // re-send — the exact duplicate upload the pending-identity design exists to prevent.
+            if (isMessageMissing(response)) {
+                throw CloudMessageGoneException("Telegram has no message $messageId: ${response.message}")
+            }
             throw CloudNetworkException("Confirm failed: ${response.message}")
         }
         val message = response as? TdApi.Message ?: throw CloudNetworkException("Unexpected getMessage response")
@@ -178,8 +189,74 @@ class TdLibCloudDataSource(
 
     // --- internals ---------------------------------------------------------------------------
 
-    private suspend fun candidateFor(chatId: Long): ChatCandidate? {
-        val chatResponse = gateway.request(TdApiCloudRequests.getChat(chatId))
+    /**
+     * Send a TDLib request, translating the gateway's timeout into a *network* failure.
+     *
+     * [TdLibRequestTimeoutException] is an ordinary `RuntimeException`, so it used to escape every
+     * cloud path untouched and land in the repository's last-resort handler — which reported a hard
+     * "Telegram did not respond within 30 seconds" failure. A timeout is the single most common
+     * transient condition there is, and the app has a dedicated state for it
+     * ([CloudStatus.Offline]); translating it here is what makes that state reachable.
+     */
+    private suspend fun request(
+        function: TdApi.Function<*>,
+        timeoutMillis: Long = DEFAULT_REQUEST_TIMEOUT_MILLIS,
+    ): TdApi.Object = try {
+        gateway.request(function, timeoutMillis)
+    } catch (timeout: TdLibRequestTimeoutException) {
+        throw CloudNetworkException("Telegram did not respond in time: ${timeout.message}")
+    }
+
+    /**
+     * Classify an error from a *read* request (search, history, create).
+     *
+     * The send path distinguishes a permanent rejection from a transient condition
+     * ([classifySendError]); these paths used to map everything to a retryable
+     * [CloudNetworkException], so a 400/401/403 — a request that will never succeed — burned the
+     * queue's retry budget and reported "offline" for a permanently broken request.
+     */
+    private fun classifyRequestError(error: TdApi.Error, what: String): Exception =
+        if (isPermanent(error)) {
+            CloudRequestRejectedException("$what: Telegram rejected the request (${error.code}): ${error.message}")
+        } else {
+            CloudNetworkException("$what: ${error.message}")
+        }
+
+    /**
+     * Whether a TDLib error describes a condition that retrying cannot fix.
+     *
+     * 4xx (other than the flood-wait codes 420/429, which are explicitly transient) is permanent;
+     * 5xx is a server-side condition worth retrying. 499 is the code this app *manufactures* for
+     * its own request timeouts, so it is transient by construction — the auth side already says so
+     * in `TelegramError.classify`, and the two halves used to disagree about the same code.
+     */
+    private fun isPermanent(error: TdApi.Error): Boolean {
+        if (error.code == FLOOD_WAIT_CODE || error.code == TOO_MANY_REQUESTS_CODE) return false
+        if (error.code == TIMEOUT_ERROR_CODE) return false
+        return error.code < 500
+    }
+
+    /**
+     * Whether a TDLib error proves the message does not exist.
+     *
+     * Matched on the *text* rather than the code: TDLib answers 400 for several unrelated reasons
+     * ("Chat not found", "Wrong chat id", "message can't be deleted"), and treating every 400 as
+     * "the message is gone" made the backup queue clear the pending identity and upload the same
+     * file a second time.
+     */
+    private fun isMessageMissing(error: TdApi.Error): Boolean {
+        if (error.code != BAD_REQUEST_CODE) return false
+        val text = error.message.lowercase()
+        return text.contains("message") && (
+            text.contains("not found") ||
+                text.contains("invalid") ||
+                text.contains("doesn't exist") ||
+                text.contains("does not exist")
+            )
+    }
+
+    private suspend fun candidateFor(chatId: Long, accountId: Long?): ChatCandidate? {
+        val chatResponse = request(TdApiCloudRequests.getChat(chatId))
         if (chatResponse is TdApi.Error) {
             // Inaccessible/deleted → not a candidate. Logged at debug rather than swallowed: a search
             // that keeps returning nothing is otherwise indistinguishable from one that is failing.
@@ -187,8 +264,8 @@ class TdLibCloudDataSource(
             return null
         }
         val chat = chatResponse as? TdApi.Chat ?: return null
-        val member = currentUserId()?.let { userId ->
-            when (val memberResponse = gateway.request(TdApiCloudRequests.getChatMember(chatId, userId))) {
+        val member = accountId?.let { userId ->
+            when (val memberResponse = request(TdApiCloudRequests.getChatMember(chatId, userId))) {
                 is TdApi.ChatMember -> memberResponse
                 is TdApi.Error -> {
                     // Logged rather than silently cast to null: "I can see the channel but Telepic says
@@ -211,7 +288,7 @@ class TdLibCloudDataSource(
     }
 
     private suspend fun currentUserId(): Long? {
-        val me = gateway.request(TdApiCloudRequests.getMe())
+        val me = request(TdApiCloudRequests.getMe())
         return (me as? TdApi.User)?.id
     }
 
@@ -221,7 +298,7 @@ class TdLibCloudDataSource(
             TelepicLog.warn("CloudDownload", "this record carries no file id, so there is nothing to download")
             return null
         }
-        val response = gateway.request(
+        val response = request(
             TdApiCloudRequests.downloadSynchronously(fileId, priority),
             DOWNLOAD_TIMEOUT_MILLIS,
         )
@@ -269,10 +346,27 @@ class TdLibCloudDataSource(
             if (state is TdApi.MessageSendingStateFailed) {
                 throw CloudUploadRejectedException("Telegram rejected the upload: ${state.error?.message ?: "unknown"}")
             }
-            if (attempts++ >= maxSendAttempts) throw CloudNetworkException("Upload confirmation timed out")
+            if (attempts++ >= maxSendAttempts) {
+                // The message is still uploading: Telegram accepted it and has not finished
+                // delivering. That is a **pending** state, not a failure — the caller keeps the
+                // staged file (it is the file TDLib is reading right now), keeps the pending remote
+                // identity, and confirms the same message on the next pass instead of re-sending it.
+                // Reporting it as a plain network failure made the repository delete the staged copy
+                // out from under the in-flight upload, which failed every large video for good.
+                throw CloudMessagePendingException("Telegram is still uploading the message")
+            }
             delay(sendPollDelayMs)
-            val response = gateway.request(TdApiCloudRequests.getMessage(chatId, current.id))
-            if (response is TdApi.Error) throw CloudNetworkException("Confirm failed: ${response.message}")
+            val response = request(TdApiCloudRequests.getMessage(chatId, current.id))
+            if (response is TdApi.Error) {
+                // The same rule as [confirmSend]: only a "message not found" proves the send never
+                // landed. Mapping every error to a transient failure here meant a permanently gone
+                // message was retried forever, while the same error on the confirm path was treated
+                // as gone — the two halves of the same request disagreed.
+                if (isMessageMissing(response)) {
+                    throw CloudMessageGoneException("Telegram has no message ${current.id}: ${response.message}")
+                }
+                throw CloudNetworkException("Confirm failed: ${response.message}")
+            }
             current = response as? TdApi.Message ?: throw CloudNetworkException("Unexpected getMessage response")
         }
         return current
@@ -282,21 +376,25 @@ class TdLibCloudDataSource(
         // TDLib's flood wait is 420 (with "retry after N seconds"); 429/5xx are other transient
         // conditions. All of them re-run through the queue's backoff — only genuine rejections
         // (400s etc.) are permanent failures. Matches telegram/TelegramError.kt's auth-side mapping.
-        if (error.code != 420 && error.code != 429 && error.code < 500) {
-            return CloudUploadRejectedException("Telegram rejected the upload (${error.code}): ${error.message}")
+        //
+        // 499 is included in the transient set: it is the code this app *manufactures* for its own
+        // request timeouts, so treating it as permanent made a slow-but-alive Telegram look like a
+        // rejection and failed the item for good.
+        if (!isPermanent(error)) {
+            // A 420 carries Telegram's own wait. It is surfaced twice: as [retryAfterSeconds] for a caller
+            // that can honour the interval, and spelled out inside the message because the backup queue
+            // records the throwable's message (not the field) into its `lastError`, where a bare
+            // "(420)" told the user nothing about how long to wait. The code is kept in the message too,
+            // so every transient failure still names its TDLib code.
+            val retryAfter = if (error.code == FLOOD_WAIT_CODE) extractRetryAfterSeconds(error.message) else null
+            val message = if (retryAfter != null) {
+                "Telegram asked to wait ${retryAfter}s (flood wait, code ${error.code})"
+            } else {
+                "Telegram send failed (${error.code}): ${error.message}"
+            }
+            return CloudNetworkException(message, retryAfter)
         }
-        // A 420 carries Telegram's own wait. It is surfaced twice: as [retryAfterSeconds] for a caller
-        // that can honour the interval, and spelled out inside the message because the backup queue
-        // records the throwable's message (not the field) into its `lastError`, where a bare
-        // "(420)" told the user nothing about how long to wait. The code is kept in the message too,
-        // so every transient failure still names its TDLib code.
-        val retryAfter = if (error.code == 420) extractRetryAfterSeconds(error.message) else null
-        val message = if (retryAfter != null) {
-            "Telegram asked to wait ${retryAfter}s (flood wait, code ${error.code})"
-        } else {
-            "Telegram send failed (${error.code}): ${error.message}"
-        }
-        return CloudNetworkException(message, retryAfter)
+        return CloudUploadRejectedException("Telegram rejected the upload (${error.code}): ${error.message}")
     }
 
     /**
@@ -318,6 +416,27 @@ class TdLibCloudDataSource(
         const val ORIGINAL_PRIORITY = 32
         const val DEFAULT_SEND_POLL_DELAY_MS = 300L
         const val DEFAULT_MAX_SEND_ATTEMPTS = 200 // ~60s at 300ms
+
+        /** The gateway's own per-request timeout, restated so the translation below is explicit. */
+        const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 30_000L
+
+        /** TDLib's flood-wait code: "too many requests", with its own retry interval. */
+        const val FLOOD_WAIT_CODE = 420
+
+        /** TDLib's rate-limit code. */
+        const val TOO_MANY_REQUESTS_CODE = 429
+
+        /** TDLib's generic "bad request" code — not, on its own, proof of anything. */
+        const val BAD_REQUEST_CODE = 400
+
+        /**
+         * The code this app manufactures for its own request timeouts.
+         *
+         * `TelegramError.classify` on the auth side already treats 499 as a network condition;
+         * the cloud side used to read it as a permanent rejection, so a slow-but-alive Telegram
+         * failed the item for good. It is transient by construction.
+         */
+        const val TIMEOUT_ERROR_CODE = 499
 
         /**
          * A synchronous TDLib download blocks until the file is fully transferred, so it must not be

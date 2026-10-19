@@ -77,4 +77,21 @@ data class BackupProcessSummary(
      * re-triggers the queue instead (see `TelepicApplication`), plus discovery and the Backup Center.
      */
     val blockedOnAuth: Boolean get() = waitingForAuth > 0 && uploaded == 0 && waiting == 0
+
+    /**
+     * Combine two batches.
+     *
+     * A worker run drains the queue in several batches, and the run's own outcome has to be decided
+     * on the **total**: a run that uploaded 40 items and then hit an auth-parked row is not
+     * "blocked on auth", and a run that uploaded nothing but left a waiting row is.
+     */
+    operator fun plus(other: BackupProcessSummary): BackupProcessSummary = BackupProcessSummary(
+        uploaded = uploaded + other.uploaded,
+        waiting = waiting + other.waiting,
+        failed = failed + other.failed,
+        processed = processed + other.processed,
+        waitingForAuth = waitingForAuth + other.waitingForAuth,
+        superseded = superseded + other.superseded,
+        recognized = recognized + other.recognized,
+    )
 }

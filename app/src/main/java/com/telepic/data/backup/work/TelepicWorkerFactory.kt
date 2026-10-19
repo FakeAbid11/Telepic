@@ -17,6 +17,13 @@ import com.telepic.data.backup.BackupRepository
 class TelepicWorkerFactory(
     private val backupRepository: () -> BackupRepository,
     private val backupCoordinator: () -> BackupCoordinator,
+    /**
+     * The scheduler the worker uses to hand the remainder of a long drain to a fresh run.
+     *
+     * Optional: a worker without one still works, it just falls back to `Result.retry()` — correct,
+     * but it inherits the exponential backoff the continuation exists to avoid.
+     */
+    private val backupScheduler: () -> BackupWorkScheduler? = { null },
 ) : WorkerFactory() {
 
     override fun createWorker(
@@ -25,7 +32,8 @@ class TelepicWorkerFactory(
         workerParameters: WorkerParameters,
     ): ListenableWorker? {
         return when (workerClassName) {
-            BackupWorker::class.java.name -> BackupWorker(appContext, workerParameters, backupRepository())
+            BackupWorker::class.java.name ->
+                BackupWorker(appContext, workerParameters, backupRepository(), backupScheduler())
             BackupDiscoveryWorker::class.java.name ->
                 BackupDiscoveryWorker(appContext, workerParameters, backupCoordinator())
             else -> null

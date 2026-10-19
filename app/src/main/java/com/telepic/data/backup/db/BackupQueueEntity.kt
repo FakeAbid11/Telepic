@@ -14,7 +14,10 @@ import androidx.room.PrimaryKey
  * [pendingTelegramChatId] / [pendingTelegramMessageId] capture the remote identity the moment TDLib
  * **accepts** a send (before delivery confirms). They exist so a run that times out or dies can
  * confirm the already-in-flight message on the next pass instead of re-sending it and duplicating
- * the post. Cleared by confirmation, failure resolution, or manual re-queue.
+ * the post. Cleared by confirmation, or by a **permanent** failure resolution — a rejected message
+ * will never be delivered, so keeping its id would make every later attempt confirm the dead
+ * message and fail again. A manual re-queue deliberately *keeps* the id: a cancelled row may still
+ * have a send in flight on Telegram's side, and confirming it is what avoids a duplicate upload.
  *
  * Phase 7 fills in the previously reserved [contentHash] (lowercase hex SHA-256) as the content
  * identity, with [contentSizeBytes] as a cheap consistency check and [hashedAt] recording when the

@@ -42,6 +42,20 @@ interface TdLibClientGateway {
 
     /** Close the client (idempotent). */
     fun close()
+
+    /**
+     * Drop the current client so the next [open] creates a **fresh** one.
+     *
+     * TDLib closes its client when the session reaches `AuthorizationStateClosed` — which is exactly
+     * what a sign-out produces — and the Java binding unregisters the update handler for that client
+     * id at the same moment. The session is therefore undriveable afterwards: no further update ever
+     * arrives, and the native client cannot be released from Java. The only way forward is a new
+     * client, and that is what this enables.
+     *
+     * Deliberately **not** [close]: this is a recovery, not a terminal shutdown. The default body is a
+     * no-op so a fake gateway does not have to implement it.
+     */
+    fun reset() {}
 }
 
 /**
@@ -125,18 +139,48 @@ class TdLibClientGatewayImpl(
             TelepicLog.debug("TdLibGateway", "explicit tdjni load failed; relying on Client's static initializer", link)
         }
         client = Client.create(
-            { update -> _updates.tryEmit(update) }, // update handler
+            Client.ResultHandler { update -> _updates.tryEmit(update) }, // update handler
             // TDLib reports a per-update failure and a backend-internal exception through these
             // callbacks; they must never crash the app, but swallowing them silently left a device-only
             // TDLib failure with no trace. Debug-gated and message-only — no request/response payload,
             // which can carry private media or credentials, is ever logged.
-            { exception ->
+            Client.ExceptionHandler { exception ->
                 TelepicLog.debug("TdLibGateway", "TDLib update-processing exception", exception)
             },
-            { exception ->
+            Client.ExceptionHandler { exception ->
+                // The *default* exception handler is the fallback for a request that was sent without
+                // its own handler. It is debug-gated on purpose — it is a rare, per-request failure and
+                // a release log full of stack traces helps nobody — but the request path below now
+                // always installs its own handler, so this only ever sees a backend-internal fault.
                 TelepicLog.debug("TdLibGateway", "TDLib default exception", exception)
             },
         )
+        // Route TDLib's own logger through the app's logging seam instead of letting the native
+        // default write straight to logcat. Verbosity 0 is "fatal errors only", so this is quiet in
+        // normal operation and still leaves a trace when TDLib itself fails. The message is truncated
+        // because TDLib log lines can be long, and it is debug-gated for the same reason the rest of
+        // the seam is.
+        Client.setLogMessageHandler(
+            TDLIB_LOG_VERBOSITY,
+            Client.LogMessageHandler { _, message ->
+                TelepicLog.debug("TdLibGateway", "TDLib: ${message.take(MAX_LOG_MESSAGE_CHARS)}")
+            },
+        )
+    }
+
+    /**
+     * Discard the closed client so a fresh one can be created.
+     *
+     * TDLib has already torn the client down by the time this is called (it reaches
+     * `AuthorizationStateClosed` on its own), and the binding has unregistered its update handler —
+     * so the reference is the only thing left holding a dead client. Dropping it lets the next
+     * [open] create a new one, which is what makes signing in again possible after a sign-out.
+     *
+     * [closed] is deliberately *not* set: [close] is the terminal shutdown, this is a recovery.
+     */
+    @Synchronized
+    override fun reset() {
+        client = null
     }
 
     override suspend fun request(request: TdApi.Function<*>): TdApi.Object =
@@ -147,9 +191,21 @@ class TdLibClientGatewayImpl(
         return try {
             withTimeout(timeoutMillis) {
                 suspendCancellableCoroutine { continuation ->
-                    active.send(request) { result ->
-                        if (continuation.isActive) continuation.resume(result)
-                    }
+                    // The three-argument overload is the one that matters here. With the two-argument
+                    // form the binding registers no per-request exception handler, so a request-level
+                    // failure falls back to the *default* handler — which is debug-gated, i.e. silent
+                    // in a release build. The caller then waited out the full timeout and was told
+                    // "Telegram did not respond" with no reason at all. With an explicit handler the
+                    // real cause reaches the caller immediately.
+                    active.send(
+                        request,
+                        Client.ResultHandler { result ->
+                            if (continuation.isActive) continuation.resume(result)
+                        },
+                        Client.ExceptionHandler { throwable ->
+                            if (continuation.isActive) continuation.resumeWithException(throwable)
+                        },
+                    )
                 }
             }
         } catch (timeout: TimeoutCancellationException) {
@@ -171,5 +227,11 @@ class TdLibClientGatewayImpl(
 
     private companion object {
         const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 30_000L
+
+        /** TDLib's own log level: 0 is "fatal errors only". */
+        const val TDLIB_LOG_VERBOSITY = 0
+
+        /** A TDLib log line is truncated to this many characters before it reaches the log seam. */
+        const val MAX_LOG_MESSAGE_CHARS = 200
     }
 }

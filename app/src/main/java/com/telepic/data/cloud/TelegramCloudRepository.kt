@@ -57,6 +57,16 @@ class CloudDestinationInvalidException(val reason: String) : Exception(reason)
 class CloudUploadRejectedException(message: String) : Exception(message)
 
 /**
+ * Thrown by a [CloudDataSource] when Telegram permanently rejects a *read* request (a bad search, a
+ * history request the account is not allowed to make, a chat that no longer exists).
+ *
+ * Distinct from [CloudNetworkException] on purpose: a 4xx will never succeed on a retry, so
+ * reporting it as "offline" sent the user chasing a network problem that was not the cause, and
+ * burned the backup queue's retry budget on a request that could never work.
+ */
+class CloudRequestRejectedException(message: String) : Exception(message)
+
+/**
  * A send TDLib accepted but has not finished delivering yet. Distinct from a failure: the message
  * exists and is still uploading, so the caller must wait — never burn the retry budget or re-send.
  */
@@ -194,6 +204,10 @@ class TelegramCloudRepository(
                     if (dbMutex.withLock { manifestDao.count() } == 0) CloudStatus.Empty else CloudStatus.Ready
             } catch (network: CloudNetworkException) {
                 _status.value = CloudStatus.Offline
+            } catch (rejected: CloudRequestRejectedException) {
+                // A permanently rejected request is not "offline" — saying so sent the user chasing
+                // a network problem that was not the cause.
+                _status.value = CloudStatus.Failed(safeMessage(rejected))
             } catch (invalid: CloudDestinationInvalidException) {
                 _status.value = CloudStatus.DestinationInvalid(invalid.reason)
             } catch (cancellation: CancellationException) {

@@ -578,10 +578,11 @@ class DefaultBackupRepositoryTest {
         cloud.uploadError = null
         cloud.confirmError = com.telepic.data.cloud.CloudMessagePendingException()
 
-        // Just under the cap: each parked confirmation adds a wait without failing the row.
-        repeat(DefaultBackupRepository.MAX_PENDING_WAIT_ATTEMPTS - 1) { r.processPendingWork(maxItems = 1) }
+        // Up to the cap: each parked confirmation adds a wait without failing the row. The cap is
+        // the number of waits that are *granted*, so the counter reaches it exactly.
+        repeat(DefaultBackupRepository.MAX_PENDING_WAIT_ATTEMPTS) { r.processPendingWork(maxItems = 1) }
         var row = db.backupQueueDao().observeAll().first().first()
-        assertEquals(DefaultBackupRepository.MAX_PENDING_WAIT_ATTEMPTS - 1, row.pendingWaitAttempts)
+        assertEquals(DefaultBackupRepository.MAX_PENDING_WAIT_ATTEMPTS, row.pendingWaitAttempts)
         assertEquals(1, row.retryCount)
 
         // The cap boundary: one confirmation past the cap is a bounded transient failure — the

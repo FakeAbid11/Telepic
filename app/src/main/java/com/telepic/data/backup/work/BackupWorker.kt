@@ -11,8 +11,10 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.telepic.R
+import com.telepic.data.backup.BackupProcessSummary
 import com.telepic.data.backup.BackupRepository
 import com.telepic.diagnostics.TelepicLog
+import com.telepic.domain.backup.BackupQueueStats
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 
@@ -30,6 +32,13 @@ class BackupWorker(
     appContext: Context,
     params: WorkerParameters,
     private val repository: BackupRepository,
+    /**
+     * Used only to hand the remainder of a long drain to a fresh run.
+     *
+     * Optional so the worker can be built without one (the tests do); when it is missing the worker
+     * falls back to `Result.retry()`, which is correct but slower.
+     */
+    private val scheduler: BackupWorkScheduler? = null,
 ) : CoroutineWorker(appContext, params) {
 
     /**
@@ -62,12 +71,60 @@ class BackupWorker(
             // "Uploading" until the *next* run's own recovery sweep — which may be a whole backoff
             // period away. Returning those rows to QUEUED now keeps the persisted state honest about
             // what actually happened. Best-effort: a failure here must not replace the retry.
-            runCatching { repository.recoverInterruptedWork() }
-                .onFailure {
-                    TelepicLog.warn("BackupWorker", "could not recover interrupted rows after a failed run", it)
-                }
+            recoverInterruptedRows()
             Result.retry()
         }
+
+    /**
+     * Return rows a failed run left mid-flight to QUEUED.
+     *
+     * Cancellation is rethrown rather than swallowed: a stopped worker must stop, and the
+     * `runCatching` that used to wrap this call turned a stop into a silent "the recovery failed"
+     * while the worker carried on uploading.
+     */
+    private suspend fun recoverInterruptedRows() {
+        try {
+            repository.recoverInterruptedWork()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("BackupWorker", "could not recover interrupted rows after a failed run", throwable)
+        }
+    }
+
+    /**
+     * The queue's current counts, or null when they cannot be read.
+     *
+     * A cancelled read is rethrown: the worker's scope is going away and a fallback of "zero"
+     * would silently skip the foreground promotion.
+     */
+    private suspend fun readStats(): BackupQueueStats? =
+        try {
+            repository.observeStats().first()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("BackupWorker", "the queue counts could not be read", throwable)
+            null
+        }
+
+    /**
+     * Promote the worker to the foreground, best-effort.
+     *
+     * A denied notification permission or an Android 14 background-FGS refusal must not fail the
+     * upload — but it used to be invisible, which left the run with no "backup in progress"
+     * affordance anywhere outside the app. Cancellation is rethrown: a stop request has to stop
+     * the worker, and swallowing it made the run carry on uploading after being told to stop.
+     */
+    private suspend fun setForegroundSafely(notification: Notification) {
+        try {
+            setForeground(foregroundInfo(notification))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("BackupWorker", "foreground notification unavailable; the upload run continues", throwable)
+        }
+    }
 
     private suspend fun runPass(): Result {
         val repo = repository
@@ -83,65 +140,78 @@ class BackupWorker(
 
         // Promote to foreground BEFORE the upload pass, and only when the queue actually has
         // something to do: the notification has to cover the slow part (TDLib sends), and an empty
-        // tick must not flash a "Preparing your backup…" line every 12 hours. It stays best-effort —
-        // a denied notification permission or an Android 14 background-FGS refusal is swallowed here,
-        // the upload itself continues, and the Backup Center remains the in-app source of truth.
-        val pending = runCatching { repo.observeStats().first() }
-            .getOrNull()
-            ?.let { it.queued + it.uploading }
-            ?: 0
+        // tick must not flash a "Preparing your backup…" line every 12 hours.
+        val pending = readStats()?.let { it.queued + it.uploading } ?: 0
         if (pending > 0) {
-            runCatching { setForeground(foregroundInfo(buildNotification(uploaded = 0, processed = 0))) }
-                .onFailure {
-                    // Best-effort by design, but it used to be invisible: a denied notification
-                    // permission or an Android 14 background-FGS refusal left the run with no
-                    // "backup in progress" affordance anywhere outside the app.
-                    TelepicLog.warn("BackupWorker", "foreground notification unavailable; the upload run continues", it)
-                }
+            setForegroundSafely(buildNotification(uploaded = 0, processed = 0))
         }
 
-        // One pass over the queue: processPendingWork attempts each actionable item at most once, so
-        // the retry budget of a transiently failing item cannot be burned repeatedly inside a single
-        // run — WorkManager's backoff, not a tighter loop here, provides the retry delay. State is
-        // aggregated from that one summary, so an empty tail can never overwrite an earlier waiting
-        // condition and silently report success.
-        val summary = repo.processPendingWork(maxItems = MAX_ITEMS_PER_RUN)
-
-        if (summary.processed > 0) {
-            // Same notification id, so this updates the in-place foreground line with real counts
-            // rather than posting a second one WorkManager does not own.
-            runCatching { setForeground(foregroundInfo(buildNotification(summary.uploaded, summary.processed))) }
-                .onFailure { TelepicLog.warn("BackupWorker", "could not update the backup notification", it) }
-        }
-
-        // Nothing a re-run can fix: the rows are parked because there is no Telegram session to upload
-        // to, and `markWaiting` deliberately spends no retry budget on them so they resume intact.
-        // Returning success here instead of retrying ends what was previously an unbounded loop — every
-        // backoff period, forever, each time with a foreground-service notification. What resumes the
-        // queue instead is the session actually coming back (see `TelepicApplication`), a new item being
-        // discovered, or the user pressing Start in the Backup Center.
-        if (summary.blockedOnAuth) {
-            TelepicLog.warn("BackupWorker", "${summary.waitingForAuth} item(s) parked: no Telegram session to upload to")
-            return Result.success()
-        }
-
-        // Retryable (waiting) work asks WorkManager to run again after backoff; a drained or purely
-        // permanently-failed queue is a normal success. (A stop request cancels this coroutine and
-        // WorkManager discards whatever result it would have returned — there is no `isStopped`
-        // check to make here.)
+        // Drain the queue in batches **inside this run**.
         //
-        // The second condition is what makes a library longer than one batch actually finish. A
-        // batch that filled up leaves rows still QUEUED, and **nothing else re-schedules them**: the
-        // 12h discovery tick only calls `schedule()` when it enqueues *new* media
-        // (BackupCoordinator.syncFromPreference), and re-scanning an already-queued library enqueues
-        // nothing — every item resolves to Pending, not queued. Reporting success here therefore
-        // ended a first backup after one batch and left the rest waiting for the user to open the
-        // Backup Center. Asking for another run instead keeps the queue draining unattended.
-        val stillActive = runCatching { repo.observeStats().first() }
-            .getOrNull()
-            ?.activeCount
-            ?: 0
-        return if (summary.hasRetryableWork || stillActive > 0) Result.retry() else Result.success()
+        // The alternative — returning `Result.retry()` and letting WorkManager re-run the same
+        // WorkSpec — inherits WorkManager's exponential backoff, which grows 10s → 20s → 40s → …
+        // and pins at the five-hour cap. A ten-thousand-item library needs a hundred batches, so
+        // the drain took about *twenty days*. The backoff is for an item that keeps failing, not
+        // for a queue that simply has more items than one batch holds.
+        var total = BackupProcessSummary()
+        var batches = 0
+        while (true) {
+            val summary = repo.processPendingWork(maxItems = MAX_ITEMS_PER_RUN)
+            total += summary
+            if (summary.processed > 0) {
+                setForegroundSafely(buildNotification(uploaded = total.uploaded, processed = total.processed))
+            }
+            if (summary.blockedOnAuth) {
+                // Nothing a re-run can fix: the rows are parked because there is no Telegram session
+                // to upload to, and `markWaiting` deliberately spends no retry budget on them so they
+                // resume intact. Returning success here instead of retrying ends what was previously
+                // an unbounded loop — every backoff period, forever, each time with a
+                // foreground-service notification. What resumes the queue instead is the session
+                // actually coming back (see `TelepicApplication`), a new item being discovered, or
+                // the user pressing Start in the Backup Center.
+                TelepicLog.warn("BackupWorker", "${total.waitingForAuth} item(s) parked: no Telegram session to upload to")
+                return Result.success()
+            }
+            // This batch found nothing actionable: the drain is complete.
+            if (summary.processed == 0) break
+            batches++
+            if (batches >= MAX_BATCHES_PER_RUN) {
+                // The batch cap was reached with work still queued. The rest goes to a fresh run
+                // rather than inheriting this run's (now large) backoff.
+                TelepicLog.warn(
+                    "BackupWorker",
+                    "batch cap reached with work still queued; handing the remainder to a fresh run",
+                )
+                return continueInFreshRun()
+            }
+        }
+
+        // Retryable (waiting) work asks WorkManager to run again after backoff — and this is the
+        // case the backoff is *for*: an item that failed for a transient reason. A drained or
+        // purely permanently-failed queue is a normal success. (A stop request cancels this
+        // coroutine and WorkManager discards whatever result it would have returned — there is no
+        // `isStopped` check to make here.)
+        if (total.hasRetryableWork) return Result.retry()
+        return Result.success()
+    }
+
+    /**
+     * Hand the remainder of the queue to a fresh run.
+     *
+     * Without a scheduler the only thing left is `Result.retry()`, which is correct but slow: the
+     * next run inherits this one's backoff. With one, a continuation is a new spec and starts fresh.
+     */
+    private suspend fun continueInFreshRun(): Result {
+        val scheduler = scheduler ?: return Result.retry()
+        return try {
+            scheduler.scheduleContinuation()
+            Result.success()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("BackupWorker", "could not schedule the next batch; asking WorkManager to retry", throwable)
+            Result.retry()
+        }
     }
 
     private fun buildNotification(uploaded: Int, processed: Int): Notification {
@@ -196,11 +266,20 @@ class BackupWorker(
 
         /**
          * Upload attempts per run. Deliberately generous: `processPendingWork` already attempts each
-         * actionable item **at most once** per call (its own `attempted` set), so a larger batch
-         * cannot burn a transiently-failing item's retry budget — the reason the batch is bounded at
-         * all is run length, not retry safety. At 25, a library of a few hundred items needed dozens
-         * of runs and the retry backoff grew past the point of usefulness between them.
+         * actionable item **at most once** per call, so a larger batch cannot burn a
+         * transiently-failing item's retry budget — the reason the batch is bounded at all is run
+         * length, not retry safety.
          */
         const val MAX_ITEMS_PER_RUN = 100
+
+        /**
+         * Batches drained inside a single run.
+         *
+         * A run is a foreground job, so it may take as long as the uploading takes; the cap is
+         * only there to bound one foreground notification's lifetime. When it is reached the rest of
+         * the queue goes to a fresh run (see `continueInFreshRun`), so a long library still
+         * finishes — without any of it waiting on an exponential backoff.
+         */
+        const val MAX_BATCHES_PER_RUN = 20
     }
 }

@@ -125,6 +125,14 @@ interface AppContainer {
     val backupStatusRepository: BackupStatusRepository
     val backupCoordinator: BackupCoordinator
     val backupWorkScheduler: BackupWorkScheduler
+
+    /**
+     * Delete the staged copies a killed upload left behind.
+     *
+     * App-scoped rather than worker-scoped: the orphan is created by a process that *died*, so the
+     * next launch is the first moment anybody can notice it. Called once at startup.
+     */
+    suspend fun sweepBackupStaging()
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -375,6 +383,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val backupWorkScheduler: BackupWorkScheduler by lazy {
         WorkManagerBackupScheduler(appContext, settingsRepository)
     }
+
+    override suspend fun sweepBackupStaging() = backupStager.sweep()
 
     override val backupCoordinator: BackupCoordinator by lazy {
         DefaultBackupCoordinator(

@@ -56,6 +56,16 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
         // Honor the persisted backup preference off the main thread: enqueue eligible media when
         // the user chose BACKUP_ALL and schedule a network-constrained run. No-op for NOT_NOW.
         appScope.launch { container.backupCoordinator.syncFromPreference() }
+        // Remove the staged copies a killed upload left behind. The per-attempt cleanup lives in a
+        // `finally` that a process death skips, so a full-size copy of the media could sit in the
+        // cache directory forever. The sweep only touches files no upload can still be using.
+        appScope.launch {
+            try {
+                container.sweepBackupStaging()
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("BackupStaging", "could not sweep the staging directory", throwable)
+            }
+        }
         // What resumes an auth-parked queue. [BackupWorker] deliberately stops retrying when its only
         // outcome was "there is no Telegram session", so the session coming back has to hand the parked
         // rows over itself — otherwise signing in later would leave them waiting for the next 12h
@@ -120,6 +130,10 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
                 TelepicWorkerFactory(
                     backupRepository = { container.backupRepository },
                     backupCoordinator = { container.backupCoordinator },
+                    // The worker hands the remainder of a long drain to a fresh run through this, so a
+                    // big library is not throttled by WorkManager's exponential backoff between
+                    // batches.
+                    backupScheduler = { container.backupWorkScheduler },
                 ),
             )
             .build()

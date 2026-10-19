@@ -23,6 +23,18 @@ interface BackupStager {
      * coroutine cancellation propagates, so a stopped worker abandons the copy.
      */
     suspend fun stage(localMediaId: String, contentUri: String): StagedFile?
+
+    /**
+     * Delete the staged copies that no upload can still be using.
+     *
+     * A process killed between "staged the file" and "upload confirmed" leaves a full-size copy of
+     * the media in the staging directory, and nothing else ever removed it: the per-attempt cleanup
+     * runs in a `finally` that a kill skips. A 4 GB video left 4 GB behind, unbounded across
+     * items.
+     *
+     * The default is a no-op so a test fake does not have to implement it.
+     */
+    suspend fun sweep() = Unit
 }
 
 /** A staged file handle; [cleanup] must run in a finally block after every upload attempt. */
@@ -79,6 +91,30 @@ class MediaStoreBackupStager(
         }
     }
 
+    /**
+     * Delete the staged copies no upload can still be using.
+     *
+     * Only files older than [STALE_STAGING_AGE_MILLIS] are removed. The age is what makes this
+     * safe to run at startup: a worker that is staging right now must not have its copy deleted
+     * underneath it, and an upload that is still in flight must not lose the file TDLib is
+     * reading. Six hours is far longer than any real upload and far shorter than the space an
+     * orphaned copy of a large video wastes.
+     */
+    override suspend fun sweep() = withContext(Dispatchers.IO) {
+        if (!stagingDir.isDirectory) return@withContext
+        val files = stagingDir.listFiles() ?: return@withContext
+        val cutoff = System.currentTimeMillis() - STALE_STAGING_AGE_MILLIS
+        for (file in files) {
+            if (!file.isFile) continue
+            if (file.lastModified() >= cutoff) continue
+            if (file.delete()) {
+                TelepicLog.debug("BackupStager", "removed an orphaned staging copy")
+            } else {
+                TelepicLog.warn("BackupStager", "an orphaned staging copy could not be removed")
+            }
+        }
+    }
+
     private fun queryRowCount(uri: Uri): Boolean = try {
         val cursor: Cursor? = contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)
         cursor?.use { it.count > 0 } ?: false
@@ -97,5 +133,8 @@ class MediaStoreBackupStager(
 
     private companion object {
         const val STREAM_BUFFER_BYTES = 64 * 1024
+
+        /** How long a staged copy is left alone before the sweep may remove it. */
+        const val STALE_STAGING_AGE_MILLIS = 6L * 60 * 60 * 1000
     }
 }

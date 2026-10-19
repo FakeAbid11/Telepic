@@ -68,12 +68,18 @@ interface BackupQueueDao {
     )
     suspend fun findActiveByContentHash(contentHash: String, sizeBytes: Long): BackupQueueEntity?
 
-    /** The next items a worker may act on, oldest first, respecting the retry limit. */
+    /**
+     * The next items a worker may act on, oldest first, respecting the retry limit.
+     *
+     * `WAITING_FOR_AUTH` rows are pushed to the back: they are the oldest (they were queued first)
+     * and they are no-ops while the session is missing, so a batch of them consumed the whole run and
+     * the real `QUEUED` work was never reached. Everything else keeps its oldest-first order.
+     */
     @Query(
         "SELECT * FROM backup_queue " +
             "WHERE state IN ('QUEUED', 'WAITING_FOR_NETWORK', 'WAITING_FOR_AUTH') " +
             "AND retryCount < :maxRetries " +
-            "ORDER BY createdAt ASC LIMIT :limit",
+            "ORDER BY CASE state WHEN 'WAITING_FOR_AUTH' THEN 1 ELSE 0 END, createdAt ASC LIMIT :limit",
     )
     suspend fun fetchActionable(maxRetries: Int, limit: Int): List<BackupQueueEntity>
 
@@ -151,9 +157,19 @@ interface BackupQueueDao {
     @Query("UPDATE backup_queue SET pendingWaitAttempts = :attempts WHERE id = :id")
     suspend fun setPendingWaitAttempts(id: Long, attempts: Int?)
 
+    /**
+     * Park a row in a waiting state.
+     *
+     * The target state is constrained by the query itself: only the three waiting states are
+     * accepted, so a mistyped or corrupted name writes **nothing** instead of putting a row into a
+     * state the mapping does not know (which used to be reported as `NOT_BACKED_UP`, i.e. a silent
+     * loss of the row's real status).
+     */
     @Query(
         "UPDATE backup_queue SET state = :state, updatedAt = :now " +
-            "WHERE id = :id AND state NOT IN ('BACKED_UP', 'CANCELLED', 'FAILED')",
+            "WHERE id = :id " +
+            "AND :state IN ('QUEUED', 'WAITING_FOR_NETWORK', 'WAITING_FOR_AUTH') " +
+            "AND state NOT IN ('BACKED_UP', 'CANCELLED', 'FAILED')",
     )
     suspend fun markWaiting(id: Long, state: String, now: Long): Int
 
@@ -164,9 +180,18 @@ interface BackupQueueDao {
     )
     suspend fun recordTransientFailure(id: Long, error: String, now: Long): Int
 
-    /** Record a permanent failure (not retried). */
+    /**
+     * Record a permanent failure (not retried).
+     *
+     * The pending remote identity is cleared in the same statement. A permanent failure means the
+     * send was **rejected** — Telegram will never deliver that message — so keeping the pending id
+     * made the next attempt take the *confirm* branch, find the dead message, fail again, and land
+     * straight back in FAILED. The row could then never be uploaded again, no matter how many times
+     * the user pressed Retry.
+     */
     @Query(
-        "UPDATE backup_queue SET state = 'FAILED', lastError = :error, updatedAt = :now " +
+        "UPDATE backup_queue SET state = 'FAILED', lastError = :error, updatedAt = :now, " +
+            "pendingTelegramChatId = NULL, pendingTelegramMessageId = NULL " +
             "WHERE id = :id AND state NOT IN ('BACKED_UP', 'CANCELLED', 'FAILED')",
     )
     suspend fun markFailed(id: Long, error: String, now: Long): Int
@@ -178,10 +203,18 @@ interface BackupQueueDao {
      * so an item stuck at `retryCount >= maxRetries` can never be permanently ineligible after the
      * UI reports it was retried. Only BACKED_UP rows can never be re-queued — a confirmed upload is
      * done, and re-queueing it would duplicate the remote message.
+     *
+     * A row that is *mid-flight* is left alone: resetting it would wipe the retry budget of a send
+     * that is still running, and the in-flight `markBackedUp` would then land on a row the user
+     * had already re-queued.
+     *
+     * The pending remote identity is deliberately **kept**: a cancelled row may still have a send in
+     * flight on Telegram's side, and confirming that message is what avoids a duplicate upload.
+     * A permanently failed row has already had its pending id cleared by [markFailed].
      */
     @Query(
         "UPDATE backup_queue SET state = 'QUEUED', retryCount = 0, lastError = NULL, updatedAt = :now " +
-            "WHERE id = :id AND state != 'BACKED_UP'",
+            "WHERE id = :id AND state NOT IN ('BACKED_UP', 'PREPARING', 'UPLOADING')",
     )
     suspend fun requeueForRetry(id: Long, now: Long): Int
 

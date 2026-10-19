@@ -10,6 +10,7 @@ import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.spec.GCMParameterSpec
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -24,24 +25,72 @@ interface SecureTdLibKeyProvider {
     suspend fun getOrCreate(): ByteArray
 }
 
-class KeystoreTdLibKeyProvider(context: Context) : SecureTdLibKeyProvider {
+class KeystoreTdLibKeyProvider(
+    context: Context,
+    /**
+     * Where TDLib keeps its local session cache.
+     *
+     * Needed to answer one question the provider cannot answer alone: is the key *missing*, or was
+     * it merely unreadable? A key that is lost while a session cache exists is fatal (TDLib would
+     * refuse to open a database encrypted with a different key), and the cache has to be discarded
+     * so the user can sign in again. A key that is lost while no cache exists costs nothing.
+     */
+    private val databaseDir: File = TelegramPaths.databaseDir(context),
+) : SecureTdLibKeyProvider {
 
     private val appContext = context.applicationContext
-    private val keyFile = File(appContext.filesDir, WRAPPED_FILE)
+
+    /**
+     * The wrapped key blob.
+     *
+     * `noBackupFilesDir`, not `filesDir`: the Android backup and device-to-device transfer include
+     * `filesDir`, so a blob written there was uploaded to the user's cloud backup — where it is
+     * useless (the Keystore key that unwraps it is never backed up) and merely a liability. The
+     * TDLib database it protects already lives in `noBackupFilesDir`; the key belongs beside it.
+     */
+    private val keyFile = File(appContext.noBackupFilesDir, WRAPPED_FILE)
 
     override suspend fun getOrCreate(): ByteArray = withContext(Dispatchers.IO) {
         if (keyFile.exists()) {
-            runCatching { unwrap(keyFile.readBytes()) }.getOrElse { throwable ->
-                // Wrapped blob unreadable — fall through and (re)generate. If the database already
-                // exists with a different key TDLib will report it; surfaced as an init error. Logged
-                // because this is the exact fork that loses an existing session: without the line, a
-                // corrupt blob and a first-ever run are indistinguishable from the outside.
-                TelepicLog.warn("TelegramKey", "the stored TDLib database key was unreadable; regenerating", throwable)
-                generateAndStore()
+            try {
+                return@withContext unwrap(keyFile.readBytes())
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                // The blob could not be unwrapped. The most common cause is the Android Keystore
+                // having invalidated the wrapping key (a screen-lock change, a secure-hardware
+                // reset); the second is a corrupted blob.
+                //
+                // The old behaviour regenerated the key in every case, which produced a *different*
+                // key for a database still encrypted with the old one — TDLib then refused to open
+                // it and the user's Telegram session was destroyed, with only a generic
+                // "could not be securely initialised" to show for it.
+                //
+                // What is actually lost is a *cache* of server-side data, not the account, so the
+                // local cache is discarded and a fresh key generated. The user signs in again; the
+                // alternative is a permanently broken app.
+                TelepicLog.error(
+                    "TelegramKey",
+                    "the stored TDLib database key could not be read; the local session cache is being reset",
+                    throwable,
+                )
+                discardSessionCache()
+                return@withContext generateAndStore()
             }
-        } else {
-            generateAndStore()
         }
+
+        // No blob at all. If a session cache exists anyway, the key is simply gone (the app data
+        // was partially wiped, or the blob was deleted) and the same recovery applies — a fresh key
+        // over a database encrypted with the old one would never open.
+        if (hasSessionCache()) {
+            TelepicLog.error(
+                "TelegramKey",
+                "the TDLib database key is missing but a local session cache exists; the cache is being reset",
+                null,
+            )
+            discardSessionCache()
+        }
+        generateAndStore()
     }
 
     /**
@@ -65,6 +114,7 @@ class KeystoreTdLibKeyProvider(context: Context) : SecureTdLibKeyProvider {
         }
         val iv = cipher.iv
         val ciphertext = cipher.doFinal(plaintext)
+        keyFile.parentFile?.mkdirs()
         val tmp = File(keyFile.parentFile, "${keyFile.name}.tmp")
         tmp.writeBytes(iv + ciphertext)
         if (!tmp.renameTo(keyFile)) {
@@ -80,7 +130,7 @@ class KeystoreTdLibKeyProvider(context: Context) : SecureTdLibKeyProvider {
 
     private fun unwrap(blob: ByteArray): ByteArray {
         // Checked rather than sliced blindly: copyOfRange on a short blob throws
-        // IndexOutOfBoundsException, which the caller's runCatching would treat as "unreadable" and
+        // IndexOutOfBoundsException, which the caller's catch would treat as "unreadable" and
         // answer by regenerating the key. Failing here with the real reason keeps that decision
         // deliberate instead of accidental.
         if (blob.size <= IV_LENGTH_BYTES) throw IOException("Wrapped TDLib key blob is truncated")
@@ -90,6 +140,35 @@ class KeystoreTdLibKeyProvider(context: Context) : SecureTdLibKeyProvider {
             init(Cipher.DECRYPT_MODE, keystoreKey(), GCMParameterSpec(TAG_LENGTH_BITS, iv))
         }
         return cipher.doFinal(ciphertext)
+    }
+
+    /**
+     * Whether TDLib's local session cache holds anything.
+     *
+     * "Holds anything" rather than "the directory exists": the session manager creates the directory
+     * before it asks for the key, so an empty directory proves nothing about whether a database was
+     * ever written.
+     */
+    private fun hasSessionCache(): Boolean {
+        if (!databaseDir.isDirectory) return false
+        val entries = databaseDir.listFiles() ?: return false
+        return entries.any { it.isFile || (it.isDirectory && it.list()?.isNotEmpty() == true) }
+    }
+
+    /**
+     * Delete the local TDLib cache so a fresh key can open a fresh database.
+     *
+     * This is a *cache* of server-side data (the message index, downloaded files), not the account:
+     * the account lives on Telegram's servers and the session is re-established by signing in
+     * again. Deleting it is the only way out of "the database is encrypted with a key that no
+     * longer exists" — the alternative is an app that can never sign in again.
+     */
+    private fun discardSessionCache() {
+        if (!databaseDir.exists()) return
+        val deleted = runCatching { databaseDir.deleteRecursively() }.getOrDefault(false)
+        if (!deleted) {
+            TelepicLog.warn("TelegramKey", "the local Telegram session cache could not be removed")
+        }
     }
 
     private fun keystoreKey(): java.security.Key {

@@ -205,7 +205,7 @@ class DefaultBackupRepository(
                 // resumes the count instead of granting the stuck send another full cap of waits.
                 // Access is serialized by [processMutex] (only [processOne] touches it, under the lock).
                 val attempts = (item.pendingWaitAttempts ?: 0) + 1
-                if (attempts < MAX_PENDING_WAIT_ATTEMPTS) {
+                if (attempts <= MAX_PENDING_WAIT_ATTEMPTS) {
                     dao.setPendingWaitAttempts(item.id, attempts)
                     dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, clock())
                 } else {
@@ -280,15 +280,41 @@ class DefaultBackupRepository(
             return ProcessOutcome.RecognizedRemote
         }
 
-        dao.markPreparing(item.id, now)
+        if (dao.markPreparing(item.id, clock()) == 0) {
+            // The row went terminal between the fetch and this write — the user cancelled it, or a
+            // concurrent pass finished it. Nothing may be staged or sent for a row the user
+            // explicitly cancelled.
+            TelepicLog.warn(
+                "BackupRepository",
+                "row ${item.id} became terminal before staging; nothing was sent",
+            )
+            return ProcessOutcome.Superseded
+        }
         val staged = stager?.stage(item.localMediaId, item.contentUri)
         if (stager != null && staged == null) {
             dao.markFailed(item.id, "Local media is no longer available.", clock())
             return ProcessOutcome.PermanentFailure
         }
-        val stagedPath = staged?.path ?: item.contentUri
+        // A stager is not optional in production: without one there is no local file to hand
+        // TDLib, and the content URI that stands in for it is not a path TDLib can read. Failing
+        // the item honestly beats handing TDLib a `content://` string and reporting an opaque
+        // upload rejection.
+        val stagedPath = staged?.path ?: run {
+            dao.markFailed(item.id, "This device cannot stage the file for upload.", clock())
+            return ProcessOutcome.PermanentFailure
+        }
 
-        dao.markUploading(item.id, clock())
+        if (dao.markUploading(item.id, clock()) == 0) {
+            // The row went terminal between the fetch and this write — the user cancelled it, or a
+            // concurrent pass finished it. The upload must NOT go ahead: an explicit cancel that
+            // still sends the user's photo to Telegram is the opposite of what was asked for.
+            TelepicLog.warn(
+                "BackupRepository",
+                "row ${item.id} became terminal before the upload started; nothing was sent",
+            )
+            staged?.cleanup()
+            return ProcessOutcome.Superseded
+        }
         val request = CloudUploadRequest(
             stagedPath = stagedPath,
             fileName = item.fileName,
@@ -306,6 +332,12 @@ class DefaultBackupRepository(
         // cleanup() must run for EVERY attempt that staged a file — success, transient/permanent
         // failure, OR cancellation. The previous code placed it after the try/catch, so the
         // cooperative CancellationException path (rethrown below) skipped it and leaked the temp file.
+        //
+        // The one exception is a send Telegram is **still uploading**: the staged copy is the very
+        // file TDLib is reading right now, so deleting it aborted the transfer and failed the item
+        // permanently. That copy is left in place and swept by the staging directory's startup
+        // sweep once the send has resolved.
+        var keepStaged = false
         val outcome = try {
             val result = cloudRepository.uploadMedia(
                 request = request,
@@ -343,6 +375,15 @@ class DefaultBackupRepository(
                     ProcessOutcome.Superseded
                 }
             }
+        } catch (pending: CloudMessagePendingException) {
+            // Telegram accepted the send and is still delivering it. The pending remote identity is
+            // already on the row, so the next pass *confirms* this message instead of re-sending it.
+            // Nothing is failed and no retry budget is spent — a large video legitimately spends
+            // minutes in Telegram's queue.
+            keepStaged = true
+            dao.setPendingWaitAttempts(item.id, null)
+            dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, clock())
+            ProcessOutcome.Waiting
         } catch (network: CloudNetworkException) {
             dao.recordTransientFailure(item.id, safeError(network), clock())
             ProcessOutcome.Waiting
@@ -365,7 +406,7 @@ class DefaultBackupRepository(
             dao.recordTransientFailure(item.id, safeError(throwable), clock())
             ProcessOutcome.Waiting
         } finally {
-            staged?.cleanup()
+            if (!keepStaged) staged?.cleanup()
         }
         return outcome
     }
@@ -383,8 +424,18 @@ class DefaultBackupRepository(
             CloudMediaType.IMAGE
         }
 
-    private fun safeError(throwable: Throwable): String =
-        (throwable.message ?: "Upload failed").take(160)
+    /**
+     * The user-facing text for a failure.
+     *
+     * The exception's **type** is part of the message, not just its text: a rejected upload and a
+     * network failure both used to read "Upload failed" when the underlying message was empty, and
+     * the Backup Center showed the user the same string for two completely different problems. The
+     * type is what tells them apart, and it is safe to show — no payload, no path, no credential.
+     */
+    private fun safeError(throwable: Throwable): String {
+        val detail = throwable.message?.takeIf { it.isNotBlank() } ?: "no further detail"
+        return "${throwable.javaClass.simpleName}: $detail".take(MAX_ERROR_CHARS)
+    }
 
     private sealed interface ProcessOutcome {
         data object Uploaded : ProcessOutcome
@@ -411,12 +462,17 @@ class DefaultBackupRepository(
     companion object {
         const val DEFAULT_MAX_RETRIES = 5
 
+        /** How much of a failure message is kept in the queue row's `lastError`. */
+        const val MAX_ERROR_CHARS = 160
+
         /**
          * Consecutive "still sending" confirmations tolerated before the pending send is treated as a
          * bounded transient failure (counted per row in `BackupQueueEntity.pendingWaitAttempts`, so
          * the bound holds across process death). Generous on purpose: the data source's own
          * send-confirmation window is ~60s per attempt, so this is minutes of waiting before the
          * budget starts to decrement.
+         *
+         * Exactly this many parked waits are granted; the next one burns the retry budget.
          */
         const val MAX_PENDING_WAIT_ATTEMPTS = 20
     }
