@@ -492,7 +492,7 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 <a id="testing"></a>
 ## 🧪 Testing
 
-The suite is **808 tests across 115 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
+The suite is **864 tests across 120 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
 
 ```bash
 # Unit tests (JUnit 4 + kotlinx-coroutines-test + Robolectric)
@@ -525,8 +525,11 @@ its retry budget across a restart), every Room migration proven from its previou
 v11, hashing and recognition/dedup, viewer race conditions, the builder ↔ pattern ↔ argument route
 contract, settings / app-lock / organization / album-contents UI states, permission policy,
 persistence, and the pure logic seams (`MediaDay`, `AlbumGrouper`, `MapClusterer`, `GpsCoordinates`,
-`ZoomState`). Device-bound paths (MediaStore write/delete, TDLib round-trips, ExoPlayer, osmdroid)
-are **not** covered.
+`ZoomState`). It also pins the behaviours that are easy to regress silently: that signing out can be
+signed back in, that a rejected upload can be retried, that a cancelled item is never sent, that
+the empty state's two actions are two separately focusable nodes, and that a library-wide setting
+invalidates every view of the library. Device-bound paths (MediaStore write/delete, TDLib
+round-trips, ExoPlayer, osmdroid) are **not** covered.
 
 ---
 
