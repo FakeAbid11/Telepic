@@ -579,9 +579,11 @@
         <item quantity="other">Map with %1$d photo locations</item>
     </plurals>
     <string name="map_attribution">© OpenStreetMap contributors</string>
-    <string name="map_selected_open">Open</string>
+    <string name="map_selected_open">Open photo</string>
     <string name="map_recenter">Show all photo locations</string>
-    <string name="map_preview_thumbnail">Preview of the photo at this location</string>
+    <string name="map_selected_title">Photo at this location</string>
+    <string name="map_preview_unavailable">Preview unavailable</string>
+    <string name="map_preview_open">Open the photo in full size</string>
 
     <!-- ============================ Photos multi-selection (Feature 1) ============================ -->
     <string name="photos_selection_count">%1$d selected</string>

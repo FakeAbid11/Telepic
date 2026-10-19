@@ -1,21 +1,27 @@
 package com.telepic.ui.screens.map
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Photo
+import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,13 +41,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -62,6 +71,7 @@ import com.telepic.domain.media.GeotaggedMedia
 import com.telepic.navigation.MapFocus
 import com.telepic.navigation.MapFocusRequest
 import com.telepic.permissions.MediaPermissionState
+import java.util.Locale
 import com.telepic.permissions.rememberForcedMediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
@@ -118,6 +128,8 @@ fun MapScreen(
     val scanSettled by viewModel.scanSettled.collectAsStateWithLifecycle()
     val focus by focusRequest.pending.collectAsStateWithLifecycle()
     val spacing = TelepicTokens.spacing
+    // The attribution is a link, so it needs a way to open one.
+    val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(permissionState.hasAccess) { if (permissionState.hasAccess) viewModel.refresh() }
 
@@ -206,8 +218,12 @@ fun MapScreen(
                     Text(
                         text = stringResource(R.string.map_attribution),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
+                        // A link, in the link colour: the OpenStreetMap tile usage policy asks for the
+                        // attribution to point at their copyright page, and plain text cannot.
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { uriHandler.openUri(OSM_COPYRIGHT_URL) }
+                            .padding(horizontal = spacing.md, vertical = spacing.xs),
                     )
                 }
             }
@@ -293,10 +309,10 @@ private fun OsmMap(
             }
         }
     }
-    // The badge draws its count onto a `primary` fill, so the count must use `onPrimary`: in the
-    // dark scheme `primary` is a light blue, and white on it measured 2.33:1 (unreadable).
-    val clusterFill = MaterialTheme.colorScheme.primary.toArgb()
-    val clusterCountColor = MaterialTheme.colorScheme.onPrimary.toArgb()
+    // The markers carry their own colours (see `MapPinBadge`) rather than the theme's: the map tiles
+    // are a fixed LIGHT style, so the dark scheme's light-blue `primary` measured about 1.9:1 against
+    // a typical land tile and the clusters all but disappeared. The brand blue with a white ring
+    // reads on the tiles in either theme.
 
     // The two camera moves, applied from an effect rather than from `AndroidView`'s `update` block.
     //
@@ -382,6 +398,10 @@ private fun OsmMap(
                         marker.setPosition(GeoPoint(pin.latitude, pin.longitude))
                         when (pin) {
                             is MapClusterer.MapPin.Single -> {
+                                // The app's own pin, not osmdroid's stock teardrop: the stock marker
+                                // is a different colour and a different weight from the cluster
+                                // bubbles, so the same map showed two unrelated visual languages.
+                                marker.setIcon(MapPinBadge.singlePinDrawable(mapView.context))
                                 marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                                 // The marker's own label. osmdroid markers are canvas overlays with no
                                 // accessibility node, so this is the only per-marker text osmdroid has
@@ -402,14 +422,12 @@ private fun OsmMap(
                                 }
                             }
                             is MapClusterer.MapPin.Cluster -> {
-                                // A count badge (drawn, never an icon pack) so clusters read differently from
-                                // singles at any zoom band.
+                                // A count bubble in the same colour and with the same white ring as
+                                // the single pin, so the two read as one system on the same map.
                                 marker.setIcon(
                                     MapPinBadge.clusterDrawable(
                                         mapView.context,
                                         pin.size,
-                                        clusterFill,
-                                        clusterCountColor,
                                     ),
                                 )
                                 marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
@@ -525,9 +543,11 @@ private fun OsmMap(
     if (preview != null) {
         // The pin carries only identity + position; the thumbnail URI lives on the source item, so it
         // is looked up by the same MediaStore id rather than duplicated onto every pin.
-        val contentUri = remember(preview, locations) {
-            locations.firstOrNull { it.mediaId == preview.mediaId }?.contentUri
-        }
+        //
+        // Looked up through a map rather than a scan: the list is the whole geotagged library, and the
+        // scan ran on every recomposition of the sheet — which is every frame of its open animation.
+        val urisById = remember(locations) { locations.associate { it.mediaId to it.contentUri } }
+        val contentUri = urisById[preview.mediaId]
         MapPinPreviewSheet(
             mediaId = preview.mediaId,
             latitude = preview.latitude,
@@ -543,8 +563,14 @@ private fun OsmMap(
 }
 
 /**
- * A tapped pin's preview: what is here, and a way into the full Viewer. Deliberately shows only what
- * the map actually knows (the image itself and its coordinates) — no date or place is fabricated.
+ * A tapped pin's preview: what is here, and a way into the full Viewer.
+ *
+ * Deliberately shows only what the map actually knows (the image itself and its coordinates) — no
+ * date or place is fabricated.
+ *
+ * The layout is a small card rather than a column of loose elements: a titled photo, the place as a
+ * labelled fact, and one clear primary action. It used to be a bare cropped image with a
+ * coordinate string and an icon-less button under it, which read as debug output rather than UI.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -558,6 +584,9 @@ private fun MapPinPreviewSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val spacing = TelepicTokens.spacing
+    // The photo's own label. It describes the *action* — the title above already names the content,
+    // and the place row below already gives the position, so neither is repeated here.
+    val openFullSizeLabel = stringResource(R.string.map_preview_open)
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -567,30 +596,146 @@ private fun MapPinPreviewSheet(
                 .padding(bottom = spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            if (contentUri != null) {
-                AsyncImage(
-                    model = contentUri,
-                    contentDescription = stringResource(R.string.map_preview_thumbnail),
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(MaterialTheme.shapes.medium),
-                )
-            }
             Text(
-                text = formatCoordinate(latitude, longitude),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = stringResource(R.string.map_selected_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                // A heading, so the sheet can be reached by navigating between headings.
+                modifier = Modifier.semantics { heading() },
             )
-            FilledTonalButton(onClick = { onOpen(mediaId) }) {
+            // The photo, in a frame that behaves like one: a rounded surface that is visible before
+            // the thumbnail arrives, a crop that keeps the picture recognisable, and an explicit
+            // state for a thumbnail that is gone. It used to be a raw `AsyncImage` with no
+            // placeholder at all, so the sheet showed a 180dp hole while it decoded — and a
+            // 180dp-tall full-width crop that sliced a portrait photo down to a sliver.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(PREVIEW_ASPECT_RATIO)
+                    .clip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    // The photo is the obvious way into the Viewer, so it is a target too — a far
+                    // bigger one than the button under it.
+                    .clickable(role = Role.Button, onClick = { onOpen(mediaId) })
+                    // Applied *after* the clickable, so the description lands on the button's own
+                    // node rather than on a parent of it: a parent would leave the actionable node
+                    // unlabelled, and a screen reader would meet two stops where there is one.
+                    .semantics { contentDescription = openFullSizeLabel },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (contentUri != null) {
+                    AsyncImage(
+                        model = contentUri,
+                        // The title above already names what this is, so a second description here
+                        // would make a screen reader say it twice.
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.matchParentSize(),
+                        placeholder = { MapPreviewLoading() },
+                        error = { MapPreviewUnavailable() },
+                    )
+                } else {
+                    MapPreviewUnavailable()
+                }
+            }
+            // The place, as a labelled fact rather than a floating string. Six decimals is about
+            // ten centimetres — more precision than a map pin can place, and it read as a debug
+            // print; five decimals is about a metre, which is what the pin is.
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+            ) {
+                Row(
+                    modifier = Modifier.padding(spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Place,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = formatPlace(latitude, longitude),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+            // One clear primary action, stretched so it reads as the sheet's action rather than as a
+            // small button floating under a wide photo.
+            Button(
+                onClick = { onOpen(mediaId) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Photo,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(spacing.xs))
                 Text(stringResource(R.string.map_selected_open))
             }
         }
     }
 }
 
+/** The preview's frame while the thumbnail decodes. */
+@Composable
+private fun MapPreviewLoading() {
+    CircularProgressIndicator(
+        modifier = Modifier.size(24.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** The preview's frame when there is no thumbnail to show. */
+@Composable
+private fun MapPreviewUnavailable() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.xs),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Photo,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(28.dp),
+        )
+        Text(
+            text = stringResource(R.string.map_preview_unavailable),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** The preview's frame proportions: a landscape 4:3, so a portrait photo is cropped gently. */
+private const val PREVIEW_ASPECT_RATIO = 4f / 3f
+
+/**
+ * A place label for the map's preview: five decimals, which is about a metre.
+ *
+ * The shared [formatCoordinate] uses six — about ten centimetres — because the Viewer's details
+ * sheet is reporting a *measured* fact. On a map pin that precision is noise: the pin cannot place
+ * anything better than a metre, and the longer string read as debug output.
+ */
+private fun formatPlace(latitude: Double, longitude: Double): String {
+    val ns = if (latitude >= 0) "N" else "S"
+    val ew = if (longitude >= 0) "E" else "W"
+    return String.format(
+        Locale.US,
+        "%.5f%s, %.5f%s",
+        kotlin.math.abs(latitude), ns,
+        kotlin.math.abs(longitude), ew,
+    )
+}
+
 private const val MAX_ZOOM = 19.0
+
+/** Where the OpenStreetMap attribution links to — the tile usage policy asks for a link. */
+private const val OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright"
 
 /**
  * Remembers which pin list the map's overlays currently represent.
