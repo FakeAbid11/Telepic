@@ -83,7 +83,10 @@ class NeighborKeysetExecutionTest {
             filter = TimelineMediaFilter.All,
             mediaTypeSelection = mediaSelection,
         )
-        return db.rawQuery(keyset.selection, keyset.args.toTypedArray()).use { cursor ->
+        return db.rawQuery(
+            "SELECT ${MediaStore.MediaColumns._ID} FROM media WHERE ${keyset.selection}",
+            keyset.args.toTypedArray(),
+        ).use { cursor ->
             if (cursor.moveToFirst()) cursor.getLong(0) else null
         }
     }
