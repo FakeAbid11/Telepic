@@ -96,7 +96,6 @@ object MapPinBadge {
         lineTo(cx, tipY)
         close()
     }
-}
 
     /**
      * The count bubble for a cluster: a filled circle in [fillColor] with a white ring and the
