@@ -16,6 +16,11 @@ import org.robolectric.annotation.Config
  * keyset comparison can be verified against the timeline's own `(coalescedDate, _ID)` ordering. A
  * mis-ordered argument list would not throw — it would silently return no neighbour — so the order
  * is asserted explicitly.
+ *
+ * The `CAST(? AS INTEGER)` around each date operand is load-bearing too, and is pinned here so it
+ * cannot be "simplified" away: the coalesced expression has no affinity, so a TEXT-bound parameter
+ * would compare by storage class and match everything (or nothing). How that plays out against real
+ * SQLite is asserted in [NeighborKeysetExecutionTest].
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -40,7 +45,7 @@ class NeighborKeysetTest {
             mediaTypeSelection = mediaSelection,
         )
         assertEquals(
-            "$mediaSelection AND ($coalesced < ? OR ($coalesced = ? AND $id < ?))",
+            "$mediaSelection AND ($coalesced < CAST(? AS INTEGER) OR ($coalesced = CAST(? AS INTEGER) AND $id < ?))",
             keyset.selection,
         )
         // Anchor date twice (the comparison arm and the tie-break arm), then the anchor id.
@@ -58,7 +63,7 @@ class NeighborKeysetTest {
             mediaTypeSelection = mediaSelection,
         )
         assertEquals(
-            "$mediaSelection AND ($coalesced > ? OR ($coalesced = ? AND $id > ?))",
+            "$mediaSelection AND ($coalesced > CAST(? AS INTEGER) OR ($coalesced = CAST(? AS INTEGER) AND $id > ?))",
             keyset.selection,
         )
         assertEquals(listOf("1", "1", "9"), keyset.args)
@@ -75,7 +80,7 @@ class NeighborKeysetTest {
             mediaTypeSelection = mediaSelection,
         )
         assertEquals(
-            "$mediaSelection AND ($coalesced < ? OR ($coalesced = ? AND $id < ?))" +
+            "$mediaSelection AND ($coalesced < CAST(? AS INTEGER) OR ($coalesced = CAST(? AS INTEGER) AND $id < ?))" +
                 " AND ${MediaStore.MediaColumns.BUCKET_ID} = ?",
             keyset.selection,
         )
@@ -91,7 +96,7 @@ class NeighborKeysetTest {
         val hideVideos = TimelineMediaFilter(showVideos = false)
         val filtered = neighborKeyset(1L, 2L, NeighborDirection.OLDER, null, hideVideos, mediaSelection)
         assertEquals(
-            "$mediaSelection AND ($coalesced < ? OR ($coalesced = ? AND $id < ?))" + hideVideos.selectionSuffix(),
+            "$mediaSelection AND ($coalesced < CAST(? AS INTEGER) OR ($coalesced = CAST(? AS INTEGER) AND $id < ?))" + hideVideos.selectionSuffix(),
             filtered.selection,
         )
         // The suffix is a constant literal, never a `?`, so the bound-arg list is untouched.

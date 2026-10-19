@@ -228,6 +228,14 @@ internal data class NeighborKeyset(val selection: String, val args: List<String>
  * `DATE_TAKEN` is 0/NULL is sought by its `DATE_MODIFIED`-derived day — the same value the grid
  * shows. [filter]'s suffix is a constant MIME literal carrying no bound arguments, so appending it
  * last cannot disturb the argument order.
+ *
+ * The date operands are wrapped in `CAST(? AS INTEGER)` on purpose. Android binds `selectionArgs`
+ * as TEXT, and the coalesced expression has **no type affinity** — so SQLite would compare an
+ * INTEGER value against TEXT by storage class, where every number sorts before every string. The
+ * seek then matched *everything* in one direction and *nothing* in the other (the Viewer's swipe
+ * jumped to the newest item and locked). `CAST` forces the numeric comparison the keyset means.
+ * The `_ID` operands need no cast: `_ID` is a real INTEGER column, so its affinity already converts
+ * the bound text.
  */
 internal fun neighborKeyset(
     anchorDate: Long,
@@ -242,8 +250,8 @@ internal fun neighborKeyset(
             "${MediaStore.MediaColumns.DATE_MODIFIED} * 1000)"
     val cmp = if (direction == NeighborDirection.OLDER) "<" else ">"
     val sb = StringBuilder(
-        "$mediaTypeSelection AND ($coalesced $cmp ? " +
-            "OR ($coalesced = ? AND ${MediaStore.MediaColumns._ID} $cmp ?))",
+        "$mediaTypeSelection AND ($coalesced $cmp CAST(? AS INTEGER) " +
+            "OR ($coalesced = CAST(? AS INTEGER) AND ${MediaStore.MediaColumns._ID} $cmp ?))",
     )
     val args = arrayListOf(anchorDate.toString(), anchorDate.toString(), anchorId.toString())
     if (bucketId != null) {
