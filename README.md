@@ -55,7 +55,8 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - **Your own albums**, created from the Albums tab and filled from the Photos timeline: name them, add photos, rename or delete them. The album is the list of media you chose, so it survives a folder being renamed and is never affected by the filesystem.
 - Folder albums built from real MediaStore buckets (newest item as cover, real counts, provider bucket names), shown in the same grid under **Device folders**.
 - Album contents reuse the exact Photos pipeline, so an album behaves identically to the timeline.
-- Favorites, Archive, and Trash per item — independent of backup state, with undo.
+- Favorites, Archive, and Trash per item - independent of backup state, with undo.
+- Bulk actions on a selection: back up, add to an album, favourite, or move to trash - with a count, an Undo, and a confirmation before anything is hidden.
 - Permanent delete goes through the Android-sanctioned system consent dialog: `MediaStore.createDeleteRequest` on API 30+, and the platform's own recoverable-consent prompt on Android 10, so the feature works on every supported release.
 
 ### 🗺 Map
@@ -492,7 +493,7 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 <a id="testing"></a>
 ## 🧪 Testing
 
-The suite is **877 tests across 122 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
+The suite is **882 tests across 123 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
 
 ```bash
 # Unit tests (JUnit 4 + kotlinx-coroutines-test + Robolectric)

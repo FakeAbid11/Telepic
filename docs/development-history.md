@@ -267,3 +267,12 @@ The map's markers and its tapped-pin preview were the last place in the app that
 
 - osmdroid markers are canvas overlays with no accessibility node, so a screen reader meets the map as one surface that announces the photo count. The individual pins are reachable by touch and by the preview sheet; making them navigable would need a list of the geotagged photos beside the map.
 - A video pin shows a still frame with no indication that it is a video: the map's data model carries only `(mediaId, location, contentUri)`, so the sheet genuinely cannot tell.
+
+## Phase 14 — Favourite and trash a whole selection *(code complete; device validation still outstanding)*
+
+Bulk select could back up a selection and move it into an album, but the two organisation verbs the Viewer offers on a single item were missing from the multi-select path entirely.
+
+- **Favourite is one-way.** A toggle would be ambiguous over a mixed selection — is the button turning the first item on or off? — so it *sets* the flag and reports the split: *"2 added to favorites · 1 were already favorites"*. Un-favouriting stays where it already is, in the Favorites collection's "Remove from favorites".
+- **Move to trash is confirmed first**, with the count, because it hides the photos from the library — and the single-item trash in the Viewer confirms too. It then offers an **Undo** that restores exactly the items it moved. A *partial* write is never reported as a success: the bar says it failed, and the items that did move are recovered from the Trash collection like any other.
+- Both actions live behind the selection bar's **overflow**, not as two more text buttons. The bar is already a scrolling row — two or three text actions come to roughly 335dp, which fits a 360dp phone but not a 320dp one — and two more would have pushed the app's headline action ("Back up", last in the row) off the screen first. One 48dp overflow costs an icon instead of ~230dp of text, and it is the idiom the Viewer's own action cluster already uses.
+- The behaviour lives in **one shared controller**, so the timeline and album contents cannot drift apart — and the selection clears when the write *lands*, not when it is asked for: a failed write leaves the selection standing so the user can simply tap again.
