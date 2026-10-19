@@ -153,6 +153,11 @@ class BackupWorker(
         // and pins at the five-hour cap. A ten-thousand-item library needs a hundred batches, so
         // the drain took about *twenty days*. The backoff is for an item that keeps failing, not
         // for a queue that simply has more items than one batch holds.
+        //
+        // The drain stops as soon as a batch contains a row that is *waiting*: such a row is still
+        // actionable, so the next batch would pick it up again, and retrying it immediately would
+        // burn its whole retry budget inside one run — the backoff is what is supposed to space
+        // those retries.
         var total = BackupProcessSummary()
         var batches = 0
         while (true) {
@@ -172,6 +177,13 @@ class BackupWorker(
                 TelepicLog.warn("BackupWorker", "${total.waitingForAuth} item(s) parked: no Telegram session to upload to")
                 return Result.success()
             }
+            // Something in this batch did **not** upload. A row that is waiting for the network is
+            // still actionable, so the next batch would pick it up again — and retrying it here,
+            // immediately, would burn its whole retry budget inside one run. WorkManager's backoff
+            // is what is supposed to space those retries, so the drain ends and the backoff takes
+            // over. (A permanently failed row is terminal and is never re-fetched, so it does not
+            // stop the drain.)
+            if (summary.waiting > 0) break
             // This batch found nothing actionable: the drain is complete.
             if (summary.processed == 0) break
             batches++

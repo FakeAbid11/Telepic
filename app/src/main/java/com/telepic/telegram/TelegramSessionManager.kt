@@ -456,8 +456,8 @@ class TelegramSessionManager(
     }
 
     /**
-     * Publish a recoverable failure for each input step — but only while the session is **still**
-     * waiting for that input.
+     * Publish a recoverable failure for an input step, but only while the session is still **at**
+     * that step.
      *
      * TDLib moves on the moment an input is accepted, so a slow or duplicated response — a second tap
      * on Submit, a request that timed out *after* Telegram had already accepted it — would
@@ -466,26 +466,43 @@ class TelegramSessionManager(
      * park the whole queue. That is precisely the dead end these flows exist to remove, so a stale
      * reply is dropped rather than rendered.
      *
-     * [publishEmailCode] is the same contract for the email-code step.
+     * A session that has **not reached** the step yet ([NotConnected], [Initializing]) may publish:
+     * that is a first submit, and there is no later step to be dragged back from.
      */
     private fun publishPhoneNumberError(error: String?) {
-        if (_state.value !is TelegramAuthState.WaitingForPhoneNumber) return
-        _state.value = TelegramAuthState.WaitingForPhoneNumber(error = error)
+        val current = _state.value
+        if (current is TelegramAuthState.WaitingForPhoneNumber) {
+            _state.value = TelegramAuthState.WaitingForPhoneNumber(error = error)
+        } else if (current is TelegramAuthState.NotConnected || current is TelegramAuthState.Initializing) {
+            _state.value = TelegramAuthState.WaitingForPhoneNumber(error = error)
+        }
     }
 
     private fun publishCodeError(error: String?) {
-        if (_state.value !is TelegramAuthState.WaitingForCode) return
-        _state.value = TelegramAuthState.WaitingForCode(error = error)
+        val current = _state.value
+        if (current is TelegramAuthState.WaitingForCode) {
+            _state.value = TelegramAuthState.WaitingForCode(error = error)
+        } else if (current is TelegramAuthState.NotConnected || current is TelegramAuthState.Initializing) {
+            _state.value = TelegramAuthState.WaitingForCode(error = error)
+        }
     }
 
     private fun publishPasswordError(error: String?) {
-        if (_state.value !is TelegramAuthState.WaitingForPassword) return
-        _state.value = TelegramAuthState.WaitingForPassword(error = error)
+        val current = _state.value
+        if (current is TelegramAuthState.WaitingForPassword) {
+            _state.value = TelegramAuthState.WaitingForPassword(error = error)
+        } else if (current is TelegramAuthState.NotConnected || current is TelegramAuthState.Initializing) {
+            _state.value = TelegramAuthState.WaitingForPassword(error = error)
+        }
     }
 
     private fun publishEmailAddressError(error: String?) {
-        if (_state.value !is TelegramAuthState.WaitingForEmailAddress) return
-        _state.value = TelegramAuthState.WaitingForEmailAddress(error = error)
+        val current = _state.value
+        if (current is TelegramAuthState.WaitingForEmailAddress) {
+            _state.value = TelegramAuthState.WaitingForEmailAddress(error = error)
+        } else if (current is TelegramAuthState.NotConnected || current is TelegramAuthState.Initializing) {
+            _state.value = TelegramAuthState.WaitingForEmailAddress(error = error)
+        }
     }
 
     /**

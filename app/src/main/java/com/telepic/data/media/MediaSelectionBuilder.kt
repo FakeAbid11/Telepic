@@ -63,11 +63,14 @@ internal object MediaSelectionBuilder {
         sdkInt: Int = Build.VERSION.SDK_INT,
     ): Pair<String, Array<String>?> {
         val args = ArrayList<String>()
-        val where = StringBuilder(baseSelection()).append(filter.selectionSuffix())
+        val where = StringBuilder(baseSelection())
 
         // Rows the user cannot see are excluded in the query itself, so they never occupy a page
-        // slot (which would keep the paging offsets honest).
+        // slot (which would keep the paging offsets honest). The clause comes first so the kind
+        // filter, the search and the hidden ids keep their established order after it.
         visibilitySelection(sdkInt)?.let { where.append(" AND ").append(it) }
+
+        where.append(filter.selectionSuffix())
 
         val term = search?.trim().orEmpty()
         if (term.isNotEmpty()) {

@@ -56,7 +56,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - Folder albums built from real MediaStore buckets (newest item as cover, real counts, provider bucket names), shown in the same grid under **Device folders**.
 - Album contents reuse the exact Photos pipeline, so an album behaves identically to the timeline.
 - Favorites, Archive, and Trash per item — independent of backup state, with undo.
-- Permanent delete goes through the Android-sanctioned system consent dialog (`MediaStore.createDeleteRequest`, API 30+).
+- Permanent delete goes through the Android-sanctioned system consent dialog: `MediaStore.createDeleteRequest` on API 30+, and the platform's own recoverable-consent prompt on Android 10, so the feature works on every supported release.
 
 ### 🗺 Map
 - Interactive OpenStreetMap view (osmdroid, no API key) with marker clustering.
@@ -399,6 +399,10 @@ stateDiagram-v2
   (`pendingWaitAttempts`, migration 10 → 11), so restarting the process cannot reset the retry budget.
 - **WorkManager-driven** with a network constraint and an honest foreground notification; offline
   rows simply resume when the connection returns.
+- **A long library drains inside one run.** The worker processes the queue in batches and keeps
+  going while there is work, so a ten-thousand-item library is not throttled by WorkManager's
+  exponential backoff between batches. The backoff is reserved for an item that genuinely keeps
+  failing.
 - **Content-hash dedup** (streaming SHA-256) means identical bytes reached through two local ids are
   never uploaded twice. A backup pass first rebuilds the manifest from the channel's history
   (recovering each hash from its message caption), and the upload path re-checks the manifest right
@@ -476,6 +480,7 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 - **No offline map tiles.** The map requires connectivity.
 - **`SELECT_FOLDER` is keyed to MediaStore buckets.** A folder *is* a bucket, and the bucket id is derived from the folder's path — so a folder renamed or moved outside the app drops out of the selection and has to be picked again. Only folders that currently hold photos or videos are offered (an empty folder produces no bucket), and on Android 9 and below there is no `RELATIVE_PATH`, so two folders sharing a name cannot be told apart in the picker there.
 - **Restored images are not byte-for-byte identical** to the source, because Telegram may recompress photos; only the *restored* bytes are hashed.
+- **A restored item keeps its original capture date.** The capture time travels with the published MediaStore row, so a 2019 photo restored today is filed under 2019 rather than under today.
 - **Restore deduplication is app-owned.** Repeat restores of the same cloud item are recognized by Telegram `chatId` + `messageId` recorded in an app-local ledger (the recorded MediaStore row is re-verified before it is trusted). After an uninstall or "clear data" that ledger is gone, so a repeat restore may add a second copy — deliberately preferred over the previous behaviour, which matched on display name/size/MIME and could report a *different* file as the restored target.
 - **An unreadable app-lock preference fails closed.** If the persisted lock setting cannot be read, Telepic hides the library behind a recovery screen with a retry instead of assuming the lock is off and opening the content it protects. The window is also protected (`FLAG_SECURE`) whenever the state is unknown.
 - **The open-source licence list is hand-maintained** (`OpenSourceLicenses.kt`), so it has to be updated whenever a runtime dependency changes. It mirrors `gradle/libs.versions.toml` rather than being generated.

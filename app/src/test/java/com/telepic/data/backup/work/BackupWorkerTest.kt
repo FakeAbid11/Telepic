@@ -48,11 +48,23 @@ class BackupWorkerTest {
      * the manifest removes WorkManager's default initializer and the reflective constructor now fails
      * loudly rather than reading a process-global. There is no global left to reset between tests.
      */
-    private fun worker(repo: BackupRepository): BackupWorker {
-        val factory = TelepicWorkerFactory(backupRepository = { repo }, backupCoordinator = { error("unused") })
+    private fun worker(repo: BackupRepository, scheduler: BackupWorkScheduler? = null): BackupWorker {
+        val factory = TelepicWorkerFactory(
+            backupRepository = { repo },
+            backupCoordinator = { error("unused") },
+            backupScheduler = { scheduler },
+        )
         return TestListenableWorkerBuilder<BackupWorker>(ApplicationProvider.getApplicationContext())
             .setWorkerFactory(factory)
             .build() as BackupWorker
+    }
+
+    /** Records how the worker hands the remainder of a long drain to a fresh run. */
+    private class RecordingScheduler : BackupWorkScheduler {
+        var continuations = 0
+        override suspend fun schedule() = Unit
+        override suspend fun schedulePeriodic() = Unit
+        override suspend fun scheduleContinuation() { continuations++ }
     }
 
     @Test
@@ -136,8 +148,36 @@ class BackupWorkerTest {
     }
 
     @Test
-    fun `the notification channel is created once per run, independent of any notification`() = runBlocking {
-        // An empty queue means buildNotification is never called this run, so the channel can only
+    fun `a waiting row ends the drain so its retry budget is not burned inside one run`() = runBlocking {
+        // A row that is waiting for the network is still actionable, so the next batch would pick it
+        // up again. Retrying it immediately would burn its whole retry budget inside one run — the
+        // backoff is what is supposed to space those retries.
+        val repo = FakeRepo(
+            mutableListOf(
+                BackupProcessSummary(waiting = 1, processed = 1),
+                BackupProcessSummary(uploaded = 100, processed = 100),
+            ),
+        )
+        val result = worker(repo).doWork()
+        assertEquals(ListenableWorker.Result.retry(), result)
+        // The second batch was never reached: the drain stopped at the waiting row.
+        assertEquals(1, repo.calls)
+    }
+
+    @Test
+    fun `a run that reaches its batch cap hands the rest to a fresh run`() = runBlocking {
+        // The batch cap bounds one foreground notification's lifetime, and the remainder has to go to
+        // a *fresh* run: `Result.retry()` re-runs the same WorkSpec, so the exponential backoff grew
+        // between batches until a large library took about twenty days to back up.
+        val repo = FakeRepo(MutableList(25) { BackupProcessSummary(uploaded = 100, processed = 100) })
+        val scheduler = RecordingScheduler()
+        val result = worker(repo, scheduler).doWork()
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertEquals("the remainder must go to a fresh run", 1, scheduler.continuations)
+    }
+
+    @Test
+    fun `the notification channel is created once per run, independent of any notification`() = runBlocking {        // An empty queue means buildNotification is never called this run, so the channel can only
         // exist because runPass() creates it up front — the point of moving ensureChannel off the
         // per-progress-update path.
         val repo = FakeRepo(mutableListOf())

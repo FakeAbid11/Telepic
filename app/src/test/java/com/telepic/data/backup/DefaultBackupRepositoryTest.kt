@@ -59,7 +59,10 @@ class DefaultBackupRepositoryTest {
     }
 
     @After
-    fun tearDown() = db.close()
+    fun tearDown() {
+        db.close()
+        stagingDir.deleteRecursively()
+    }
 
     private class FakeCloud(
         var destination: TelepicCloudDestination? = TelepicCloudDestination(100L, "Telepic Backup", true, true, true),
@@ -120,6 +123,17 @@ class DefaultBackupRepositoryTest {
         }
     }
 
+    /**
+     * A staging directory for the tests that do not care about the staged bytes.
+     *
+     * The repository needs a stager: without one it has no local file to hand over and honestly
+     * refuses the item, because handing TDLib a `content://` URI as a file path is exactly the trap
+     * the production wiring never hits.
+     */
+    private val stagingDir: java.io.File =
+        java.io.File(System.getProperty("java.io.tmpdir"), "telepic-stage-${System.nanoTime()}")
+            .apply { mkdirs() }
+
     private fun repo(cloud: CloudRepository, auth: MutableStateFlow<TelegramAuthState> = authorized) =
         DefaultBackupRepository(
             db = db,
@@ -127,6 +141,7 @@ class DefaultBackupRepositoryTest {
             cloudRepository = cloud,
             authState = auth,
             dispatcher = Dispatchers.Unconfined,
+            stager = RecordingStager(stagingDir),
         )
 
     private fun media(id: Long) = LocalMedia(

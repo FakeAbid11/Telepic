@@ -5,6 +5,7 @@ import com.telepic.domain.cloud.CloudMediaType
 import com.telepic.domain.cloud.CloudUploadRequest
 import com.telepic.domain.cloud.CloudUploadProgress
 import com.telepic.telegram.TdLibClientGateway
+import com.telepic.telegram.TdLibRequestTimeoutException
 import com.telepic.telegram.TelegramAuthState
 import com.telepic.telegram.TelegramUser
 import java.io.File
@@ -349,8 +350,7 @@ class TdLibCloudDataSourceTest {
     }
 
     @Test
-    fun `confirmSend separates still-sending from never-landed from rejected`() = runBlocking {
-        // (a) Still uploading on Telegram's side → wait, not failure, not gone.
+    fun `confirmSend separates still-sending from never-landed from rejected`() = runBlocking {        // (a) Still uploading on Telegram's side → wait, not failure, not gone.
         val (pendingDs, _) = source { _ ->
             message(600L, photoContent(1, 2)).apply { sendingState = TdApi.MessageSendingStatePending() }
         }
@@ -390,6 +390,56 @@ class TdLibCloudDataSourceTest {
             fail("expected transient")
         } catch (e: CloudNetworkException) {
             assertTrue(true)
+        }
+    }
+
+    @Test
+    fun `a 400 that is not about a missing message never clears the pending id`() = runBlocking {
+        // TDLib answers 400 for several unrelated reasons ("Chat not found", "Wrong chat id",
+        // "message can't be deleted"). Treating every 400 as "the message is gone" made the backup
+        // queue clear the pending identity and upload the same file a second time — the exact
+        // duplicate the pending-identity design exists to prevent.
+        val (otherDs, _) = source { _ -> TdApi.Error(400, "Chat not found") }
+        try {
+            otherDs.confirmSend(100L, 600L, CloudMediaType.IMAGE)
+            fail("expected transient")
+        } catch (e: CloudNetworkException) {
+            assertTrue(e.message!!.contains("Confirm failed"))
+        }
+    }
+
+    @Test
+    fun `a gateway timeout is reported as a network failure, not a hard error`() = runBlocking {
+        // The gateway's timeout is an ordinary RuntimeException. Left untranslated it escaped every
+        // cloud path and landed in the repository's last-resort handler, which reported a hard
+        // "Telegram did not respond within 30 seconds" instead of the intended offline state.
+        val timeoutGateway = object : TdLibClientGateway {
+            override val updates: SharedFlow<TdApi.Object> = MutableSharedFlow()
+            override val isOpen: Boolean = true
+            override fun open() = Unit
+            override fun close() = Unit
+            override suspend fun request(request: TdApi.Function<*>): TdApi.Object =
+                throw TdLibRequestTimeoutException(30_000L)
+        }
+        val ds = TdLibCloudDataSource(timeoutGateway, authorized)
+        try {
+            ds.searchDestinationCandidates()
+            fail("expected a network failure")
+        } catch (e: CloudNetworkException) {
+            assertTrue(e.message!!.contains("did not respond"))
+        }
+    }
+
+    @Test
+    fun `a permanently rejected read is not reported as offline`() = runBlocking {
+        // A 400 will never succeed on a retry, so calling it "offline" sent the user chasing a
+        // network problem that was not the cause.
+        val (ds, _) = source { _ -> TdApi.Error(400, "invalid query") }
+        try {
+            ds.searchDestinationCandidates()
+            fail("expected a rejection")
+        } catch (e: CloudRequestRejectedException) {
+            assertTrue(e.message!!.contains("rejected"))
         }
     }
 }

@@ -448,6 +448,10 @@ class TelegramSessionManagerTest {
         gateway.emit(TdApi.AuthorizationStateClosed())
         withTimeout(3_000) { while (gateway.resetCount < 1) delay(20) }
 
+        // The user taps "Connect" again: a fresh client, a fresh collector.
+        m.initialize()
+        withTimeout(3_000) { while (gateway.openCount < 2) delay(20) }
+
         // A *different* account signs in. The manager must fetch it rather than report the old one.
         gateway.me = TdApi.User().apply { id = 7L; firstName = "Grace" }
         gateway.emit(TdApi.AuthorizationStateReady())
