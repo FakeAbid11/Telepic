@@ -608,6 +608,11 @@ private fun MapPinPreviewSheet(
             // state for a thumbnail that is gone. It used to be a raw `AsyncImage` with no
             // placeholder at all, so the sheet showed a 180dp hole while it decoded — and a
             // 180dp-tall full-width crop that sliced a portrait photo down to a sliver.
+            //
+            // The frame's own states are drawn *under* the image and driven by Coil's callbacks:
+            // Coil 2's `AsyncImage` takes a `Painter` for its placeholder, not a composable slot, so
+            // the states are the app's own rather than a grey box.
+            var frame by remember(contentUri) { mutableStateOf(MapPreviewFrame.LOADING) }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -623,7 +628,14 @@ private fun MapPinPreviewSheet(
                     .semantics { contentDescription = openFullSizeLabel },
                 contentAlignment = Alignment.Center,
             ) {
-                if (contentUri != null) {
+                if (contentUri == null) {
+                    MapPreviewUnavailable()
+                } else {
+                    when (frame) {
+                        MapPreviewFrame.LOADING -> MapPreviewLoading()
+                        MapPreviewFrame.UNAVAILABLE -> MapPreviewUnavailable()
+                        MapPreviewFrame.READY -> Unit
+                    }
                     AsyncImage(
                         model = contentUri,
                         // The title above already names what this is, so a second description here
@@ -631,11 +643,10 @@ private fun MapPinPreviewSheet(
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize(),
-                        placeholder = { MapPreviewLoading() },
-                        error = { MapPreviewUnavailable() },
+                        onLoading = { frame = MapPreviewFrame.LOADING },
+                        onSuccess = { frame = MapPreviewFrame.READY },
+                        onError = { frame = MapPreviewFrame.UNAVAILABLE },
                     )
-                } else {
-                    MapPreviewUnavailable()
                 }
             }
             // The place, as a labelled fact rather than a floating string. Six decimals is about
@@ -681,6 +692,9 @@ private fun MapPinPreviewSheet(
     }
 }
 
+/** What the preview's frame is currently showing. */
+private enum class MapPreviewFrame { LOADING, READY, UNAVAILABLE }
+
 /** The preview's frame while the thumbnail decodes. */
 @Composable
 private fun MapPreviewLoading() {
@@ -689,7 +703,6 @@ private fun MapPreviewLoading() {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
-
 /** The preview's frame when there is no thumbnail to show. */
 @Composable
 private fun MapPreviewUnavailable() {
