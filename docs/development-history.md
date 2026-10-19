@@ -199,3 +199,52 @@ A static review of the whole codebase found a set of defects that no unit test w
 - A gateway timeout is now reported as *offline* rather than as a hard failure, a permanently rejected read is no longer reported as offline, and the two halves of the app no longer disagree about what TDLib's error code 499 means.
 
 **Not changed, and why:** the timeline's sort order is deliberately a non-indexable expression, because the ordering it expresses (capture date, falling back to the modification date) is the ordering the app shows everywhere else, including the Viewer's neighbour seek. Replacing it with an indexed column would silently reorder the library for media without a capture date. The cost is that the provider sorts the media table per page load; it is a known, deliberate trade-off rather than an oversight.
+
+## Phase 12 — File-by-file UI/UX review *(code complete; device validation still outstanding)*
+
+Every file under `ui/`, plus the navigation, permission, theme and settings layers it depends on, was read end to end and checked for layout, responsiveness, accessibility, theme consistency and interaction correctness. This phase is the fixes that came out of it.
+
+**Part A — A security feature that silently did not arm**
+
+- The app lock was resolved **once**, at construction. Turning it on in Settings therefore did nothing for the rest of the session: the app never locked, and `FLAG_SECURE` was never applied, so the Recents snapshot still showed the library. The preference is now observed, and arming it while the app is in the foreground deliberately waits for the next foregrounding — which is what the Settings row promises. The grace window now measures with a monotonic clock, so a clock change while the app is backgrounded can no longer suppress the re-lock.
+
+**Part B — Accessibility defects that are also correctness defects**
+
+- `ErrorState` merged its Retry button into the card's semantics node, so the whole error card became one giant retry target and double-tapping the *title* fired a retry — the same bug `EmptyState` had and had been fixed for. `EmptyState` and `ErrorState` are now consistent.
+- `MediaTile` put its description on a *parent* of the clickable node, leaving the actionable node unlabelled and the tile two accessibility stops. It now merges, the way the album card already did.
+- The settings section titles and the album section titles were not headings, so the app's most section-heavy screen could not be navigated by heading.
+- An informational settings row was dimmed to 2.47:1 (light) / 3.14:1 (dark) — under the 4.5:1 floor — on the app's only readout of *which* Telegram account is connected. A row with no action is now never dimmed, which is what the component's own contract already said.
+- The `outline` colour paints the unselected radio glyph on the onboarding choice cards and measured 1.45:1 / 1.66:1 against its own surface. It now measures 3.73:1 / 4.09:1.
+- The video duration was the one on-media overlay painted straight onto the photo, with no scrim — invisible on a bright frame. The Map's FAB and scanning chip were the same problem in reverse: theme-surface colours on a fixed **light** OSM tile style, measuring 1.03–1.28:1.
+
+**Part C — States that were not whole**
+
+- An album's failed refresh replaced the whole grid with an error page, so pulling to refresh could throw away the user's photos. It now reports the failure *over* the content, exactly as the Photos timeline does — the two banners are shared instead of one screen having them and the other not.
+- Refreshing from the Albums empty or error state swapped it for a skeleton and gave the pull gesture no feedback at all.
+- A cloud item's Details sheet could never be opened: the overflow menu that carries it sat behind a local-only gate. The local-only actions stay local-only; the menu does not.
+- The Viewer's "Download original" was dead code — the bar took the first matching branch and the restore action was always present — so a cloud photo's full-resolution original could never be fetched.
+- A cloud refresh cleared every *successfully loaded* preview, flashing the grid back to placeholders and re-downloading every thumbnail.
+- An unrecognised backup state was labelled "Queued", claiming the row is in the upload pipeline; the "Stalled" rule was also re-derived in the screen instead of reusing the one the stat card uses.
+- The Map announced its *cluster* count as a photo count, so it contradicted the count in its own header.
+
+**Part D — Interactions that were broken**
+
+- The photo viewer consumed every pointer event from the first pixel of movement, so a one- or two-pixel finger jitter cancelled the tap detector and the chrome toggle — the screen's primary interaction — stopped firing. The gesture now claims the pointer only past the touch slop, as the video path always did.
+- A long-press speed boost was released only on a clean pointer-up, so a cancelled press left the video running at 2x with no visible cue.
+- The video transport did not count as an interaction, so the chrome could auto-hide *while the seek slider was being dragged* and take the slider with it. The gesture HUD's auto-dismiss also never restarted for a repeated value, so it vanished mid-drag.
+- The "Saved" tick was still a live button and re-ran the whole download, verify and publish pipeline.
+- The selection header could push "Select all" off the screen at a large display font, and the media grid reserved no room for the selection bar that covers its bottom row.
+- The onboarding steps lost their own state on a step change (a typed phone number was gone when the user came back), the Telegram step still offered "Set up later" after the account was connected, and a failed *completion* was answered with the backup copy — pointing at the wrong control.
+- The "have we asked for media access" fact was a per-composition flag, so every screen had its own: a user who permanently denied on the Map tab was told "Allow access" on the Photos tab.
+- The media grid took raw `Map` and `Set` parameters. Both are interfaces, so the compiler infers them as unstable and the grid could never be skipped — it re-ran on every backup-progress tick, taking the date rail with it. The snapshots are value types with content equality now.
+- The country table was missing several very large countries — **India** above all — so a user whose SIM was Indian got the United States default. "00 44 20 …" is also a British number whatever the dropdown says, and it was being turned into a thirteen-digit US number.
+
+**Part E — Consistency**
+
+- The Map and the Albums screen did not say when media access was *partial*, so the same library looked complete on the Photos tab and partial on the other two.
+- The licence list named versions several releases behind the ones actually shipped, and omitted `androidx.biometric` — a missing notice for a component that is in the APK.
+- The notification permission counted *launches* as attempts, so one denial could exhaust the budget and send the user to Settings while the platform would still have shown the dialog.
+- The app shell's nav controller had a default, so a caller that omitted it silently got a second one; it is now required, which makes the ownership (hoisted in the root, above the lock gate) explicit.
+- The app lock's biometric prompt was never cancelled, so it outlived the screen and its callback could fire into a disposed composition.
+- The map framed its photos for a hard-coded 1080px viewport — too far out on a narrow phone, too far in on a tablet — and now uses the real width.
+- The Organization screen's message bar was keyed on the message *value*, so two identical failures inside the dismissal window produced no second bar, no new timer and no reject haptic.

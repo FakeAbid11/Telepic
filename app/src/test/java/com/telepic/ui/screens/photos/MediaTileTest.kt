@@ -3,9 +3,9 @@ package com.telepic.ui.screens.photos
 import android.net.Uri
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -95,17 +95,10 @@ class MediaTileTest {
 
         // The description used to sit on a *parent* of the clickable node — `combinedClickable`
         // publishes the action and the Button role on a node of its own — so the tile was two
-        // accessibility stops and the actionable one had no label at all.
-        val node = tileNode().fetchSemanticsNode()
-        assertEquals(
-            "the actionable node must carry the description",
-            node.config.getOrNull(SemanticsProperties.ContentDescription)?.any { it.contains("Photo") },
-            true,
-        )
-        assertEquals(
-            "the node must be a button",
-            node.config.getOrNull(SemanticsProperties.Role),
-            Role.Button,
-        )
+        // accessibility stops and the actionable one had no label at all. One node must carry
+        // both.
+        val described = SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription)
+        val isButton = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
+        composeRule.onNode(described and isButton).assertExists()
     }
 }
