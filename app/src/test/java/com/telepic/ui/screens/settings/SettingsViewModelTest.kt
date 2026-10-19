@@ -106,6 +106,7 @@ class SettingsViewModelTest {
         val gifs = MutableStateFlow(true)
         val startMuted = MutableStateFlow(true)
         val appLock = MutableStateFlow(false)
+        val backfillGranted = MutableStateFlow(false)
 
         override val themeMode: Flow<ThemeMode> get() = theme
         override suspend fun setThemeMode(mode: ThemeMode) { theme.value = mode }
@@ -124,6 +125,8 @@ class SettingsViewModelTest {
         override val appLockEnabled: Flow<Boolean> get() = appLock
         override val appLockPreference: Flow<AppLockPreference> get() = appLock.map { AppLockPreference.Known(it) }
         override suspend fun setAppLockEnabled(enabled: Boolean) { appLock.value = enabled }
+        override val mediaLocationBackfillGranted: Flow<Boolean> get() = backfillGranted
+        override suspend fun setMediaLocationBackfillGranted(granted: Boolean) { backfillGranted.value = granted }
     }
 
     /** Records album-source invalidations, which is how a media-filter change reaches the timeline. */

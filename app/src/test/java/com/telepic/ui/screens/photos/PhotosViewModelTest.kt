@@ -67,17 +67,25 @@ class PhotosViewModelTest {
         }
     }
 
+    /**
+     * Owner-keyed fake mirroring the real contract: each owner keeps its own callback and stopping
+     * one leaves the others registered. [callback] is the most recently registered owner's callback,
+     * which is what the single-owner ViewModel tests exercise.
+     */
     private class FakeWatcher : MediaChangeWatcher {
         var started = false
         var stopped = false
-        var callback: (() -> Unit)? = null
-        override fun start(callback: () -> Unit) {
+        val callbacks = LinkedHashMap<Any, () -> Unit>()
+        val callback: (() -> Unit)? get() = callbacks.values.lastOrNull()
+
+        override fun start(owner: Any, callback: () -> Unit) {
             started = true
-            this.callback = callback
+            callbacks[owner] = callback
         }
 
-        override fun stop() {
+        override fun stop(owner: Any) {
             stopped = true
+            callbacks.remove(owner)
         }
     }
 

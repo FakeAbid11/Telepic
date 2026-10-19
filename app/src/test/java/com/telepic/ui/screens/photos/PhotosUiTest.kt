@@ -70,8 +70,8 @@ class PhotosUiTest {
     }
 
     private object NoopWatcher : MediaChangeWatcher {
-        override fun start(callback: () -> Unit) = Unit
-        override fun stop() = Unit
+        override fun start(owner: Any, callback: () -> Unit) = Unit
+        override fun stop(owner: Any) = Unit
     }
 
     private class FakeStatus(private val states: Map<String, MediaBackupVisualState>) : BackupStatusRepository {

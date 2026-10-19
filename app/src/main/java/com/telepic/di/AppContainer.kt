@@ -1,5 +1,6 @@
 package com.telepic.di
 
+import android.app.Application
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -56,6 +57,8 @@ import com.telepic.data.restore.DefaultRestoreRepository
 import com.telepic.data.restore.RestoreRepository
 import com.telepic.onboarding.OnboardingRepository
 import com.telepic.onboarding.OnboardingRepositoryImpl
+import com.telepic.permissions.MediaLocationBackfill
+import com.telepic.permissions.MediaPermissionMonitor
 import com.telepic.settings.MapCameraRepository
 import com.telepic.settings.MapCameraRepositoryImpl
 import com.telepic.settings.SettingsRepository
@@ -106,6 +109,14 @@ interface AppContainer {
     val mediaOrganizationRepository: MediaOrganizationRepository
     val mediaDeleter: LocalMediaDeleter
     val mapLocationRepository: MapLocationRepository
+
+    /**
+     * Application-scoped media-permission signal. Owned here (not by a screen) because the one-time
+     * map backfill has to react to a grant that happens outside any composition — see
+     * [MediaLocationBackfill].
+     */
+    val mediaPermissionMonitor: MediaPermissionMonitor
+    val mediaLocationBackfill: MediaLocationBackfill
     val mapCameraRepository: MapCameraRepository
     val mediaMetadataReader: MediaMetadataReader
     val restoreRepository: RestoreRepository
@@ -271,6 +282,17 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val mapCameraRepository: MapCameraRepository by lazy {
         MapCameraRepositoryImpl(appContext.telepicDataStore)
+    }
+
+    override val mediaPermissionMonitor: MediaPermissionMonitor by lazy {
+        MediaPermissionMonitor(appContext as Application)
+    }
+
+    override val mediaLocationBackfill: MediaLocationBackfill by lazy {
+        MediaLocationBackfill(
+            settingsRepository = settingsRepository,
+            mapLocationRepository = mapLocationRepository,
+        )
     }
 
     override val mediaMetadataReader: MediaMetadataReader by lazy {

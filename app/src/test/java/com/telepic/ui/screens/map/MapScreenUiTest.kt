@@ -59,6 +59,8 @@ class MapScreenUiTest {
             rescanCalls++
             scanGate.await()
         }
+
+        override suspend fun invalidateScanMemory() = Unit
     }
 
     /**

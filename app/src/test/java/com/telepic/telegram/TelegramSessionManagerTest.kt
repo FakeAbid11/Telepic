@@ -93,14 +93,23 @@ class TelegramSessionManagerTest {
         override fun close() { opened = false }
     }
 
-    private class FakeKeyProvider : SecureTdLibKeyProvider {
-        override suspend fun getOrCreate(): ByteArray = ByteArray(32) { (it + 1).toByte() }
+    private class FakeKeyProvider(
+        // When true, getOrCreate() throws the way an invalidated Android Keystore key does.
+        @Volatile var fail: Boolean = false,
+    ) : SecureTdLibKeyProvider {
+        override suspend fun getOrCreate(): ByteArray {
+            if (fail) throw java.security.GeneralSecurityException("keystore key invalidated")
+            return ByteArray(32) { (it + 1).toByte() }
+        }
     }
 
-    private fun manager(gateway: TdLibClientGateway) = TelegramSessionManager(
+    private fun manager(
+        gateway: TdLibClientGateway,
+        keyProvider: SecureTdLibKeyProvider = FakeKeyProvider(),
+    ) = TelegramSessionManager(
         context = ApplicationProvider.getApplicationContext<Context>(),
         gateway = gateway,
-        keyProvider = FakeKeyProvider(),
+        keyProvider = keyProvider,
         apiId = 12345,
         apiHash = "hash",
         applicationVersion = "1.0.0",
@@ -165,6 +174,48 @@ class TelegramSessionManagerTest {
         // Once the resend succeeds, the flow is no longer Failed.
         withTimeout(3_000) { while (m.state.value is TelegramAuthState.Failed) delay(20) }
         assertTrue(m.state.value !is TelegramAuthState.Failed)
+        m.close()
+    }
+
+    @Test
+    fun `a keystore failure surfaces as Failed instead of crashing the session`() = runBlocking {
+        // Resolving the TDLib database key reaches the Android Keystore, where a hardware key can be
+        // invalidated by a lock-screen/device change. That throw happens inside the update collector;
+        // unguarded it either killed the process or left the session stuck on Initializing forever.
+        // It must become a visible Failed, and no SetTdlibParameters request may be built without a key.
+        val gateway = FakeGateway()
+        val m = manager(gateway, FakeKeyProvider(fail = true))
+        m.initialize()
+
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
+        val state = m.state.value
+        assertTrue(state is TelegramAuthState.Failed)
+        assertTrue(
+            "a keystore failure should read as an initialisation problem",
+            (state as TelegramAuthState.Failed).error is TelegramError.Initialization,
+        )
+        assertTrue(gateway.requests.none { it is TdApi.SetTdlibParameters })
+        m.close()
+    }
+
+    @Test
+    fun `a retry after a keystore failure can still send the parameters`() = runBlocking {
+        // The failure may be transient — the key provider regenerates the wrapped blob on the next
+        // attempt — so the parametersSent latch must be cleared, or the retry would be a permanent
+        // dead end: TDLib stays on the parameters wait and never re-emits it.
+        val gateway = FakeGateway()
+        val keyProvider = FakeKeyProvider(fail = true)
+        val m = manager(gateway, keyProvider)
+        m.initialize()
+
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
+        assertEquals(0, gateway.setParametersSent())
+
+        // The keystore recovers: the retry (onboarding "Try again") must be able to send again.
+        keyProvider.fail = false
+        m.initialize()
+        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        assertTrue("retry should send SetTdlibParameters once the key is available", gateway.setParametersSent() >= 1)
         m.close()
     }
 

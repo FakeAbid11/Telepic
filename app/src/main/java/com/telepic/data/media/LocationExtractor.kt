@@ -28,7 +28,7 @@ class AndroidLocationExtractor(context: Context) : LocationExtractor {
 
     override suspend fun extract(uri: Uri): GeoLocation? = withContext(Dispatchers.IO) {
         try {
-            contentResolver.openInputStream(uri)?.use { stream ->
+            contentResolver.openInputStream(contentResolver.requireOriginalIfPermitted(uri))?.use { stream ->
                 val exif = ExifInterface(stream)
                 val out = FloatArray(2)
                 if (exif.getLatLong(out)) {

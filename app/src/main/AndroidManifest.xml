@@ -4,7 +4,8 @@
 
     <!--
       Media access only. Telepic requests the modern, version-appropriate photo/video
-      permissions and never requests location or unrelated permissions in this phase.
+      permissions, plus ACCESS_MEDIA_LOCATION below, and never requests *device* location
+      (no fine/coarse location permission) or unrelated permissions.
     -->
     <!-- Android 13+ (API 33) granular media permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -15,6 +16,15 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!--
+      Android 10+ (API 29): reading the GPS coordinates embedded in the user's own photos requires
+      this runtime permission. Since Android 10 the platform redacts location from the stream a
+      MediaStore URI opens unless the app both holds ACCESS_MEDIA_LOCATION and asks for the original
+      via MediaStore.setRequireOriginal. It grants no device location and no network access — it only
+      un-redacts the EXIF the user's files already carry, which Telepic reads locally for the
+      on-device map and never uploads.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
     <!--
       Android 9 and below (API <= 28): publishing a restored original into the public gallery goes
       through the legacy MediaStore, which needs write access. API 29+ uses scoped storage
@@ -42,8 +52,10 @@
 
     <!--
       Phase 10 map: tiles are fetched from an OpenStreetMap-compatible provider over the network.
-      Telepic does NOT request any device location permission — photo locations come only from the
-      GPS data already embedded in the media files, and no coordinates or EXIF are ever uploaded.
+      Telepic does NOT request any *device* location permission — the map has no notion of where the
+      phone is. Photo locations come only from the GPS data already embedded in the media files,
+      which is read on-device (the ACCESS_MEDIA_LOCATION declaration above exists precisely so that
+      read is not redacted on API 29+), and no coordinates or EXIF are ever uploaded.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

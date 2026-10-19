@@ -138,6 +138,22 @@ class SettingsRepositoryImpl(
         }
     }
 
+    override val mediaLocationBackfillGranted: Flow<Boolean> = dataStore.data
+        .map { preferences -> preferences[KEY_MEDIA_LOCATION_BACKFILL_GRANTED] ?: false }
+        .catch { throwable ->
+            // Default to not-done: re-running the one-time clear is harmless (the next sweep simply
+            // re-reads EXIF), whereas reporting "done" on an unreadable store would silently keep the
+            // map empty for an install that has just been granted the permission.
+            TelepicLog.warn("SettingsRepository", "media-location backfill flag could not be read; treating it as not done", throwable)
+            emit(false)
+        }
+
+    override suspend fun setMediaLocationBackfillGranted(granted: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_MEDIA_LOCATION_BACKFILL_GRANTED] = granted
+        }
+    }
+
     companion object {
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_BACKUP_NETWORK = stringPreferencesKey("backup_network")
@@ -147,5 +163,7 @@ class SettingsRepositoryImpl(
         val KEY_SHOW_GIFS = booleanPreferencesKey("timeline_show_gifs")
         val KEY_START_VIDEOS_MUTED = booleanPreferencesKey("viewer_start_videos_muted")
         val KEY_APP_LOCK = booleanPreferencesKey("app_lock_enabled")
+        val KEY_MEDIA_LOCATION_BACKFILL_GRANTED =
+            booleanPreferencesKey("media_location_backfill_granted")
     }
 }

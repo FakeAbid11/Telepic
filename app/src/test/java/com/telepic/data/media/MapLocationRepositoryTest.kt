@@ -142,6 +142,28 @@ class MapLocationRepositoryTest {
         assertEquals(setOf(1L, 3L), truncated.locations.first().map { it.mediaId }.toSet())
     }
 
+    @Test
+    fun `invalidating the scan memory makes the next sweep re-read every item`() = runBlocking {
+        val extractor = FakeExtractor()
+        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), extractor, ScanCursorStore.NoOp, pageSize = 10, maxPages = 5)
+        repository.rescan()
+        assertEquals(listOf("content://m/1", "content://m/2", "content://m/3"), extractor.calls)
+
+        // This is what the one-time media-location backfill calls: it drops the "already examined"
+        // memory — an inference that was only true while the platform was redacting GPS — so a file
+        // whose coordinate was previously invisible is read again.
+        repository.invalidateScanMemory()
+        repository.rescan()
+        assertEquals(
+            listOf(
+                "content://m/1", "content://m/2", "content://m/3",
+                "content://m/1", "content://m/2", "content://m/3",
+            ),
+            extractor.calls,
+        )
+        assertEquals(setOf(1L, 3L), repository.locations.first().map { it.mediaId }.toSet())
+    }
+
     private fun media(id: Long, uri: String) = LocalMedia(
         id = id, contentUri = Uri.parse(uri), type = MediaType.PHOTO, mimeType = "image/jpeg",
         displayName = "f$id", dateMillis = 1L, durationMillis = null, width = 1, height = 1, sizeBytes = 1L,

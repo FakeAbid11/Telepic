@@ -75,6 +75,19 @@ interface SettingsRepository {
     val appLockPreference: Flow<AppLockPreference>
 
     suspend fun setAppLockEnabled(enabled: Boolean)
+
+    /**
+     * Whether the one-time map backfill has already run for the currently granted media permission.
+     *
+     * Before Telepic requested `ACCESS_MEDIA_LOCATION`, the map's scan tables recorded every file as
+     * "examined, no GPS" — true at the time, because Android redacted the embedded location before the
+     * app could read it. That memory is an inference, and it becomes wrong the moment the user grants
+     * the permission, so it must be cleared once to let the map repopulate. This flag records that the
+     * clear has happened, so it runs once per grant and not on every resume.
+     */
+    val mediaLocationBackfillGranted: Flow<Boolean>
+
+    suspend fun setMediaLocationBackfillGranted(granted: Boolean)
 }
 
 /** The app-lock preference as read, distinguishing "off" from "could not be read". */

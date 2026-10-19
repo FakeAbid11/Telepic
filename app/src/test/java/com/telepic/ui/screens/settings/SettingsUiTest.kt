@@ -78,6 +78,7 @@ class SettingsUiTest {
         val gifs = MutableStateFlow(true)
         val startMuted = MutableStateFlow(true)
         val appLock = MutableStateFlow(false)
+        val backfillGranted = MutableStateFlow(false)
 
         override val themeMode: Flow<ThemeMode> get() = theme
         override suspend fun setThemeMode(mode: ThemeMode) { theme.value = mode }
@@ -96,6 +97,8 @@ class SettingsUiTest {
         override val appLockEnabled: Flow<Boolean> get() = appLock
         override val appLockPreference: Flow<AppLockPreference> get() = appLock.map { AppLockPreference.Known(it) }
         override suspend fun setAppLockEnabled(enabled: Boolean) { appLock.value = enabled }
+        override val mediaLocationBackfillGranted: Flow<Boolean> get() = backfillGranted
+        override suspend fun setMediaLocationBackfillGranted(granted: Boolean) { backfillGranted.value = granted }
     }
 
     private fun viewModel(

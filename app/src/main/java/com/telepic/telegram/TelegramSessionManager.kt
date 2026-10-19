@@ -7,6 +7,7 @@ import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,7 +37,26 @@ class TelegramSessionManager(
 ) {
     private val appContext = context.applicationContext
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * The single scope every TDLib interaction runs on.
+     *
+     * [SupervisorJob] already keeps one failed child from cancelling its siblings, but on its own it
+     * does nothing for a *root* failure: with no [CoroutineExceptionHandler] the throwable reaches the
+     * platform's default handler and can take the process down — and unlike a ViewModel there is no
+     * `viewModelScope` here to absorb it. The handler is the same net `TelepicApplication.appScope`
+     * installs: it logs through the app's redacting logger and, because this scope's only job is the
+     * Telegram session, publishes an honest [TelegramAuthState.Failed] so the auth UI offers a retry
+     * instead of the app vanishing. It reports rather than swallowing — the state is the visible
+     * signal, and [TelepicLog] is where the throwable lands.
+     */
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
+            TelepicLog.error("TelegramAuth", "unhandled failure in a Telegram session coroutine", throwable)
+            _state.value = TelegramAuthState.Failed(
+                TelegramError.Initialization("The Telegram session could not start."),
+            )
+        },
+    )
 
     private val _state = MutableStateFlow<TelegramAuthState>(TelegramAuthState.NotConnected)
     val state: StateFlow<TelegramAuthState> = _state.asStateFlow()
@@ -182,7 +202,25 @@ class TelegramSessionManager(
         if (parametersSent) return
         parametersSent = true
         val dir = File(appContext.noBackupFilesDir, "tdlib").apply { mkdirs() }
-        val databaseKey = keyProvider.getOrCreate()
+        // Resolving the database key reaches the Android Keystore, which can fail for reasons outside
+        // the app's control: a hardware-backed key is invalidated by a screen-lock or secure-lock
+        // change, and an OEM keystore can throw on a device whose secure hardware was reset. This runs
+        // inside the update collector, so an escaping throwable is an app crash (or, without the
+        // handler above, a permanently stuck session). A failure is therefore reported as a normal
+        // [TelegramAuthState.Failed] and the send is abandoned before a SetTdlibParameters request is
+        // built around a missing key. [parametersSent] is reset so a later retry can attempt the key
+        // again — the failure may be transient, and the guard exists to stop double-sends, not to latch
+        // a failure forever. Cancellation is control flow and propagates unchanged.
+        val databaseKey = try {
+            keyProvider.getOrCreate()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.error("TelegramAuth", "the TDLib database key could not be provided", throwable)
+            parametersSent = false
+            fail(TelegramError.Initialization("Telegram could not be securely initialised on this device."))
+            return
+        }
         val request = TdApi.SetTdlibParameters(
             /* useTestDc = */ false,
             /* databaseDirectory = */ dir.absolutePath,

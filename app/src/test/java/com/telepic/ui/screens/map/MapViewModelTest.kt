@@ -51,6 +51,8 @@ class MapViewModelTest {
             if (failNext) throw IllegalStateException("scan blew up")
             gate.await()
         }
+
+        override suspend fun invalidateScanMemory() = Unit
     }
 
     /**

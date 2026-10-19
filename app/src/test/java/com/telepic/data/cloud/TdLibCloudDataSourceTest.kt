@@ -260,6 +260,34 @@ class TdLibCloudDataSourceTest {
     }
 
     @Test
+    fun `a 420 flood wait surfaces Telegram's own retry-after figure`() = runBlocking {
+        // The backup queue records the throwable's *message* (never retryAfterSeconds) into its
+        // `lastError`, so the wait has to be legible from the message as well as from the field.
+        val (ds, _) = source { _ -> TdApi.Error(420, "Too many requests: retry after 37") }
+        val request = CloudUploadRequest("/tmp/x", "x", "image/jpeg", CloudMediaType.IMAGE, 10L, 1, 1, null, 1L)
+        try {
+            ds.upload(100L, request, onProgress = {})
+            fail("expected a transient flood-wait error")
+        } catch (e: CloudNetworkException) {
+            assertEquals(37, e.retryAfterSeconds)
+            assertTrue(e.message!!.contains("37"))
+            assertTrue(e.message!!.contains("flood wait"))
+        }
+    }
+
+    @Test
+    fun `a non-flood transient carries no retry-after figure`() = runBlocking {
+        val (ds, _) = source { _ -> TdApi.Error(500, "internal") }
+        val request = CloudUploadRequest("/tmp/x", "x", "image/jpeg", CloudMediaType.IMAGE, 10L, 1, 1, null, 1L)
+        try {
+            ds.upload(100L, request, onProgress = {})
+            fail("expected a transient error")
+        } catch (e: CloudNetworkException) {
+            assertNull(e.retryAfterSeconds)
+        }
+    }
+
+    @Test
     fun `confirmation that never arrives times out as transient`() = runBlocking {
         val (ds, _) = source { req ->
             when (req) {

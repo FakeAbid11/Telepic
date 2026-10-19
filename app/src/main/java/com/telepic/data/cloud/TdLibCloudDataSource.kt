@@ -278,15 +278,33 @@ class TdLibCloudDataSource(
         return current
     }
 
-    private fun classifySendError(error: TdApi.Error): Exception =
+    private fun classifySendError(error: TdApi.Error): Exception {
         // TDLib's flood wait is 420 (with "retry after N seconds"); 429/5xx are other transient
         // conditions. All of them re-run through the queue's backoff — only genuine rejections
         // (400s etc.) are permanent failures. Matches telegram/TelegramError.kt's auth-side mapping.
-        if (error.code == 420 || error.code == 429 || error.code >= 500) {
-            CloudNetworkException("Telegram send failed (${error.code}): ${error.message}")
-        } else {
-            CloudUploadRejectedException("Telegram rejected the upload (${error.code}): ${error.message}")
+        if (error.code != 420 && error.code != 429 && error.code < 500) {
+            return CloudUploadRejectedException("Telegram rejected the upload (${error.code}): ${error.message}")
         }
+        // A 420 carries Telegram's own wait. It is surfaced twice: as [retryAfterSeconds] for a caller
+        // that can honour the interval, and spelled out inside the message because the backup queue
+        // records the throwable's message (not the field) into its `lastError`, where a bare
+        // "(420)" told the user nothing about how long to wait. The code is kept in the message too,
+        // so every transient failure still names its TDLib code.
+        val retryAfter = if (error.code == 420) extractRetryAfterSeconds(error.message) else null
+        val message = if (retryAfter != null) {
+            "Telegram asked to wait ${retryAfter}s (flood wait, code ${error.code})"
+        } else {
+            "Telegram send failed (${error.code}): ${error.message}"
+        }
+        return CloudNetworkException(message, retryAfter)
+    }
+
+    /**
+     * The wait Telegram stated in a flood-wait message, mirroring
+     * `TelegramError.extractSeconds`'s first-integer extraction so both paths read the same figure.
+     */
+    private fun extractRetryAfterSeconds(message: String): Int? =
+        Regex("\\d+").find(message)?.value?.toIntOrNull()
 
     private fun requireAuth() {
         if (!isReady) throw CloudNetworkException("Not authenticated")

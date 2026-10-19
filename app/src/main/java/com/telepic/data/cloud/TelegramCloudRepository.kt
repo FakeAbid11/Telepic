@@ -33,8 +33,19 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/** Thrown by a [CloudDataSource] for transient network problems (mapped to [CloudStatus.Offline]). */
-class CloudNetworkException(message: String = "Telegram unavailable") : IOException(message)
+/**
+ * Thrown by a [CloudDataSource] for transient network problems (mapped to [CloudStatus.Offline]).
+ *
+ * [retryAfterSeconds] carries TDLib's own flood-wait figure when a 420 arrived, so a caller can wait
+ * the interval Telegram actually asked for instead of a fixed backoff. It duplicates the figure that
+ * is already written into [message] on purpose: the queue records the throwable's `message` (never
+ * this field) into its `lastError`, so the wait has to be legible from the message alone. Null for
+ * every other transient failure.
+ */
+class CloudNetworkException(
+    message: String = "Telegram unavailable",
+    val retryAfterSeconds: Int? = null,
+) : IOException(message)
 
 /** Thrown when the destination exists but is not a valid Telepic destination. */
 class CloudDestinationInvalidException(val reason: String) : Exception(reason)
@@ -71,7 +82,20 @@ class TelegramCloudRepository(
     private val clock: () -> Long = System::currentTimeMillis,
 ) : CloudRepository {
 
-    private val mutex = Mutex()
+    /**
+     * Lock ordering: **networkMutex is always acquired before dbMutex, never the reverse.** The
+     * network lock serializes every TDLib request — [CloudDataSource] calls must stay ordered — so a
+     * long `uploadMedia` send-confirmation poll and a [refreshLocked] page walk cannot interleave on
+     * the wire, but neither holds up work that only touches Room. The db lock guards exactly that
+     * Room work: the manifest read-then-write in [mergePreservingTrusted]'s callers and the
+     * destination read-modify-write in [currentDestination]/[persistDestination].
+     *
+     * The split exists because one lock made a minute-long network poll and a DB-only lookup wait on
+     * each other. Nothing here nests dbMutex outside networkMutex; the one nesting is networkMutex
+     * outer, dbMutex inner (a page walk or an upload touching the destination/manifest mid-request).
+     */
+    private val networkMutex = Mutex()
+    private val dbMutex = Mutex()
 
     private val _status = MutableStateFlow<CloudStatus>(CloudStatus.Initializing)
     override val status: StateFlow<CloudStatus> = _status.asStateFlow()
@@ -97,10 +121,11 @@ class TelegramCloudRepository(
         _status.value = CloudStatus.Connecting
         val destination = ensureDestination() ?: return@withContext
         _destinationTitle.value = destination.title
-        // Under the mutex, like every other refreshLocked() call site. The `Locked` suffix is a
-        // contract, and calling it bare here let a concurrent refresh() run a second
-        // load-and-merge pass over the same manifest rows at the same time.
-        mutex.withLock { refreshLocked() }
+        // Bare, like every other refreshLocked() call site: it now takes networkMutex for its page
+        // walk and dbMutex around each page's read+write, so a caller holding either lock across it
+        // would deadlock. The walk is still serialized against itself and against every other TDLib
+        // request by networkMutex.
+        refreshLocked()
     }
 
     override suspend fun refresh() = withContext(dispatcher) {
@@ -108,7 +133,7 @@ class TelegramCloudRepository(
             _status.value = CloudStatus.NotAuthenticated
             return@withContext
         }
-        mutex.withLock { refreshLocked() }
+        refreshLocked()
     }
 
     /**
@@ -127,46 +152,57 @@ class TelegramCloudRepository(
      * routine refresh therefore costs a single round trip, while a first refresh after a reinstall
      * (empty manifest) covers the whole channel once. [MAX_REBUILD_PAGES] is a backstop so a
      * pathological history cannot spin forever.
+     *
+     * Acquires [networkMutex] for the whole walk — every `dataSource` page request has to stay
+     * ordered against uploads and destination discovery — and [dbMutex] only around the manifest
+     * read and each page's merge write. That is the one legal nesting (network outer, db inner); the
+     * `_status` writes stay outside both because it is a plain [MutableStateFlow].
      */
     private suspend fun refreshLocked() {
-        val destination = currentDestination() ?: run {
-            // An outstanding confirmation offer is not a missing destination: overwriting the status
-            // here would erase the question the screen is still asking the user.
-            if (_pendingConfirmation.value == null) _status.value = CloudStatus.DestinationMissing
-            return
-        }
-        _status.value = CloudStatus.Refreshing
-        try {
-            val now = clock()
-            // Read once per refresh: this is both the stop signal and the source of the per-row
-            // "existing" lookups, replacing one query per discovered row with two queries per page.
-            val known = manifestDao.messageIds(destination.chatId).toHashSet()
-            var cursor = 0L
-            var pages = 0
-            while (pages < MAX_REBUILD_PAGES) {
-                val page = dataSource.loadMediaPage(destination.chatId, cursor, PAGE_SIZE)
-                pages++
-                if (page.items.isNotEmpty()) {
-                    // Merge the whole page in memory, then write it in one statement.
-                    manifestDao.upsertAll(mergePreservingTrusted(page.items, now))
-                    // Nothing on this page is new, so everything older is already recorded too.
-                    if (page.items.none { it.messageId !in known }) break
-                }
-                // Null cursor = the history really ended. An empty page with a cursor still set means
-                // the page held only messages Telepic cannot browse, so keep walking past it.
-                cursor = page.nextFromMessageId ?: break
+        networkMutex.withLock {
+            val destination = dbMutex.withLock { currentDestination() } ?: run {
+                // An outstanding confirmation offer is not a missing destination: overwriting the
+                // status here would erase the question the screen is still asking the user.
+                if (_pendingConfirmation.value == null) _status.value = CloudStatus.DestinationMissing
+                return@withLock
             }
-            _status.value = if (manifestDao.count() == 0) CloudStatus.Empty else CloudStatus.Ready
-        } catch (network: CloudNetworkException) {
-            _status.value = CloudStatus.Offline
-        } catch (invalid: CloudDestinationInvalidException) {
-            _status.value = CloudStatus.DestinationInvalid(invalid.reason)
-        } catch (cancellation: CancellationException) {
-            // A cancelled refresh is not a failure: publishing Failed here would overwrite the
-            // status a newer run just set, and the scope is already tearing down.
-            throw cancellation
-        } catch (throwable: Throwable) {
-            _status.value = CloudStatus.Failed(safeMessage(throwable))
+            _status.value = CloudStatus.Refreshing
+            try {
+                val now = clock()
+                // Read once per refresh: this is both the stop signal and the source of the per-row
+                // "existing" lookups, replacing one query per discovered row with two per page.
+                val known = dbMutex.withLock { manifestDao.messageIds(destination.chatId).toHashSet() }
+                var cursor = 0L
+                var pages = 0
+                while (pages < MAX_REBUILD_PAGES) {
+                    val page = dataSource.loadMediaPage(destination.chatId, cursor, PAGE_SIZE)
+                    pages++
+                    if (page.items.isNotEmpty()) {
+                        // Merge the whole page in memory, then write it in one statement — the read
+                        // inside mergePreservingTrusted and this write are one dbMutex section.
+                        dbMutex.withLock {
+                            manifestDao.upsertAll(mergePreservingTrusted(page.items, now))
+                        }
+                        // Nothing on this page is new, so everything older is already recorded too.
+                        if (page.items.none { it.messageId !in known }) break
+                    }
+                    // Null cursor = the history really ended. An empty page with a cursor still set
+                    // means the page held only messages Telepic cannot browse, so keep walking.
+                    cursor = page.nextFromMessageId ?: break
+                }
+                _status.value =
+                    if (dbMutex.withLock { manifestDao.count() } == 0) CloudStatus.Empty else CloudStatus.Ready
+            } catch (network: CloudNetworkException) {
+                _status.value = CloudStatus.Offline
+            } catch (invalid: CloudDestinationInvalidException) {
+                _status.value = CloudStatus.DestinationInvalid(invalid.reason)
+            } catch (cancellation: CancellationException) {
+                // A cancelled refresh is not a failure: publishing Failed here would overwrite the
+                // status a newer run just set, and the scope is already tearing down.
+                throw cancellation
+            } catch (throwable: Throwable) {
+                _status.value = CloudStatus.Failed(safeMessage(throwable))
+            }
         }
     }
 
@@ -181,20 +217,25 @@ class TelegramCloudRepository(
      * Only the "no rows for this chat" case walks. A populated manifest is known territory — the
      * walk's own stop rule would end it after a single page anyway. A failed walk (offline)
      * degrades to exactly the old behaviour: [refreshLocked] reports the status and swallows the
-     * error, and the caller decides for itself whether the network exists. Callers must hold
-     * [mutex] — the same contract every [refreshLocked] site obeys.
+     * error, and the caller decides for itself whether the network exists.
+     *
+     * Takes [dbMutex] only for its own emptiness probe, then releases it before calling
+     * [refreshLocked] — that method acquires [networkMutex] itself, and holding dbMutex across it
+     * would invert the lock order.
      */
     private suspend fun rebuildManifestIfMissing(destination: TelepicCloudDestination) {
-        if (manifestDao.messageIds(destination.chatId).isEmpty()) refreshLocked()
+        val empty = dbMutex.withLock { manifestDao.messageIds(destination.chatId).isEmpty() }
+        if (empty) refreshLocked()
     }
 
     override suspend fun findRemoteByContent(contentHash: String, sizeBytes: Long): RemoteMediaIdentity? =
         withContext(dispatcher) {
-            mutex.withLock {
-                // Rebuild-first, under the mutex like every other refresh site: this is the question
-                // the upload path asks right before sending, and answering it from a manifest this
-                // install has not yet rebuilt (a reinstall) would let a duplicate out the door.
-                currentDestination()?.let { rebuildManifestIfMissing(it) }
+            // Rebuild-first, because this is the question the upload path asks right before sending,
+            // and answering it from a manifest this install has not yet rebuilt (a reinstall) would
+            // let a duplicate out the door. The destination read and the lookup are separate dbMutex
+            // sections so the walk (which needs networkMutex) never runs while dbMutex is held.
+            dbMutex.withLock { currentDestination() }?.let { rebuildManifestIfMissing(it) }
+            dbMutex.withLock {
                 manifestDao.findByContentHashAndSize(contentHash, sizeBytes)
                     ?.let { RemoteMediaIdentity(it.chatId, it.messageId) }
             }
@@ -205,40 +246,52 @@ class TelegramCloudRepository(
             _status.value = CloudStatus.NotAuthenticated
             return@withContext null
         }
-        mutex.withLock { ensureDestinationLocked() }
+        ensureDestinationLocked()
     }
 
+    /**
+     * Acquires [networkMutex] for its whole body — destination discovery is a sequence of ordered
+     * TDLib requests — and [dbMutex] only around the destination read and the persistence that
+     * implements the check-then-write. That single network section is what keeps two concurrent
+     * `ensureDestination` calls from both searching and both creating a channel.
+     */
     private suspend fun ensureDestinationLocked(): TelepicCloudDestination? {
-        currentDestination()?.let { return it }
+        return networkMutex.withLock {
+            val existing = dbMutex.withLock { currentDestination() }
+            if (existing != null) return@withLock existing
 
-        try {
-            val candidates = dataSource.searchDestinationCandidates()
-            // An owned, validated channel is used immediately — no consent needed.
-            candidates.firstOrNull { it.isValid() }?.let { return persistDestination(it) }
-            // A postable-but-not-owned same-name channel is *offered*, never auto-selected. Nothing is
-            // persisted here: that is the whole point of [DestinationVerdict.NeedsConfirmation], and
-            // discarding it (as this path used to) demoted a usable channel to DestinationMissing and
-            // silently created a second one on top of it.
-            val ambiguous = candidates.firstOrNull { it.needsConfirmation() }
-            if (ambiguous != null) {
-                val verdict = ChatValidator.validate(ambiguous) as DestinationVerdict.NeedsConfirmation
-                _pendingConfirmation.value = ambiguous
-                _status.value = CloudStatus.DestinationConfirmation(
-                    chatId = verdict.chatId,
-                    title = ambiguous.title,
-                    reason = verdict.reason,
-                )
-                return null
+            try {
+                val candidates = dataSource.searchDestinationCandidates()
+                // An owned, validated channel is used immediately — no consent needed.
+                val owned = candidates.firstOrNull { it.isValid() }
+                if (owned != null) return@withLock persistDestination(owned)
+                // A postable-but-not-owned same-name channel is *offered*, never auto-selected.
+                // Nothing is persisted here: that is the whole point of
+                // [DestinationVerdict.NeedsConfirmation], and discarding it (as this path used to)
+                // demoted a usable channel to DestinationMissing and silently created a second one
+                // on top of it.
+                val ambiguous = candidates.firstOrNull { it.needsConfirmation() }
+                if (ambiguous != null) {
+                    val verdict = ChatValidator.validate(ambiguous) as DestinationVerdict.NeedsConfirmation
+                    dbMutex.withLock { _pendingConfirmation.value = ambiguous }
+                    _status.value = CloudStatus.DestinationConfirmation(
+                        chatId = verdict.chatId,
+                        title = ambiguous.title,
+                        reason = verdict.reason,
+                    )
+                    return@withLock null
+                }
+                createOwnDestinationLocked()
+            } catch (network: CloudNetworkException) {
+                _status.value = CloudStatus.Offline
+                null
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                _status.value = CloudStatus.Failed(safeMessage(throwable))
+                null
             }
-            return createOwnDestinationLocked()
-        } catch (network: CloudNetworkException) {
-            _status.value = CloudStatus.Offline
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (throwable: Throwable) {
-            _status.value = CloudStatus.Failed(safeMessage(throwable))
         }
-        return null
     }
 
     /**
@@ -253,15 +306,14 @@ class TelegramCloudRepository(
         }
         if (_status.value !is CloudStatus.DestinationConfirmation) return@withContext null
         val candidate = _pendingConfirmation.value ?: return@withContext null
-        mutex.withLock {
-            val destination = persistDestination(candidate)
-            // Cleared only once it is actually persisted: a failed write leaves the offer standing so
-            // the user can press the same button again.
-            _pendingConfirmation.value = null
-            _destinationTitle.value = destination.title
-            refreshLocked()
-            destination
-        }
+        // persistDestination takes dbMutex for the destination read-modify-write. The offer is
+        // cleared only once it is actually persisted, so a failed write leaves it standing for a
+        // retry; [refreshLocked] is called afterwards without either lock held.
+        val destination = persistDestination(candidate)
+        dbMutex.withLock { _pendingConfirmation.value = null }
+        _destinationTitle.value = destination.title
+        refreshLocked()
+        destination
     }
 
     /**
@@ -274,19 +326,23 @@ class TelegramCloudRepository(
             return@withContext null
         }
         if (_status.value !is CloudStatus.DestinationConfirmation) return@withContext null
-        _pendingConfirmation.value = null
+        dbMutex.withLock { _pendingConfirmation.value = null }
         _status.value = CloudStatus.Connecting
-        mutex.withLock {
-            val destination = createOwnDestinationLocked()
-            if (destination != null) {
-                _destinationTitle.value = destination.title
-                refreshLocked()
-            }
-            destination
+        // networkMutex for the create request (createOwnDestinationLocked persists inside it under
+        // dbMutex), then refreshLocked afterwards on its own — never both held across the refresh.
+        val destination = networkMutex.withLock { createOwnDestinationLocked() }
+        if (destination != null) {
+            _destinationTitle.value = destination.title
+            refreshLocked()
         }
+        destination
     }
 
-    /** Creates a fresh Telepic-owned destination, or reports [CloudStatus.DestinationMissing]. */
+    /**
+     * Creates a fresh Telepic-owned destination, or reports [CloudStatus.DestinationMissing]. Callers
+     * must already hold [networkMutex]: the create request is TDLib work, and calling it while a
+     * caller held [dbMutex] instead would invert the lock order.
+     */
     private suspend fun createOwnDestinationLocked(): TelepicCloudDestination? {
         val created = dataSource.createDestination()?.takeIf { it.isValid() }
         if (created == null) {
@@ -298,7 +354,10 @@ class TelegramCloudRepository(
 
     override suspend fun getPreview(media: CloudMedia): CloudPreview? = withContext(dispatcher) {
         try {
-            dataSource.downloadPreview(media)
+            // The data source is not internally synchronized, so even this read-only preview request
+            // is serialized under networkMutex — a preview must not race a manifest rebuild or an
+            // upload's own TDLib traffic. No db state is touched, so dbMutex is not needed.
+            networkMutex.withLock { dataSource.downloadPreview(media) }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (throwable: Throwable) {
@@ -313,9 +372,12 @@ class TelegramCloudRepository(
     override suspend fun downloadOriginal(media: CloudMedia): LocalDownloadedMedia? =
         withContext(dispatcher) {
             try {
-                val result = dataSource.downloadOriginal(media)
+                // networkMutex only for the (potentially long) download request; the manifest flag
+                // below is its own dbMutex section so a completed download never holds dbMutex across
+                // the network call and never holds networkMutex across the write.
+                val result = networkMutex.withLock { dataSource.downloadOriginal(media) }
                 if (result != null) {
-                    manifestDao.setDownloaded(media.chatId, media.messageId, true)
+                    dbMutex.withLock { manifestDao.setDownloaded(media.chatId, media.messageId, true) }
                 }
                 result
             } catch (cancellation: CancellationException) {
@@ -343,12 +405,18 @@ class TelegramCloudRepository(
         if (!isAuthorized()) {
             throw CloudNetworkException("Not authenticated")
         }
-        mutex.withLock {
-            val destination = currentDestination() ?: throw CloudDestinationInvalidException("No Telepic Backup destination")
+        // networkMutex is the outer lock for the whole send: the destination read, the long poll and
+        // the manifest write all belong to one ordered TDLib operation, so a concurrent refresh
+        // cannot walk pages mid-send (and the destination cannot be repointed under the send).
+        networkMutex.withLock {
+            val destination = dbMutex.withLock { currentDestination() }
+                ?: throw CloudDestinationInvalidException("No Telepic Backup destination")
             val result = dataSource.upload(destination.chatId, request, onProgress, onSent)
             // Remote confirmation arrived: record it under its stable identity, preserving any
             // existing trusted hash (upload rows carry a real hash; discovery rows carry none).
-            manifestDao.upsertAll(mergePreservingTrusted(listOf(fromUpload(request, result)), clock()))
+            dbMutex.withLock {
+                manifestDao.upsertAll(mergePreservingTrusted(listOf(fromUpload(request, result)), clock()))
+            }
             result
         }
     }
@@ -363,37 +431,41 @@ class TelegramCloudRepository(
         if (!isAuthorized()) {
             throw CloudNetworkException("Not authenticated")
         }
-        mutex.withLock {
+        // networkMutex outer (the confirm request must stay ordered in TDLib), dbMutex inner for the
+        // manifest write — the same nesting refreshLocked and uploadMedia use.
+        networkMutex.withLock {
             val confirmed = dataSource.confirmSend(chatId, messageId, mediaType)
             // Record the confirmed remote in the manifest under its identity, carrying the trusted
             // content hash from the queue row so content recognition dedups this upload too — even
             // when its confirmation arrived late, via this path instead of the original send run.
-            manifestDao.upsertAll(
-                mergePreservingTrusted(
-                    listOf(
-                        CloudMedia(
-                            messageId = confirmed.messageId,
-                            chatId = confirmed.chatId,
-                            mediaType = confirmed.mediaType,
-                            mimeType = null,
-                            fileName = null,
-                            sizeBytes = contentSizeBytes,
-                            width = null,
-                            height = null,
-                            durationMs = null,
-                            dateEpochSec = clock() / 1000L,
-                            previewFileId = null,
-                            originalFileId = confirmed.telegramFileId,
-                            isDownloaded = false,
-                            contentHash = contentHash,
-                            // No provider size is known on this path, so the hashed size stands in for
-                            // both — the pair stays internally consistent either way.
-                            contentSizeBytes = contentSizeBytes,
+            dbMutex.withLock {
+                manifestDao.upsertAll(
+                    mergePreservingTrusted(
+                        listOf(
+                            CloudMedia(
+                                messageId = confirmed.messageId,
+                                chatId = confirmed.chatId,
+                                mediaType = confirmed.mediaType,
+                                mimeType = null,
+                                fileName = null,
+                                sizeBytes = contentSizeBytes,
+                                width = null,
+                                height = null,
+                                durationMs = null,
+                                dateEpochSec = clock() / 1000L,
+                                previewFileId = null,
+                                originalFileId = confirmed.telegramFileId,
+                                isDownloaded = false,
+                                contentHash = contentHash,
+                                // No provider size is known on this path, so the hashed size stands
+                                // in for both — the pair stays internally consistent either way.
+                                contentSizeBytes = contentSizeBytes,
+                            ),
                         ),
+                        clock(),
                     ),
-                    clock(),
-                ),
-            )
+                )
+            }
             confirmed
         }
     }
@@ -412,9 +484,9 @@ class TelegramCloudRepository(
      *
      * Takes the whole page at once and resolves every "existing row" in **one** query, so a page of N
      * rows costs one read and one write instead of N of each. The read-then-write is not atomic on
-     * its own, so every caller holds the repository mutex — and identity is (chatId, messageId), so a
-     * preserved hash always belongs to the same Telegram message and repeated refreshes stay
-     * idempotent.
+     * its own, so every caller wraps both this read and its own `upsertAll` in one [dbMutex]
+     * section — and identity is (chatId, messageId), so a preserved hash always belongs to the same
+     * Telegram message and repeated refreshes stay idempotent.
      */
     private suspend fun mergePreservingTrusted(
         items: List<CloudMedia>,
@@ -463,6 +535,7 @@ class TelegramCloudRepository(
         contentSizeBytes = request.contentSizeBytes ?: request.sizeBytes,
     )
 
+    /** Reads the destination row. Callers must hold [dbMutex]; it is the read half of the RMW. */
     private suspend fun currentDestination(): TelepicCloudDestination? {
         val entity = destinationDao.find(PROVIDER) ?: return null
         return TelepicCloudDestination(
@@ -474,7 +547,15 @@ class TelegramCloudRepository(
         )
     }
 
-    private suspend fun persistDestination(candidate: ChatCandidate): TelepicCloudDestination {
+    /**
+     * Writes the destination row, preserving its original `createdAt`. Takes [dbMutex] itself: the
+     * `find`-then-`upsert` is a read-modify-write that must not interleave with another writer of
+     * the same row.
+     */
+    private suspend fun persistDestination(candidate: ChatCandidate): TelepicCloudDestination =
+        dbMutex.withLock { persistDestinationLocked(candidate) }
+
+    private suspend fun persistDestinationLocked(candidate: ChatCandidate): TelepicCloudDestination {
         val now = clock()
         val existing = destinationDao.find(PROVIDER)
         destinationDao.upsert(

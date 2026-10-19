@@ -68,6 +68,18 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
                         .onFailure { TelepicLog.error("BackupScheduler", "could not resume the queue after sign-in", it) }
                 }
         }
+        // One-time map backfill. Android redacts the GPS in every MediaStore open on API 29+ until the
+        // app holds ACCESS_MEDIA_LOCATION, so the map's scan memory recorded genuinely geotagged files
+        // as "examined, no GPS". The first grant has to invalidate that memory once, or an existing
+        // install would keep an empty map forever. App-scoped (never a screen) so it also covers the
+        // case where the permission is already granted when the process starts. A failure leaves the
+        // persisted flag unset, so the next launch tries again rather than losing the repair silently.
+        appScope.launch {
+            container.mediaPermissionMonitor.hasAccess.collect { hasAccess ->
+                runCatching { container.mediaLocationBackfill.onMediaAccessChanged(hasAccess) }
+                    .onFailure { TelepicLog.warn("MediaLocationBackfill", "could not invalidate the map scan memory", it) }
+            }
+        }
     }
 
     /**

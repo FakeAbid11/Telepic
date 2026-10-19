@@ -322,7 +322,7 @@ class PhotosViewModel(
 
     init {
         // Re-read the library when MediaStore changes while the screen is alive.
-        changeWatcher.start {
+        changeWatcher.start(this) {
             repository.refresh()
             scheduleChangeSync()
         }
@@ -367,7 +367,7 @@ class PhotosViewModel(
     }
 
     override fun onCleared() {
-        changeWatcher.stop()
+        changeWatcher.stop(this)
         changeSyncJob?.cancel()
         super.onCleared()
     }

@@ -44,8 +44,38 @@ class MediaPermissionPolicyTest {
 
     @Test
     fun `requests legacy storage on or below Android 12`() {
-        val request32 = MediaPermissionPolicy.permissionsToRequest(32)
-        assertEquals(setOf(legacyStorage), request32.toSet())
+        val request32 = MediaPermissionPolicy.permissionsToRequest(32).toSet()
+        assertTrue(legacyStorage in request32)
+        assertTrue(Manifest.permission.WRITE_EXTERNAL_STORAGE !in request32)
+    }
+
+    @Test
+    fun `requests media location on Android 10 and above so embedded GPS is not redacted`() {
+        val mediaLocation = Manifest.permission.ACCESS_MEDIA_LOCATION
+        assertTrue(mediaLocation in MediaPermissionPolicy.permissionsToRequest(29))
+        assertTrue(mediaLocation in MediaPermissionPolicy.permissionsToRequest(32))
+        assertTrue(mediaLocation in MediaPermissionPolicy.permissionsToRequest(33))
+        assertTrue(mediaLocation in MediaPermissionPolicy.permissionsToRequest(34))
+    }
+
+    @Test
+    fun `does not request media location on Android 9 and below where nothing is redacted`() {
+        val request28 = MediaPermissionPolicy.permissionsToRequest(28).toSet()
+        assertTrue(Manifest.permission.ACCESS_MEDIA_LOCATION !in request28)
+    }
+
+    @Test
+    fun `a denied media location does not cost the granted state`() {
+        // Location is best-effort: with media access held and ACCESS_MEDIA_LOCATION denied, the
+        // library must still resolve as usable. The map degrades; the app does not.
+        assertEquals(
+            MediaPermissionState.Granted,
+            resolve(33, granted = setOf(images, video)),
+        )
+        assertEquals(
+            MediaPermissionState.Granted,
+            resolve(32, granted = setOf(legacyStorage)),
+        )
     }
 
     @Test

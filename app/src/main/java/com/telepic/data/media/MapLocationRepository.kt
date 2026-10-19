@@ -24,6 +24,16 @@ import kotlinx.coroutines.flow.map
 interface MapLocationRepository {
     val locations: Flow<List<GeotaggedMedia>>
     suspend fun rescan()
+
+    /**
+     * Forgets which files have already been examined for GPS, so the next [rescan] reads their EXIF
+     * again. Needed because "examined, no coordinate" is an *inference*: it is only true while the
+     * app could actually see the file's embedded location. Once the user grants
+     * `ACCESS_MEDIA_LOCATION`, a coordinate that was previously invisible becomes readable, and the
+     * scan memory alone would permanently skip the very files that just became geotagged. The one-time
+     * backfill calls this exactly when that grant first arrives; nothing else should.
+     */
+    suspend fun invalidateScanMemory()
 }
 
 class DefaultMapLocationRepository(
@@ -130,6 +140,16 @@ class DefaultMapLocationRepository(
                 dao.deleteScanned(id)
             }
         }
+    }
+
+    /**
+     * Drops the "already examined" memory wholesale. Cached coordinates are deliberately left in
+     * place — they are still correct, and dropping them would make pins flicker out until the next
+     * sweep rediscovers them. Only what the scan *assumed* (that an item carried no GPS) is discarded,
+     * so the next sweep re-reads the files it previously could not see.
+     */
+    override suspend fun invalidateScanMemory() {
+        dao.clearScanned()
     }
 
     /** Best-effort: a cursor that cannot be written costs a re-scan, never correctness. */

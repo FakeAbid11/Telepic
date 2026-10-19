@@ -248,7 +248,11 @@ class DefaultBackupRepository(
 
         val destination = cloudRepository.ensureDestination()
             ?: run {
-                dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, now)
+                // No destination (transiently unavailable, or confirmation still pending). Recording a
+                // transient failure bumps the retry budget, so a persistently missing destination parks
+                // the row in WAITING_FOR_NETWORK and eventually exhausts into STALLED instead of being
+                // re-marked WAITING forever and keeping the worker's `retry()` loop alive indefinitely.
+                dao.recordTransientFailure(item.id, "Backup destination is not ready yet.", clock())
                 return ProcessOutcome.Waiting
             }
 
@@ -343,7 +347,10 @@ class DefaultBackupRepository(
             dao.recordTransientFailure(item.id, safeError(network), clock())
             ProcessOutcome.Waiting
         } catch (invalid: CloudDestinationInvalidException) {
-            dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, clock())
+            // The upload was rejected as destination-invalid: surface the real reason and bump the retry
+            // budget. Previously this re-marked WAITING_FOR_NETWORK without incrementing retryCount, so an
+            // unfixable destination produced an infinite retry loop that kept the worker alive forever.
+            dao.recordTransientFailure(item.id, safeError(invalid), clock())
             ProcessOutcome.Waiting
         } catch (rejected: CloudUploadRejectedException) {
             dao.markFailed(item.id, safeError(rejected), clock())

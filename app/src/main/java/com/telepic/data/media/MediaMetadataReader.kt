@@ -60,7 +60,7 @@ class AndroidMediaMetadataReader(context: Context) : MediaMetadataReader {
     override suspend fun read(uri: Uri): MediaMetadata = withContext(Dispatchers.IO) {
         val added = readDateAdded(uri)
         try {
-            contentResolver.openInputStream(uri)?.use { stream ->
+            contentResolver.openInputStream(contentResolver.requireOriginalIfPermitted(uri))?.use { stream ->
                 val exif = ExifInterface(stream)
                 val latLong = FloatArray(2)
                 MediaMetadata(
