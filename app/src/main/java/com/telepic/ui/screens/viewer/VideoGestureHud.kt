@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -66,7 +69,11 @@ internal fun VideoGestureHud(feedback: VideoGestureFeedback?, modifier: Modifier
                 multiplier = feedback.multiplier,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = TelepicTokens.spacing.chromeBarHeight),
+                    // Below the **whole** top bar: the bar is the status-bar inset plus the chrome
+                    // row, and the chrome row alone left the top of this HUD behind it — the bar is
+                    // composed after the HUD, so it drew on top.
+                    .padding(top = TelepicTokens.spacing.chromeBarHeight)
+                    .windowInsetsPadding(WindowInsets.statusBars),
             )
             null -> Unit
         }

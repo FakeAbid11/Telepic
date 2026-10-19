@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -98,6 +99,16 @@ fun AppLockScreen(
             // button — it conflicts with DEVICE_CREDENTIAL and throws on API 30+.
             .setAllowedAuthenticators(BiometricManager.Authenticators.DEVICE_CREDENTIAL)
             .build()
+    }
+
+    // The prompt is cancelled when the screen leaves the tree.
+    //
+    // It is a platform object registered against the activity, so it outlives the composition: the
+    // callback stayed registered after the screen was gone and could fire into a disposed
+    // composition. Cancelling it on the way out means the system sheet goes away with the screen
+    // instead of floating over whatever replaced it.
+    DisposableEffect(prompt) {
+        onDispose { runCatching { prompt?.cancelAuthentication() } }
     }
 
     val requestUnlock: () -> Unit = {

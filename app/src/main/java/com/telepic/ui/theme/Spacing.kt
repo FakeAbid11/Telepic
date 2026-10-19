@@ -84,6 +84,6 @@ data class TelepicSpacing(
 }
 
 /** The Material 3 text button's own minimum height. */
-private const val MATERIAL_TEXT_BUTTON_HEIGHT = 40.dp
+private val MATERIAL_TEXT_BUTTON_HEIGHT = 40.dp
 
 val LocalSpacing = staticCompositionLocalOf { TelepicSpacing() }

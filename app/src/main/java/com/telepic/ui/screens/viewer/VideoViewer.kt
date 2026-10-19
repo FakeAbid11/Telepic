@@ -214,7 +214,11 @@ fun VideoViewer(
     // gestures: the gesture detector skips any press that starts down there. Measured in px so the
     // detector can compare against its own pointer-space height.
     val controlsBandPx = if (controlsVisible) {
+        // The band the transport actually occupies: the navigation-bar inset, the spacer above it,
+        // and the transport's own height. The spacer was missing, so a vertical brightness/volume
+        // drag that started in the 16dp strip directly above the transport was silently dropped.
         with(density) { spacing.videoTransportHeight.toPx() } +
+            with(density) { spacing.lg.toPx() } +
             WindowInsets.navigationBars.getBottom(density).toFloat()
     } else {
         0f

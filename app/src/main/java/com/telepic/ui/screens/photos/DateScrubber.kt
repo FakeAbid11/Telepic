@@ -447,7 +447,9 @@ internal fun DateScrubber(
                         shadowElevation = 6.dp,
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
-                            .padding(end = BUBBLE_END_PADDING)
+                            // The bubble's trailing padding, so the label does not sit on top of the rail's own tick.
+    // The token, rather than a second 32dp literal that could drift away from it.
+    .padding(end = TelepicTokens.spacing.xxl)
                             .alpha(bubbleAlpha),
                     ) {
                         Text(
@@ -484,6 +486,3 @@ private val THUMB_WIDTH_DRAGGING = 10.dp
 private val MIN_THUMB_HEIGHT = 40.dp
 private val TICK_WIDTH = 6.dp
 private val TICK_HEIGHT = 1.dp
-
-/** Clear of the rail so the bubble never covers the pill it is describing. */
-private val BUBBLE_END_PADDING = 32.dp

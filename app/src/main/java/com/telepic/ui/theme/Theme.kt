@@ -133,6 +133,15 @@ const val NAV_FADE_EXIT_MILLIS = 160
 const val SHARED_ELEMENT_MILLIS = 300
 
 /**
+ * The one spacing instance the app uses.
+ *
+ * A single instance rather than a fresh `TelepicSpacing()` per theme composition: the tokens never
+ * change, and `staticCompositionLocalOf` does not recompose its readers when the value changes — so
+ * a new instance each time would leave readers holding a stale one for no benefit.
+ */
+private val DefaultSpacing = TelepicSpacing()
+
+/**
  * Root of the Telepic design system.
  *
  * Wraps [MaterialTheme] and additionally provides the centralized spacing and extended
@@ -164,7 +173,7 @@ fun TelepicTheme(
     }
 
     CompositionLocalProvider(
-        LocalSpacing provides TelepicSpacing(),
+        LocalSpacing provides DefaultSpacing,
         LocalTelepicColors provides extended,
         LocalReduceMotion provides reduceMotion,
     ) {

@@ -37,6 +37,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -65,6 +67,7 @@ import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.LoadingState
+import com.telepic.ui.components.PartialAccessBanner
 import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
@@ -138,6 +141,17 @@ fun MapScreen(
                     }
                 },
             )
+            // Partial access honesty: the Photos timeline says so, and this screen did not — so the
+            // same library looked complete on one tab and partial on another, and the count beside
+            // the title was read as the whole library.
+            if (permissionState == MediaPermissionState.Partial) {
+                PartialAccessBanner(
+                    modifier = Modifier.padding(
+                        horizontal = TelepicTokens.spacing.screenMargin,
+                        vertical = TelepicTokens.spacing.sm,
+                    ),
+                )
+            }
             when {
                 !permissionState.hasAccess -> EmptyState(
                     icon = Icons.Outlined.Lock,
@@ -221,8 +235,15 @@ private fun OsmMap(
     val locationCount = locations.size
     // Fit the camera to the actual photo coordinates once per distinct data set — opening the map
     // frames the user's photos instead of a fixed world view.
-    val plan = remember(pins) {
-        MapCameraPlan.forPoints(pins.map { it.latitude to it.longitude })
+    //
+    // The *real* viewport width, not a hard-coded one: the plan's zoom is derived from how wide the
+    // map is, so a fixed 1080px framed the photos too far out on a 720px phone and too far in on a
+    // tablet.
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val viewportWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }.toInt()
+    val plan = remember(pins, viewportWidthPx) {
+        MapCameraPlan.forPoints(pins.map { it.latitude to it.longitude }, screenWidthPx = viewportWidthPx)
     }
     // The framing applied when the surface is created. Priority: an explicit focus (another screen
     // asked for one photo) → the remembered position → all the user's photos.

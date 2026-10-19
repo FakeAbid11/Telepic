@@ -65,6 +65,7 @@ import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.MediaGridSkeleton
+import com.telepic.ui.components.PartialAccessBanner
 import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
@@ -129,6 +130,17 @@ fun AlbumsScreen(
                 )
                 if (permissionState.hasAccess) {
                     LibraryShortcuts(onOpenOrganization)
+                }
+                // Partial access honesty: the Photos timeline says so, and these two screens did
+                // not — so the same library looked complete on one tab and partial on another, and
+                // the count beside the title was read as the whole library.
+                if (permissionState == MediaPermissionState.Partial) {
+                    PartialAccessBanner(
+                        modifier = Modifier.padding(
+                            horizontal = TelepicTokens.spacing.screenMargin,
+                            vertical = TelepicTokens.spacing.sm,
+                        ),
+                    )
                 }
                 val currentStatus = status
                 // "Nothing here" has to account for both kinds, or an empty device holding one

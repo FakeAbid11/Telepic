@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
 import com.telepic.navigation.TelepicDestination
 import com.telepic.navigation.TelepicNavHost
 import com.telepic.navigation.ViewerRoute
@@ -74,14 +73,20 @@ private const val EXPANDED_WIDTH_DP = 600
  *
  * Settings is not one of those tabs — it is reached from the gear in the top-right corner of every
  * tab — so the bar is hidden on it rather than shown with no tab selected.
+ *
+ * The [navController] is a **required** parameter, not one with a default. A default
+ * `rememberNavController()` would silently create a *second* controller for any caller that omitted
+ * it — one the caller then navigates with a different instance than the one hosting the graph. The
+ * controller is hoisted in [TelepicRoot] on purpose: it has to outlive the lock gate, which swaps
+ * this whole shell out of the tree.
  */
 @Composable
 fun TelepicApp(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     container: AppContainer,
+    navController: NavHostController,
     modifier: Modifier = Modifier,
-    navController: NavHostController = rememberNavController(),
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val route = backStackEntry?.destination?.route

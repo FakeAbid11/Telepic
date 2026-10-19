@@ -294,6 +294,10 @@ class ViewerViewModel(
         // A confirmation belongs to the item it describes: carrying "Moved to trash" onto the next
         // photo would report an outcome for something the user is no longer looking at.
         _message.value = null
+        // The busy flag belongs to the item it describes too. The previous item's backup job clears
+        // it when it finishes, but until then the *new* item's control showed the "uploading"
+        // spinner and could not be tapped.
+        _backupBusy.value = false
         _uiState.value = ViewerUiState(newSource, ViewerStatus.LOADING)
         load(newSource)
     }

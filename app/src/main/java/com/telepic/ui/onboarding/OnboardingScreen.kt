@@ -26,6 +26,7 @@ import com.telepic.permissions.MediaPermissionState
 import com.telepic.permissions.rememberMediaPermissionState
 import com.telepic.permissions.rememberNotificationPermissionState
 import com.telepic.telegram.TelegramAuthController
+import com.telepic.telegram.TelegramAuthState
 import com.telepic.ui.onboarding.components.OnboardingScaffold
 import com.telepic.ui.onboarding.components.TAG_ONBOARDING_PRIMARY
 import com.telepic.ui.onboarding.steps.BackupPreferencesStep
