@@ -75,15 +75,6 @@ import com.telepic.ui.theme.TelepicTokens
 private const val FAB_SIZE_DP = 56
 
 /**
- * Adaptive minimum cell size for the album grid. Shared with the first-load skeleton so the two match.
- *
- * Deliberately larger than `TelepicSpacing.gridTileMinSize` (108dp), which the photo grids use: an
- * album cell carries a cover *plus* a title and a count underneath it, so it needs room the bare
- * thumbnails do not. Not an oversight — the two grids are describing different things.
- */
-private val ALBUM_TILE_MIN_SIZE = 160.dp
-
-/**
  * Albums: the user's own albums first, then the device's folders, in one adaptive grid.
  *
  * The two are shown in one grid with section headings rather than on two screens, because from the
@@ -166,7 +157,7 @@ fun AlbumsScreen(
                     ) {
                         when {
                             currentStatus is AlbumsStatus.Loading ->
-                                MediaGridSkeleton(minCellSize = ALBUM_TILE_MIN_SIZE)
+                                MediaGridSkeleton(minCellSize = TelepicTokens.spacing.gridTileMinSize)
                             currentStatus is AlbumsStatus.Error -> ErrorState(
                                 title = stringResource(R.string.albums_error_title),
                                 explanation = stringResource(R.string.albums_error_description),
@@ -278,7 +269,10 @@ private fun AlbumGrid(
 ) {
     val spacing = TelepicTokens.spacing
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = ALBUM_TILE_MIN_SIZE),
+        // The shared media-tile token, not an album-specific 160dp one: at 160dp a phone's width
+        // divided into twos while every other grid showed three, so Albums read as a different
+        // screen. The cell still carries its title and count under the cover — they wrap.
+        columns = GridCells.Adaptive(minSize = spacing.gridTileMinSize),
         contentPadding = PaddingValues(
             start = spacing.gridGutter,
             end = spacing.gridGutter,
