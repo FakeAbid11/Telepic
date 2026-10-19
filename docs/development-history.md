@@ -241,10 +241,29 @@ Every file under `ui/`, plus the navigation, permission, theme and settings laye
 
 **Part E — Consistency**
 
-- The Map and the Albums screen did not say when media access was *partial*, so the same library looked complete on the Photos tab and partial on the other two.
-- The licence list named versions several releases behind the ones actually shipped, and omitted `androidx.biometric` — a missing notice for a component that is in the APK.
+- The Map and the Albums screen did not say when media access was *partial*, so the same library looked complete on the Photos tab and partial on the other two.- The licence list named versions several releases behind the ones actually shipped, and omitted `androidx.biometric` — a missing notice for a component that is in the APK.
 - The notification permission counted *launches* as attempts, so one denial could exhaust the budget and send the user to Settings while the platform would still have shown the dialog.
 - The app shell's nav controller had a default, so a caller that omitted it silently got a second one; it is now required, which makes the ownership (hoisted in the root, above the lock gate) explicit.
 - The app lock's biometric prompt was never cancelled, so it outlived the screen and its callback could fire into a disposed composition.
 - The map framed its photos for a hard-coded 1080px viewport — too far out on a narrow phone, too far in on a tablet — and now uses the real width.
 - The Organization screen's message bar was keyed on the message *value*, so two identical failures inside the dismissal window produced no second bar, no new timer and no reject haptic.
+
+## Phase 13 — The map's photo-point UI *(code complete; device validation still outstanding)*
+
+The map's markers and its tapped-pin preview were the last place in the app that still looked like a default Compose screen. The fixes keep the app's own visual language and its honesty rules.
+
+**The markers are now one system**
+
+- A **single photo** used to fall back to osmdroid's *stock* teardrop marker — a different colour and a different weight from the cluster bubbles — so the same map carried two unrelated visual languages. Both are drawn now: a teardrop for a single photo (it points *at* a spot) and a count bubble for a cluster, in the same brand blue with the same white ring.
+- The fill is **fixed, not themed**, for the same reason the recentre button and the scanning chip are: the tiles are OSM Mapnik, a fixed **light** style that does not follow the app theme, and the dark scheme's light-blue `primary` measured about **1.9:1** against a typical land tile, so the clusters all but disappeared. The brand blue measures 4.7:1.
+
+**The preview sheet is a card, not a column of loose elements**
+
+- It was a bare cropped image with a coordinate string and an icon-less button under it — it read as debug output rather than UI. It is now a titled card: the photo in a rounded frame that shows a spinner while it decodes and says so when it cannot be shown (it used to leave a 180dp hole), the place as a labelled fact at the precision a pin can actually place (five decimals, about a metre, instead of six), the photo itself as a way into the Viewer, and one full-width primary action.
+- The coordinates were also re-read with a scan over the whole geotagged library on every frame of the sheet's animation; they come from a map now.
+- The OSM attribution is a **link** to their copyright page, which their tile usage policy asks for.
+
+**Known limits, unchanged**
+
+- osmdroid markers are canvas overlays with no accessibility node, so a screen reader meets the map as one surface that announces the photo count. The individual pins are reachable by touch and by the preview sheet; making them navigable would need a list of the geotagged photos beside the map.
+- A video pin shows a still frame with no indication that it is a video: the map's data model carries only `(mediaId, location, contentUri)`, so the sheet genuinely cannot tell.
