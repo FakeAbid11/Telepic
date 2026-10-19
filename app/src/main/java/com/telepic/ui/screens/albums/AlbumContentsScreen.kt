@@ -41,6 +41,7 @@ import com.telepic.domain.media.LocalMedia
 import com.telepic.ui.components.EmptyState
 import com.telepic.ui.components.ErrorState
 import com.telepic.ui.components.MediaGridSkeleton
+import com.telepic.ui.components.RefreshErrorBanner
 import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SelectionActionBar
 import com.telepic.ui.components.SelectionTopBar
@@ -159,7 +160,12 @@ fun AlbumContentsScreen(
                     when {
                         refresh is LoadState.Loading && !hasContent ->
                             MediaGridSkeleton(minCellSize = spacing.gridTileMinSize)
-                        refresh is LoadState.Error -> ErrorState(
+                        // A failed **refresh** keeps the photos that are already on screen: the pager
+                        // holds them, and replacing them with a full-screen error page threw away
+                        // the user's album because a pull-to-refresh could not reach the provider.
+                        // The Photos timeline already reports this case as a banner over the content;
+                        // this screen now does the same, so the two agree.
+                        refresh is LoadState.Error && !hasContent -> ErrorState(
                             title = stringResource(R.string.album_contents_error_title),
                             explanation = stringResource(R.string.album_contents_error_description),
                             onRetry = paging::retry,
@@ -191,6 +197,18 @@ fun AlbumContentsScreen(
                         )
                     }
                 }
+            }
+
+            // A refresh failure that still has photos on screen is reported *over* them, with the
+            // retry next to it — the same split the Photos timeline uses. The content is never
+            // replaced by an error page.
+            if (refresh is LoadState.Error && hasContent && !selectionActive) {
+                RefreshErrorBanner(
+                    onRetry = { paging.retry() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(spacing.md),
+                )
             }
 
             // Stacked so the transient message never draws on top of the selection action bar.

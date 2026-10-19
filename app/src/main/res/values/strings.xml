@@ -359,6 +359,7 @@
     <string name="backup_queue_state_cancelled">Cancelled</string>
     <string name="backup_queue_state_waiting_network">Waiting for network</string>
     <string name="backup_queue_state_waiting_auth">Waiting for Telegram sign-in</string>
+<string name="backup_queue_state_unknown">Unknown state</string>
     <string name="backup_settings_entry">Backup Center</string>
     <string name="backup_settings_entry_summary">View the backup queue, progress and failures</string>
 

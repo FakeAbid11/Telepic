@@ -34,10 +34,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -212,6 +216,9 @@ private fun OsmMap(
     // when the band changes, not on every pixel of pinch — cheap for the pure clusterer either way.
     var precision by remember { mutableIntStateOf(MapZoomPrecision.DEFAULT) }
     val pins = remember(locations, precision) { MapClusterer.cluster(locations, precision) }
+    // The number of *photos* the map is showing, which is what the screen's header reports and what
+    // the accessibility description has to match.
+    val locationCount = locations.size
     // Fit the camera to the actual photo coordinates once per distinct data set — opening the map
     // frames the user's photos instead of a fixed world view.
     val plan = remember(pins) {
@@ -269,6 +276,30 @@ private fun OsmMap(
     // dark scheme `primary` is a light blue, and white on it measured 2.33:1 (unreadable).
     val clusterFill = MaterialTheme.colorScheme.primary.toArgb()
     val clusterCountColor = MaterialTheme.colorScheme.onPrimary.toArgb()
+
+    // The two camera moves, applied from an effect rather than from `AndroidView`'s `update` block.
+    //
+    // `update` runs during Compose's *apply* phase, so writing snapshot state there — which is what
+    // clearing the pending decision used to do — is the documented misuse: every camera move
+    // scheduled an extra recomposition and an extra apply pass. The view is reached through
+    // [mapViewRef], which the factory fills in when the view is created.
+    LaunchedEffect(mapViewRef, initialCamera) {
+        val mapView = mapViewRef ?: return@LaunchedEffect
+        if (initialApplied) return@LaunchedEffect
+        val decision = initialCamera as? MapCameraResolver.Decision.Apply ?: return@LaunchedEffect
+        mapView.controller.setCenter(GeoPoint(decision.centerLat, decision.centerLon))
+        mapView.controller.setZoom(decision.zoom)
+        initialApplied = true
+    }
+    LaunchedEffect(mapViewRef, pendingCamera) {
+        val mapView = mapViewRef ?: return@LaunchedEffect
+        val decision = pendingCamera ?: return@LaunchedEffect
+        if (decision is MapCameraResolver.Decision.Apply) {
+            mapView.controller.setCenter(GeoPoint(decision.centerLat, decision.centerLon))
+            mapView.controller.setZoom(decision.zoom)
+        }
+        pendingCamera = null
+    }
 
     // Persist where the map was left. Written on pause *and* on teardown: leaving the map for another
     // tab disposes it without a pause, and that final position is the one worth remembering. Takes the
@@ -376,27 +407,24 @@ private fun OsmMap(
                     }
                     renderedPins.pins = pins
                 }
-                // TalkBack reads the map as one focusable surface: announce how many pins it holds.
+                // TalkBack reads the map as one focusable surface: announce how many photo locations it
+                // holds. The **photo** count, not the marker count: `pins` is the clustered list, so a
+                // dozen photos in three clusters announced "3 photo locations" while the header said
+                // "12" — two numbers for the same thing, one of them wrong.
                 mapView.contentDescription =
-                    mapView.context.resources.getQuantityString(R.plurals.map_view_description, pins.size, pins.size)
+                    mapView.context.resources.getQuantityString(
+                        R.plurals.map_view_description,
+                        locationCount,
+                        locationCount,
+                    )
                 // The opening framing is applied exactly once — later recompositions (a new overlay, a
                 // changed badge colour) must never move the camera out from under the user. Only a
                 // real decision latches: `KeepDefault` (nothing to frame yet) leaves the flag clear so
                 // the next recomposition, with the pins that finally arrived, can still apply it.
-                if (!initialApplied) {
-                    (initialCamera as? MapCameraResolver.Decision.Apply)?.let {
-                        mapView.controller.setCenter(GeoPoint(it.centerLat, it.centerLon))
-                        mapView.controller.setZoom(it.zoom)
-                        initialApplied = true
-                    }
-                }
-                pendingCamera?.let { decision ->
-                    if (decision is MapCameraResolver.Decision.Apply) {
-                        mapView.controller.setCenter(GeoPoint(decision.centerLat, decision.centerLon))
-                        mapView.controller.setZoom(decision.zoom)
-                    }
-                    pendingCamera = null
-                }
+                //
+                // Both camera moves are applied from the effect above rather than from `update`:
+                // `update` runs during Compose's *apply* phase, and writing snapshot state there is
+                // the documented misuse — it schedules an extra recomposition for every camera move.
                 mapView.invalidate()
             },
             onRelease = { mapView ->
@@ -414,7 +442,10 @@ private fun OsmMap(
         // scan settles, and is the reason the screen no longer waits on a long first sweep at all.
         if (scanning) {
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                // A near-white chip with a dark label, for the same reason as the FAB below: the map
+                // is a fixed light tile style, and the theme's `surfaceVariant` measured 1.03:1
+                // against it — the chip degenerated into floating text.
+                color = Color.White,
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -431,11 +462,15 @@ private fun OsmMap(
                     CircularProgressIndicator(
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(16.dp),
+                        // The indicator's colour has to match the chip it sits on.
+                        color = Color(0xFF1B2430),
                     )
                     Text(
                         text = stringResource(R.string.map_scanning),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color(0xFF1B2430),
+                        // A changing status, so it is announced rather than only seen.
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
             }
@@ -447,6 +482,13 @@ private fun OsmMap(
         // target, under the 48dp accessibility floor, on this screen's only way out of a stray pan.
         FloatingActionButton(
             onClick = { pendingCamera = MapCameraResolver.recenter(plan) },
+            // The map is a **light** OSM tile style that does not follow the app theme, so the
+            // scheme's `primaryContainer` was invisible on it: in the light scheme the FAB measured
+            // 1.09:1 against a typical land tile and 1.28:1 against water — only its dark glyph was
+            // discernible. The container is therefore an explicit near-white with a dark glyph, which
+            // reads on the map in either theme.
+            containerColor = Color.White,
+            contentColor = Color(0xFF1B2430),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(TelepicTokens.spacing.lg),

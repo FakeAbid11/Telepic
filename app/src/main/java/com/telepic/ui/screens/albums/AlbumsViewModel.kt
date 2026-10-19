@@ -56,11 +56,16 @@ class AlbumsViewModel(
      * loader: setting [status] to [AlbumsStatus.Loading] unconditionally would swap the albums the
      * user is looking at for a spinner, which is the opposite of what pulling down is for. Only a
      * read with nothing on screen shows the loading state.
+     *
+     * "Something on screen" is deliberately not the same as "has albums": the empty and the error
+     * states are both something the user can see, and both are the states a user is most likely to
+     * pull down from. Replacing either with a skeleton made the gesture give no feedback at all —
+     * the spinner appeared and the pull indicator never did.
      */
     fun refresh() {
-        val hadContent = _status.value is AlbumsStatus.Ready
-        if (!hadContent) _status.value = AlbumsStatus.Loading
-        _isRefreshing.value = hadContent
+        val hasScreenState = _status.value !is AlbumsStatus.Loading
+        if (!hasScreenState) _status.value = AlbumsStatus.Loading
+        _isRefreshing.value = hasScreenState
         viewModelScope.launch {
             try {
                 val albums = repository.albums()

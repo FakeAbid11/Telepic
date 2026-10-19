@@ -49,9 +49,16 @@ class CloudViewModel(
     private val _previews = MutableStateFlow<Map<Pair<Long, Long>, CloudPreviewState>>(emptyMap())
     val previews: StateFlow<Map<Pair<Long, Long>, CloudPreviewState>> = _previews.asStateFlow()
 
-    /** Re-pulls the destination list and clears cached preview states so failed items retry. */
+    /**
+     * Re-pulls the destination list and lets the **failed** previews retry.
+     *
+     * Only the failures are cleared. A preview is the thumbnail of a specific message, so it cannot
+     * have gone stale — clearing the successful ones too flashed the whole grid back to placeholders
+     * and re-downloaded every visible thumbnail from Telegram, which is the opposite of what a
+     * refresh is for.
+     */
     fun refresh() {
-        _previews.value = emptyMap()
+        _previews.value = _previews.value.filterValues { it !is CloudPreviewState.Failed }
         guarded("refresh the cloud destination") { repository.refresh() }
     }
 

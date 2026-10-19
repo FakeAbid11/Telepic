@@ -240,7 +240,7 @@ fun ViewerScreen(
                     flags = flags,
                     onBack = onBack,
                     backDesc = backDesc,
-                    showActions = state.source is MediaSource.Local && state.status == ViewerStatus.READY,
+                    showActions = state.status == ViewerStatus.READY,
                     onToggleFavorite = viewModel::toggleFavorite,
                     // Flag-only, like favorite: toggling archive never kicks the user out of the
                     // Viewer. Grids behind react on their own when the Room flag flow re-emits.
@@ -660,6 +660,9 @@ private fun ViewerTopBar(
 ) {
     val spacing = TelepicTokens.spacing
     val chromeScrim = TelepicTokens.colors.chromeScrim
+    // The local-only actions (favourite, backup, archive, trash) act on a local file; a cloud item
+    // has none of them. Details is available for both.
+    val isLocal = state.source is MediaSource.Local
     // Read once, not per recomposition: the header must not flip between the compact and the full
     // date form while the screen is open.
     val nowMillis = remember { System.currentTimeMillis() }
@@ -736,20 +739,28 @@ private fun ViewerTopBar(
             // a unit rather than three loose glyphs. Favourite stays inline (a glanceable toggle) and
             // archive/trash/details stay behind the overflow for the width reason they always were:
             // four separate 48dp buttons starved the date column.
+            //
+            // The **local-only** actions (favourite, backup, archive, trash) act on a local file, so
+            // they are offered for a local item only. The overflow menu itself is not local-only: it
+            // also carries Details, which a cloud item genuinely has (its manifest entry), so the menu
+            // is rendered for a cloud item too — otherwise the Details sheet could never be opened
+            // for one, and the code that loads cloud details had no way to be reached.
             GlassPill {
-                IconButton(onClick = onToggleFavorite) {
-                    Icon(
-                        imageVector = if (flags.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                        contentDescription = stringResource(
-                            if (flags.isFavorite) R.string.viewer_unfavorite else R.string.viewer_favorite,
-                        ),
-                        tint = if (flags.isFavorite) TelepicTokens.colors.favoriteAmber else Color.White,
-                    )
+                if (isLocal) {
+                    IconButton(onClick = onToggleFavorite) {
+                        Icon(
+                            imageVector = if (flags.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = stringResource(
+                                if (flags.isFavorite) R.string.viewer_unfavorite else R.string.viewer_favorite,
+                            ),
+                            tint = if (flags.isFavorite) TelepicTokens.colors.favoriteAmber else Color.White,
+                        )
+                    }
+                    // The per-item backup control sits beside the favourite star, in the band that
+                    // carries this item's own state, rather than behind the overflow: "is this one
+                    // backed up?" is a question the user asks while looking at the photo.
+                    BackupControl(state = backupState, busy = backupBusy, onBackup = onBackup)
                 }
-                // The per-item backup control sits beside the favourite star, in the band that
-                // carries this item's own state, rather than behind the overflow: "is this one backed
-                // up?" is a question the user asks while looking at the photo.
-                BackupControl(state = backupState, busy = backupBusy, onBackup = onBackup)
                 Box {
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(
@@ -759,29 +770,31 @@ private fun ViewerTopBar(
                         )
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    stringResource(
-                                        if (flags.isArchived) R.string.viewer_unarchive
-                                        else R.string.viewer_archive,
-                                    ),
-                                )
-                            },
-                            onClick = {
-                                menuOpen = false
-                                onToggleArchive()
-                            },
-                            leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.viewer_move_to_trash)) },
-                            onClick = {
-                                menuOpen = false
-                                onMoveToTrash()
-                            },
-                            leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
-                        )
+                        if (isLocal) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            if (flags.isArchived) R.string.viewer_unarchive
+                                            else R.string.viewer_archive,
+                                        ),
+                                    )
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onToggleArchive()
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.viewer_move_to_trash)) },
+                                onClick = {
+                                    menuOpen = false
+                                    onMoveToTrash()
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                            )
+                        }
                         onShowDetails?.let { showDetails ->
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.viewer_details)) },
@@ -919,11 +932,13 @@ private fun ViewerBottomBar(
         horizontalArrangement = Arrangement.spacedBy(spacing.md, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        when {
-            onRestore != null -> GlassPill(modifier = Modifier.height(spacing.touchTarget)) {
-                RestoreAction(onRestore = onRestore, restore = restore)
-            }
-            showDownload -> GlassPill(modifier = Modifier.height(spacing.touchTarget)) {
+        // Both actions are offered, and each is decided on its own: "Download original" fetches the
+        // full-resolution file so the viewer can show it, and "Save to device" publishes it to the
+        // gallery. The `when` this replaced took the *first* matching branch, and the restore action
+        // was always present — so the download branch was unreachable and a cloud photo's original
+        // could never be fetched, no matter what the user did.
+        if (showDownload) {
+            GlassPill(modifier = Modifier.height(spacing.touchTarget)) {
                 if (state.download == CloudDownload.Downloading) {
                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
                 } else {
@@ -932,6 +947,11 @@ private fun ViewerBottomBar(
                         Text(stringResource(R.string.viewer_download), color = Color.White, modifier = Modifier.padding(start = spacing.xs))
                     }
                 }
+            }
+        }
+        if (onRestore != null) {
+            GlassPill(modifier = Modifier.height(spacing.touchTarget)) {
+                RestoreAction(onRestore = onRestore, restore = restore)
             }
         }
     }

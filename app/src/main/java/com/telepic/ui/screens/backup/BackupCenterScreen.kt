@@ -264,9 +264,18 @@ private fun BackupItemRow(item: BackupItem, onRetry: () -> Unit, onCancel: () ->
     }
 }
 
-/** Automatic retries exhausted: nothing will pick this row up again until the user acts. */
+/**
+ * Automatic retries exhausted: nothing will pick this row up again until the user acts.
+ *
+ * The same rule as [com.telepic.domain.backup.MediaBackupVisualState.from], which is what the
+ * "Stalled" stat card is computed from. Two copies of one rule drift apart; this one delegates.
+ */
 private fun BackupItem.isStalled(): Boolean =
-    state == BackupState.WAITING_FOR_NETWORK && retryCount >= com.telepic.data.backup.DefaultBackupRepository.DEFAULT_MAX_RETRIES
+    com.telepic.domain.backup.MediaBackupVisualState.from(
+        state,
+        retryCount,
+        com.telepic.data.backup.DefaultBackupRepository.DEFAULT_MAX_RETRIES,
+    ) == com.telepic.domain.backup.MediaBackupVisualState.STALLED
 
 private fun BackupState.labelRes(): Int = when (this) {
     BackupState.QUEUED -> R.string.backup_queue_state_queued
@@ -277,7 +286,11 @@ private fun BackupState.labelRes(): Int = when (this) {
     BackupState.CANCELLED -> R.string.backup_queue_state_cancelled
     BackupState.WAITING_FOR_NETWORK -> R.string.backup_queue_state_waiting_network
     BackupState.WAITING_FOR_AUTH -> R.string.backup_queue_state_waiting_auth
-    BackupState.NOT_BACKED_UP -> R.string.backup_queue_state_queued
+    // Not "Queued": this state is only produced when the row's stored state is one the app does not
+    // recognise, and claiming it is in the upload pipeline would be a claim the queue cannot back.
+    // Such a row is also neither cancellable nor retryable, so it renders as an unknown state with
+    // no action rather than as a queue row the user can do nothing with.
+    BackupState.NOT_BACKED_UP -> R.string.backup_queue_state_unknown
 }
 
 private fun BackupState.canCancel(): Boolean =

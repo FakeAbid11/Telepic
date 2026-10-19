@@ -25,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -87,8 +88,14 @@ fun MediaDetailsSheet(
                 DetailsHeader(details)
                 // One rounded surface per section, in first-seen order. `displayRows` already emits the
                 // rows grouped contiguously, so `distinct` preserves the intended section order.
-                val rows = details.displayRows(context)
-                rows.map { it.group }.distinct().forEach { group ->
+                //
+                // The rows are **memoised**: building them resolves several localized strings, two
+                // `DateFormat` instances and a `Formatter.formatShortFileSize` per field, and the
+                // sheet animates — so this used to re-run on every frame of the open animation.
+                val rows = remember(details) { details.displayRows(context) }
+                // Grouped once, rather than re-filtering the whole list for every group.
+                val grouped = remember(rows) { rows.groupBy { it.group } }
+                grouped.forEach { (group, groupRows) ->
                     SectionLabel(group)
                     Surface(
                         shape = MaterialTheme.shapes.medium,
@@ -96,7 +103,7 @@ fun MediaDetailsSheet(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs)) {
-                            rows.filter { it.group == group }.forEach { DetailRowView(it) }
+                            groupRows.forEach { DetailRowView(it) }
                         }
                     }
                 }

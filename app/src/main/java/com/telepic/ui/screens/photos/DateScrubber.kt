@@ -376,6 +376,11 @@ internal fun DateScrubber(
                         scrubJob?.cancel()
                         scrubJob = scope.launch {
                             gridState.scrollToItem(scrubIndex(clamped, gridState.layoutInfo.totalItemsCount))
+                            // The thumb goes back to tracking the grid. A programmatic scrub that left
+                            // the fraction pinned meant the rail stopped following the scroll
+                            // position afterwards, so scrolling the timeline with a finger no longer
+                            // moved the rail until the user dragged it again.
+                            scrubFraction = null
                         }
                         true
                     }
