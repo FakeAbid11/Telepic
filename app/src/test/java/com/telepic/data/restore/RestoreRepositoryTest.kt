@@ -76,11 +76,20 @@ class RestoreRepositoryTest {
         /** How many times bytes were actually written — the duplicate-suppression assertion. */
         var publishCount = 0
 
+        /** The capture time the last publish was given, so the date contract can be asserted. */
+        var lastDateTakenMillis: Long? = null
+
         /** URIs the fake provider currently holds a live row for. */
         val liveUris = mutableSetOf<String>()
 
-        override suspend fun publish(sourcePath: String, mimeType: String?, displayName: String?): PublishResult {
+        override suspend fun publish(
+            sourcePath: String,
+            mimeType: String?,
+            displayName: String?,
+            dateTakenMillis: Long?,
+        ): PublishResult {
             lastSource = sourcePath
+            lastDateTakenMillis = dateTakenMillis
             publishCount++
             (result as? PublishResult.Inserted)?.let { liveUris += it.uri }
             return result
@@ -112,8 +121,21 @@ class RestoreRepositoryTest {
     }
 
     @Test
-    fun `a null download is an honest unavailable, never a false success`() = runBlocking {
-        val repository = DefaultRestoreRepository(FakeCloud(null), FakePublisher(PublishResult.Inserted("x")))
+    fun `the original capture time travels with the published row`() = runBlocking {
+        // Without the capture time the provider stamps the row with the *restore* time, so a 2019
+        // photo restored today landed at the end of the timeline — a silent corruption of the
+        // library's chronology.
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val file = fileWithBytes(bytes)
+        val publisher = FakePublisher(PublishResult.Inserted("content://media/99"))
+        val repository = DefaultRestoreRepository(FakeCloud(file.absolutePath), publisher)
+        repository.restore(media(hash = sha(bytes)))
+        // The fixture's item carries dateEpochSec = 1, i.e. 1000 ms.
+        assertEquals(1_000L, publisher.lastDateTakenMillis)
+    }
+
+    @Test
+    fun `a null download is an honest unavailable, never a false success`() = runBlocking {        val repository = DefaultRestoreRepository(FakeCloud(null), FakePublisher(PublishResult.Inserted("x")))
         val result = repository.restore(media())
         assertEquals(RestoreResult.Failed(RestoreFailure.DOWNLOAD_UNAVAILABLE), result)
     }

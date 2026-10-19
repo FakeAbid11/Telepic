@@ -449,6 +449,110 @@ class DefaultBackupRepositoryTest {
     // --- Pending remote identity: confirm instead of re-sending (duplicate-upload guarantee) ----
 
     @Test
+    fun `a rejected upload clears the pending identity so a retry uploads again`() = runBlocking {
+        // TDLib accepted the send and then rejected it. The pending identity pointed at a message
+        // that will never be delivered, so every later attempt took the *confirm* branch, found the
+        // dead message, failed again, and the row could never be uploaded — however many times the
+        // user pressed Retry.
+        val cloud = FakeCloud(
+            sentIdentity = 100L to 500L,
+            uploadError = CloudUploadRejectedException("Unsupported media"),
+        )
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        r.processPendingWork(maxItems = 1)
+
+        val failed = db.backupQueueDao().observeAll().first().first()
+        assertEquals(BackupState.FAILED.name, failed.state)
+        assertNull(
+            "a rejected message can never be confirmed, so its identity must be cleared",
+            failed.pendingTelegramMessageId,
+        )
+
+        // The user's Retry: the next attempt must send again, not confirm the dead message.
+        cloud.uploadError = null
+        cloud.uploadResult = CloudUploadResult(100L, 501L, 8, CloudMediaType.IMAGE)
+        r.retry(failed.id)
+        val summary = r.processPendingWork(maxItems = 1)
+        assertEquals(1, summary.uploaded)
+        assertEquals("the file must be sent again, not confirmed", 2, cloud.uploadCalls)
+    }
+
+    @Test
+    fun `a row cancelled before the upload starts sends nothing`() = runBlocking {
+        // The user cancels between the queue fetch and the upload. The state write is
+        // terminal-guarded, so its affected-row count is 0 — and the upload must not go ahead: an
+        // explicit cancel that still sends the photo is the opposite of what was asked for.
+        val stagingDir = java.io.File(System.getProperty("java.io.tmpdir"), "telepic-stage-${System.nanoTime()}")
+            .apply { mkdirs() }
+        try {
+            val cloud = FakeCloud()
+            lateinit var r: DefaultBackupRepository
+            val stager = object : BackupStager {
+                override suspend fun stage(localMediaId: String, contentUri: String): StagedFile {
+                    // The cancel lands while the file is being staged — after the row was claimed
+                    // for preparation but before the upload begins.
+                    r.cancel(db.backupQueueDao().observeAll().first().single().id)
+                    val file = java.io.File(stagingDir, "staging_$localMediaId.tmp")
+                    file.writeText("staged bytes")
+                    return StagedFile(file)
+                }
+            }
+            r = DefaultBackupRepository(
+                db = db,
+                dao = db.backupQueueDao(),
+                cloudRepository = cloud,
+                authState = authorized,
+                dispatcher = Dispatchers.Unconfined,
+                stager = stager,
+            )
+            r.enqueue(media(1))
+            val summary = r.processPendingWork(maxItems = 1)
+
+            assertEquals("nothing may be sent after an explicit cancel", 0, cloud.uploadCalls)
+            assertEquals(0, summary.uploaded)
+            val row = db.backupQueueDao().observeAll().first().single()
+            assertEquals(BackupState.CANCELLED.name, row.state)
+        } finally {
+            stagingDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `a still-uploading send keeps the staged copy so Telegram can finish reading it`() = runBlocking {
+        // The staged file IS the file TDLib is uploading. Deleting it while the send is in flight
+        // aborted the transfer and failed a large video permanently.
+        val stagingDir = java.io.File(System.getProperty("java.io.tmpdir"), "telepic-stage-${System.nanoTime()}")
+            .apply { mkdirs() }
+        try {
+            val cloud = FakeCloud(
+                sentIdentity = 100L to 500L,
+                uploadError = com.telepic.data.cloud.CloudMessagePendingException(),
+            )
+            val r = DefaultBackupRepository(
+                db = db,
+                dao = db.backupQueueDao(),
+                cloudRepository = cloud,
+                authState = authorized,
+                dispatcher = Dispatchers.Unconfined,
+                stager = RecordingStager(stagingDir),
+            )
+            r.enqueue(media(1))
+            r.processPendingWork(maxItems = 1)
+
+            assertEquals(
+                "the staged copy must survive while Telegram is still uploading it",
+                1,
+                stagingDir.listFiles()?.size,
+            )
+            val row = db.backupQueueDao().observeAll().first().single()
+            assertEquals(500L, row.pendingTelegramMessageId) // still confirmable, never re-sent
+        } finally {
+            stagingDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `an accepted send that times out is confirmed on the next run without re-uploading`() = runBlocking {
         val cloud = FakeCloud(
             sentIdentity = 100L to 500L,

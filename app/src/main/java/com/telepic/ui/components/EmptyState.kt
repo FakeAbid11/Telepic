@@ -30,7 +30,12 @@ import com.telepic.ui.theme.TelepicTokens
  * communicates "nothing here yet" the same intentional way.
  *
  * The [icon] is decorative — the [title] already carries the meaning — so it is hidden
- * from screen readers and the whole block merges its descendants for a clean announcement.
+ * from screen readers, and the icon, the title and the description are merged into one
+ * announcement.
+ *
+ * The actions are **not** part of that merge: a merged semantics node carries a single
+ * `onClick`, so merging two buttons made the second one swallow the first. Each action is
+ * its own focusable node, which is also what lets a screen-reader user choose between them.
  */
 @Composable
 fun EmptyState(
@@ -57,34 +62,48 @@ fun EmptyState(
                 // its second choice was laid out below the window and could not be tapped at all.
                 // When the content fits, `verticalScroll` measures to the content and the Box still
                 // centres it, so short empty states render exactly as before.
-                .verticalScroll(rememberScrollState())
-                .semantics(mergeDescendants = true) {},
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(spacing.sm, Alignment.CenterVertically),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(72.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .padding(top = spacing.md)
-                    .semantics { heading() },
-            )
-            if (description != null) {
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = spacing.md),
+            // The illustration, the title and the description are one announcement: the icon is
+            // decorative and the title already carries the meaning.
+            //
+            // The **actions are deliberately outside this merge**. A merged semantics node keeps a
+            // single `onClick` — the last child's — so merging the two buttons made the secondary
+            // action swallow the primary one. On the Cloud consent card that meant a screen-reader
+            // user double-tapping the card ran "create a new channel" instead of "use this one",
+            // which is the one outcome the screen's own comment says Telepic must never choose for
+            // the user.
+            Column(
+                modifier = Modifier.semantics(mergeDescendants = true) {},
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(72.dp),
+                    tint = MaterialTheme.colorScheme.primary,
                 )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .padding(top = spacing.md)
+                        .semantics { heading() },
+                )
+                if (description != null) {
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = spacing.md),
+                    )
+                }
             }
             if (primaryAction != null || secondaryAction != null) {
                 Column(

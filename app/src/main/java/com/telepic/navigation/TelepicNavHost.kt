@@ -312,6 +312,9 @@ private fun TelepicNavGraph(
                             settingsRepository = container.settingsRepository,
                             // Display scope: the library count describes what the library shows.
                             albumRepository = container.albumRepository,
+                            // The Photos timeline is a different repository: a library-wide setting
+                            // has to invalidate its pager too, or the hidden kind stays on screen.
+                            localMediaRepository = container.localMediaRepository,
                             // Backup scope: the folder picker lists what a backup would take.
                             foldersRepository = container.backupAlbumRepository,
                             backupCoordinator = container.backupCoordinator,

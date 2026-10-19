@@ -86,10 +86,12 @@ class DefaultCustomAlbumRepository(
 ) : CustomAlbumRepository {
 
     /**
-     * The most recently created contents pager. One album screen is open at a time, so a single field
-     * is enough — the same design [MediaStoreAlbumRepository] and [LocalMediaRepositoryImpl] use.
+     * Every live contents pager.
+     *
+     * A single "last source" field lost the refresh whenever two pagers existed at once, so
+     * removing a photo from one album could leave it listed in another open album.
      */
-    private var currentSource: MediaPagingSource? = null
+    private val sources = PagingSourceRegistry()
 
     override val albums: Flow<List<CustomAlbum>> = dao.observeAlbums().map { rows ->
         val covers = resolveCovers(rows.mapNotNull { it.coverMediaId })
@@ -175,12 +177,12 @@ class DefaultCustomAlbumRepository(
                     lookup = lookup,
                     hiddenIdsProvider = hiddenIdsProvider,
                 ),
-            ).also { currentSource = it }
+            ).also { sources.track(it) }
         },
     ).flow
 
     override fun refresh() {
-        currentSource?.invalidate()
+        sources.invalidateAll()
     }
 
     /**

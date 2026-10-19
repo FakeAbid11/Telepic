@@ -8,6 +8,7 @@ import coil.imageLoader
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.AlbumRepository
+import com.telepic.data.media.LocalMediaRepository
 import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudStatus
@@ -70,6 +71,14 @@ class SettingsViewModel(
     private val settingsRepository: SettingsRepository,
     /** The *display* album repository — what the library screens show, used for the library count. */
     private val albumRepository: AlbumRepository? = null,
+    /**
+     * The repository behind the **Photos timeline**.
+     *
+     * A different singleton from [albumRepository]: the timeline and the Albums screen are two
+     * views of the same library, and a setting that changes what the library shows has to invalidate
+     * both of their pagers.
+     */
+    private val localMediaRepository: LocalMediaRepository? = null,
     /**
      * The *backup-scoped* album repository behind the SELECT_FOLDER picker (see
      * `AppContainer.backupAlbumRepository`). Deliberately separate from [albumRepository]: the picker
@@ -252,16 +261,22 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     /**
      * Hiding videos or GIFs changes what the library queries return, so the timeline's paging source
      * has to be invalidated — otherwise a `cachedIn` pager keeps serving pages built with the old
-     * filter until the process restarts. [AlbumRepository.refresh] is the same seam the Viewer uses
-     * after archiving, and it invalidates the album/timeline source in one place.
+     * filter until the process restarts.
+     *
+     * Both repositories are invalidated, and both are needed: the Photos timeline is served by
+     * [localMediaRepository] and the Albums screen by [albumRepository] — two different singletons.
+     * Invalidating only the album repository left the timeline showing the hidden kind, which is
+     * exactly what the setting promises to remove.
      */
     fun setShowVideosInTimeline(show: Boolean) = persist {
         settingsRepository.setShowVideosInTimeline(show)
+        localMediaRepository?.refresh()
         albumRepository?.refresh()
     }
 
     fun setShowGifsInTimeline(show: Boolean) = persist {
         settingsRepository.setShowGifsInTimeline(show)
+        localMediaRepository?.refresh()
         albumRepository?.refresh()
     }
 
@@ -326,15 +341,26 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     }
 
     fun refreshStorage() {
-        persist {
-            val summary = withContext(ioDispatcher) {
-                StorageSummary(
-                    tdlibBytes = directorySize(tdlibDir),
-                    stagingBytes = directorySize(stagingDir),
-                    loaded = true,
-                )
+        // The *failure* is reported, the success is not: a successful measurement is the normal case
+        // and showing a message for it on every open would be noise. A failed measurement used to
+        // leave the row with no numbers and no explanation, which is indistinguishable from "there
+        // is nothing cached".
+        viewModelScope.launch {
+            try {
+                val summary = withContext(ioDispatcher) {
+                    StorageSummary(
+                        tdlibBytes = directorySize(tdlibDir),
+                        stagingBytes = directorySize(stagingDir),
+                        loaded = true,
+                    )
+                }
+                _storageSummary.value = summary
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("SettingsViewModel", "the storage sizes could not be measured", throwable)
+                showMessage(SettingsMessage.ActionFailed)
             }
-            _storageSummary.value = summary
         }
     }
 

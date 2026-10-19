@@ -112,12 +112,16 @@ class OrganizationViewModel(
         val state = try {
             OrgItemsState.Ready(localLookup.byIdList(ids))
         } catch (cancellation: CancellationException) {
+            // A cancelled read is not a finished read: clearing the flag here would be a lie about
+            // work that never completed, and *not* clearing it left the pull-to-refresh spinner
+            // turning for good. The flag is cleared in a `finally` below instead.
             throw cancellation
         } catch (throwable: Throwable) {
             TelepicLog.warn("OrganizationViewModel", "the collection could not be read; showing the retry state", throwable)
             OrgItemsState.Error
+        } finally {
+            _isRefreshing.value = false
         }
-        _isRefreshing.value = false
         return state
     }
 

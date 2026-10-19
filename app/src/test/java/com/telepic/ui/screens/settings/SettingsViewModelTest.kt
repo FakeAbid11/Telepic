@@ -7,6 +7,7 @@ import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupRepository
 import com.telepic.data.backup.BulkBackupSummary
 import com.telepic.data.media.AlbumRepository
+import com.telepic.data.media.LocalMediaRepository
 import com.telepic.domain.backup.BackupItem
 import com.telepic.domain.backup.BackupQueueStats
 import com.telepic.domain.media.Album
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -137,6 +139,19 @@ class SettingsViewModelTest {
         override fun refresh() { refreshCalls++ }
     }
 
+    /**
+     * The Photos timeline's own repository — a *different* singleton from the album one.
+     *
+     * A media-filter setting has to invalidate both: invalidating only the album repository left the
+     * hidden kind on the timeline until the process restarted.
+     */
+    private class RefreshableTimeline : LocalMediaRepository {
+        var refreshCalls = 0
+        override fun media(query: String): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() { refreshCalls++ }
+        override suspend fun allMedia(query: String): List<LocalMedia> = emptyList()
+    }
+
     private class RecordingCoordinator : BackupCoordinator {
         var syncCalls = 0
         override val repository: BackupRepository get() = throw NotImplementedError()
@@ -165,6 +180,7 @@ class SettingsViewModelTest {
         coordinator: RecordingCoordinator = RecordingCoordinator(),
         albums: List<Album> = emptyList(),
         albumRepository: AlbumRepository = FakeAlbums(albums),
+        localMediaRepository: LocalMediaRepository = RefreshableTimeline(),
         // Defaults to the same fake so a test that is not about the two scopes need not know they
         // are separate; the picker tests below pass a different one on purpose.
         foldersRepository: AlbumRepository = albumRepository,
@@ -174,6 +190,7 @@ class SettingsViewModelTest {
         onboardingRepository = onboarding,
         settingsRepository = settings,
         albumRepository = albumRepository,
+        localMediaRepository = localMediaRepository,
         foldersRepository = foldersRepository,
         backupCoordinator = coordinator,
         appContext = ApplicationProvider.getApplicationContext<Context>(),
@@ -187,6 +204,23 @@ class SettingsViewModelTest {
         val vm = viewModel(auth = auth)
         vm.logout()
         assertEquals(1, auth.logoutCalls)
+    }
+
+    @Test
+    fun `hiding a media kind invalidates the timeline as well as the albums`() = runTest {
+        // The Photos timeline and the Albums screen are served by two different repositories. The
+        // setting used to invalidate only the album one, so the hidden kind stayed on the timeline
+        // until the process restarted.
+        val albums = RefreshableAlbums(emptyList())
+        val timeline = RefreshableTimeline()
+        val vm = viewModel(albumRepository = albums, localMediaRepository = timeline)
+
+        vm.setShowVideosInTimeline(false)
+        vm.setShowGifsInTimeline(false)
+        advanceUntilIdle()
+
+        assertEquals("the timeline must be invalidated", 2, timeline.refreshCalls)
+        assertEquals("the albums must be invalidated", 2, albums.refreshCalls)
     }
 
     @Test

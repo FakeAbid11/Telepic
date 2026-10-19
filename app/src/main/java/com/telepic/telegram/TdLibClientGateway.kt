@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 

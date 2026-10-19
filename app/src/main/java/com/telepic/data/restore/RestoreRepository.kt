@@ -119,7 +119,19 @@ class DefaultRestoreRepository(
             .onFailure { if (it is CancellationException) throw it }
             .getOrNull() ?: return RestoreResult.Failed(RestoreFailure.VERIFY_FAILED)
 
-        return when (val published = publisher.publish(downloaded.localPath, media.mimeType, media.fileName)) {
+        // The capture time travels with the item so the published row is filed under the day the
+        // media was *taken*, not the day it was restored. Without it a 2019 photo restored today
+        // silently corrupted the library's chronology.
+        val dateTakenMillis = media.dateEpochSec?.takeIf { it > 0L }?.times(1000L)
+
+        return when (
+            val published = publisher.publish(
+                sourcePath = downloaded.localPath,
+                mimeType = media.mimeType,
+                displayName = media.fileName,
+                dateTakenMillis = dateTakenMillis,
+            )
+        ) {
             is PublishResult.Inserted -> {
                 ledger?.record(identity, published.uri)
                 RestoreResult.Restored(published.uri, restoredHash)

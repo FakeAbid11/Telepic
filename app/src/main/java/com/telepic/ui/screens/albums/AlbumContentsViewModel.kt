@@ -209,6 +209,10 @@ class AlbumContentsViewModel(
         viewModelScope.launch {
             try {
                 ids.forEach { repository.removeMedia(albumId, it) }
+                // The grid's pager is cached and never re-queries on its own, so the removal has to
+                // invalidate it explicitly — without this the user saw the success bar and the photo
+                // was still in the album's grid.
+                repository.refresh()
                 clearSelection()
                 // Reported only after every write returned. `removeMedia` has no per-item result, so
                 // the count is the batch that completed without throwing — which is exactly what

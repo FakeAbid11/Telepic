@@ -184,11 +184,11 @@ class CloudScreenUiTest {
         // Never silently creating a second channel is the whole point: the offer names the risk.
         composeRule.onNodeWithText("does not own it", substring = true).assertIsDisplayed()
 
-        // Unmerged: `EmptyState` merges its whole body into one semantics node, so in the merged
-        // tree both labels resolve to the container and `performClick` lands wherever its centre
-        // happens to be — the second click would re-hit the first button. Scrolled first, because at
-        // this viewport the card is taller than the window and only the top of it is on screen.
-        composeRule.onNodeWithText("Use this channel", useUnmergedTree = true)
+        // The two choices are separate semantics nodes, so a screen-reader user can reach and
+        // activate each one. They used to be merged into a single node, which kept only the *last*
+        // child's `onClick` — so double-tapping the card ran "create a new one" (a second Telegram
+        // channel) instead of the choice the user meant.
+        composeRule.onNodeWithText("Use this channel")
             .performScrollTo()
             .assertIsDisplayed()
             .performClick()
@@ -197,7 +197,7 @@ class CloudScreenUiTest {
 
         // Asserted displayed *after* scrolling: "offered with both choices" is only true if the
         // second one is genuinely on screen and tappable, not merely present in the tree.
-        composeRule.onNodeWithText("Create a new one", useUnmergedTree = true)
+        composeRule.onNodeWithText("Create a new one")
             .performScrollTo()
             .assertIsDisplayed()
             .performClick()

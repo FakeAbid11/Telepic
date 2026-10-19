@@ -77,13 +77,18 @@ class PhotosViewModel(
     }
 
     /**
-     * Paged day-headers + media cells for the current search term. Cached so rotation/recomposition
-     * don't re-query, and `flatMapLatest` drops the previous term's pager as soon as a new one starts.
+     * Paged day-headers + media cells for the current search term.
+     *
+     * `cachedIn` is applied **after** the `flatMapLatest`, not inside it. Inside, every search term
+     * started its own `shareIn` coroutine in [viewModelScope] that never stopped — `flatMapLatest`
+     * only cancels the downstream collection — so typing "vacation" left a MediaStore-backed
+     * `PagingSource` alive for every term the user had typed.
      */
     val media: Flow<PagingData<PhotosItem>> = _searchQuery
         .debounce { query -> if (query.isBlank()) 0L else SEARCH_DEBOUNCE_MILLIS }
         .distinctUntilChanged()
-        .flatMapLatest { query -> repository.media(query).cachedIn(viewModelScope) }
+        .flatMapLatest { query -> repository.media(query) }
+        .cachedIn(viewModelScope)
 
     /**
      * Backup status keyed by the local MediaStore id — the UI navigation identity (never filename

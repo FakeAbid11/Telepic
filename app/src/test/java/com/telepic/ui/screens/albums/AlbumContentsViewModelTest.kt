@@ -62,6 +62,11 @@ class AlbumContentsViewModelTest {
     /** Only membership removal matters here; the rest of a user-created album is inert. */
     private class FakeCustomAlbums : CustomAlbumRepository {
         val removed = mutableListOf<Long>()
+
+        /** How many times the contents pager was invalidated. */
+        var refreshCalls = 0
+            private set
+
         override val albums: Flow<List<CustomAlbum>> = flowOf(emptyList())
         override suspend fun create(name: String): Long? = null
         override suspend fun rename(albumId: Long, name: String) = Unit
@@ -75,7 +80,7 @@ class AlbumContentsViewModelTest {
         override fun observeMediaIds(albumId: Long): Flow<List<Long>> = flowOf(emptyList())
         override suspend fun mediaIds(albumId: Long): List<Long> = emptyList()
         override fun mediaInAlbum(albumId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
-        override fun refresh() = Unit
+        override fun refresh() { refreshCalls++ }
     }
 
     /** Only the two hidden-state flows the album watches matter here; the rest are inert. */
@@ -178,6 +183,10 @@ class AlbumContentsViewModelTest {
         // user cannot tell a successful removal from a tap that did nothing.
         assertEquals(3, vm.removalReport.value?.removed)
         assertTrue(vm.selectedItems.value.isEmpty())
+        // The grid's pager is cached and never re-queries on its own, so the removal has to
+        // invalidate it: without this the user saw the success bar and the photo was still in the
+        // album's grid.
+        assertEquals("the album's contents must be invalidated", 1, customAlbums.refreshCalls)
     }
 
     @Test

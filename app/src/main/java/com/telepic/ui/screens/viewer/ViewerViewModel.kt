@@ -670,7 +670,14 @@ class ViewerViewModel(
         // "the query failed" from "the collection is empty"), but a swipe neighbour is not worth
         // failing the Viewer over. An unreadable provider degrades to "no neighbour", never to a
         // wrong one.
-        val ordered = runCatching { localLookup.byIdList(ids) }.getOrElse { emptyList() }.map { it.id }
+        //
+        // A *cancellation* is not an unreadable provider, though: `runCatching` catches every
+        // Throwable, so a cancelled scope used to be reported as "this item has no neighbours" —
+        // and the Viewer's own scope was the one being cancelled.
+        val ordered = runCatching { localLookup.byIdList(ids) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrElse { emptyList() }
+            .map { it.id }
         val index = ordered.indexOf(id)
         if (index < 0) return null to null
         return ordered.getOrNull(index - 1) to ordered.getOrNull(index + 1)
@@ -681,7 +688,9 @@ class ViewerViewModel(
         val index = manifest.indexOfFirst { it.chatId == s.chatId && it.messageId == s.messageId }
         if (index < 0) return ViewerUiState(s, ViewerStatus.MISSING)
         val media = manifest[index]
-        val preview = runCatching { cloudRepository.getPreview(media) }.getOrNull()
+        val preview = runCatching { cloudRepository.getPreview(media) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
         return ViewerUiState(
             source = s,
             status = ViewerStatus.READY,

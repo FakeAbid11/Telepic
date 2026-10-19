@@ -1,5 +1,6 @@
 package com.telepic.data.media
 
+import android.os.Build
 import android.provider.MediaStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -28,12 +29,20 @@ class MediaSelectionBuilderTest {
     private val bucketName = MediaStore.MediaColumns.BUCKET_DISPLAY_NAME
     private val idColumn = MediaStore.MediaColumns._ID
 
+    /**
+     * The clause that hides rows the user cannot see, on the platform this test runs on.
+     *
+     * It is part of every query, so it is named once here rather than spelled out in each
+     * expectation.
+     */
+    private val visibility = "is_pending = 0 AND is_trashed = 0"
+
     @Test
     fun `restricts the query to images and videos`() {
         val (where, args) = MediaSelectionBuilder.build(TimelineMediaFilter.All, null, emptySet())
         val expected =
             "$mediaType IN (${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE}, " +
-                "${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})"
+                "${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO}) AND $visibility"
         assertEquals(expected, where)
         assertNull("an unfiltered, unsearched, unhidden query binds nothing", args)
     }
@@ -52,9 +61,28 @@ class MediaSelectionBuilderTest {
     fun `a blank or whitespace search term emits no SQL and no arguments`() {
         for (term in listOf(null, "", "   ")) {
             val (where, args) = MediaSelectionBuilder.build(TimelineMediaFilter.All, term, emptySet())
-            assertEquals(MediaSelectionBuilder.baseSelection(), where)
+            assertEquals("${MediaSelectionBuilder.baseSelection()} AND $visibility", where)
             assertNull("a blank term must not bind a pattern", args)
         }
+    }
+
+    @Test
+    fun `pending and trashed rows are excluded on the platforms that have those columns`() {
+        // A row another app is still writing, and a row the *system* trash holds, are both invisible
+        // to Telepic but visible to the user — and Telepic's own restore publisher creates a pending
+        // row for the whole duration of the write.
+        assertEquals(
+            "is_pending = 0 AND is_trashed = 0",
+            MediaSelectionBuilder.visibilitySelection(Build.VERSION_CODES.R),
+        )
+        assertEquals(
+            "is_pending = 0",
+            MediaSelectionBuilder.visibilitySelection(Build.VERSION_CODES.Q),
+        )
+        assertNull(
+            "the columns do not exist before API 29, so no clause may be added",
+            MediaSelectionBuilder.visibilitySelection(Build.VERSION_CODES.P),
+        )
     }
 
     @Test

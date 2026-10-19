@@ -1,5 +1,6 @@
 package com.telepic.data.media
 
+import android.os.Build
 import android.provider.MediaStore
 
 /**
@@ -13,6 +14,10 @@ import android.provider.MediaStore
  */
 internal object MediaSelectionBuilder {
 
+    /** The MediaStore column names, spelled out (see [visibilitySelection]). */
+    private const val COLUMN_IS_PENDING = "is_pending"
+    private const val COLUMN_IS_TRASHED = "is_trashed"
+
     /**
      * Restricts the query to images and videos. `MediaStore.Files` also holds audio and documents, so
      * without this a timeline page would be filled with rows the grid cannot render.
@@ -23,6 +28,30 @@ internal object MediaSelectionBuilder {
             "${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})"
 
     /**
+     * The extra clause that hides rows the user cannot see.
+     *
+     * Two different things, both invisible to the app but visible to the user:
+     *
+     *  * **`is_pending`** (API 29+) — a row another app is still writing, or one Telepic's own
+     *    restore publisher has inserted but not finalized. It shows up in the timeline and in the
+     *    album counts as a half-written file.
+     *  * **`is_trashed`** (API 30+) — a row the *system* trash holds. Telepic's own trash is an
+     *    app-level flag and is already excluded through the hidden-id list; this is the platform's.
+     *
+     * The columns do not exist before API 29, so the clause is only added when the platform has
+     * them — querying an unknown column is a provider error, not an empty result.
+     *
+     * The column names are spelled out rather than referenced through `MediaStore.MediaColumns`,
+     * whose `IS_TRASHED` constant only exists from API 30: the literals are the same values the
+     * constants hold, and they keep the clause free of a version-dependent reference.
+     */
+    fun visibilitySelection(sdkInt: Int): String? = when {
+        sdkInt >= Build.VERSION_CODES.R -> "$COLUMN_IS_PENDING = 0 AND $COLUMN_IS_TRASHED = 0"
+        sdkInt >= Build.VERSION_CODES.Q -> "$COLUMN_IS_PENDING = 0"
+        else -> null
+    }
+
+    /**
      * The search term is matched against the file name *and* the folder name, case-insensitively
      * (`LIKE` is case-insensitive for ASCII in SQLite), with the caller's `%`/`_` escaped so a term
      * containing them searches for those characters instead of turning into a wildcard.
@@ -31,9 +60,14 @@ internal object MediaSelectionBuilder {
         filter: TimelineMediaFilter,
         search: String?,
         hidden: Set<Long>,
+        sdkInt: Int = Build.VERSION.SDK_INT,
     ): Pair<String, Array<String>?> {
         val args = ArrayList<String>()
         val where = StringBuilder(baseSelection()).append(filter.selectionSuffix())
+
+        // Rows the user cannot see are excluded in the query itself, so they never occupy a page
+        // slot (which would keep the paging offsets honest).
+        visibilitySelection(sdkInt)?.let { where.append(" AND ").append(it) }
 
         val term = search?.trim().orEmpty()
         if (term.isNotEmpty()) {

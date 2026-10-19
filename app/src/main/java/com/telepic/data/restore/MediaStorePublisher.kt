@@ -29,7 +29,23 @@ sealed interface PublishResult {
 
 /** Seam so MediaStore publication (a device-bound write) can be faked in tests. */
 interface MediaStorePublisher {
-    suspend fun publish(sourcePath: String, mimeType: String?, displayName: String?): PublishResult
+    /**
+     * Publish [sourcePath] into public media storage.
+     *
+     * [dateTakenMillis] is the **original** capture time of the media (in epoch milliseconds). It is
+     * written to the row's `DATE_TAKEN` so a restored photo lands in the timeline under the day it
+     * was taken rather than under the day it happened to be restored — without it a 2019 photo
+     * restored today silently corrupted the library's chronology.
+     *
+     * Null when the source carries no known capture time; the row then keeps the provider's own
+     * default rather than a fabricated date.
+     */
+    suspend fun publish(
+        sourcePath: String,
+        mimeType: String?,
+        displayName: String?,
+        dateTakenMillis: Long? = null,
+    ): PublishResult
 
     /**
      * Whether [uri] still resolves to a live row in the provider.
@@ -72,7 +88,12 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
         }
     }
 
-    override suspend fun publish(sourcePath: String, mimeType: String?, displayName: String?): PublishResult =
+    override suspend fun publish(
+        sourcePath: String,
+        mimeType: String?,
+        displayName: String?,
+        dateTakenMillis: Long?,
+    ): PublishResult =
         withContext(Dispatchers.IO) {
             val scope: CoroutineScope = this
             val source = File(sourcePath)
@@ -92,6 +113,10 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                 put(MediaStore.MediaColumns.MIME_TYPE, mime)
                 put(MediaStore.MediaColumns.SIZE, source.length())
+                // The original capture time, so the restored item is filed under the day it was
+                // taken. Without it the provider stamps the row with the restore time and a 2019
+                // photo silently lands at the end of the timeline.
+                dateTakenMillis?.let { put(MediaStore.MediaColumns.DATE_TAKEN, it) }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(MediaStore.MediaColumns.RELATIVE_PATH, relativeDir(mime))
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
@@ -142,6 +167,11 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
                 // A cancelled restore is not a failed restore: the caller's scope is going away and
                 // must see the cancellation rather than a PUBLISH_FAILED it would retry.
                 if (throwable is CancellationException) throw throwable
+                // This is the *likely* failure — a refused output stream, a short write, a provider
+                // that would not finalize the row — and it used to leave no trace at all, so "disk
+                // full", "provider refused" and "the copy was truncated" were indistinguishable
+                // from the outside.
+                TelepicLog.warn("MediaPublish", "writing the restored item into the gallery failed", throwable)
                 PublishResult.Failed
             }
         }

@@ -49,12 +49,18 @@ class TelegramSessionManagerTest {
         @Volatile var timeoutParameters: Boolean = false
         // When true, CheckAuthenticationCode is rejected (a wrong code) with a recoverable 400.
         @Volatile var failCode: Boolean = false
+        // When true, SetAuthenticationPhoneNumber is rejected with a recoverable 400.
+        @Volatile var failPhoneNumber: Boolean = false
         // When true, the email-address / email-code requests are rejected with a recoverable 400.
         @Volatile var failEmailAddress: Boolean = false
         @Volatile var failEmailCode: Boolean = false
         @Volatile var requests: List<TdApi.Function<*>> = emptyList()
         /** What GetMe reports — the signed-in account's display identity. */
         @Volatile var me: TdApi.Object = TdApi.Ok()
+
+        /** How many times the gateway was reset — the recovery after TDLib closed the client. */
+        @Volatile var resetCount: Int = 0
+            private set
 
         fun setParametersSent(): Int = requests.count { it is TdApi.SetTdlibParameters }
 
@@ -69,6 +75,18 @@ class TelegramSessionManagerTest {
             _updates.tryEmit(TdApi.UpdateAuthorizationState(TdApi.AuthorizationStateWaitTdlibParameters()))
         }
 
+        /**
+         * The recovery after TDLib closed the client.
+         *
+         * The real gateway drops the dead reference so the next `open()` creates a fresh client —
+         * without this, `open()` returned early on the dead reference and the session could never be
+         * driven again.
+         */
+        override fun reset() {
+            resetCount++
+            opened = false
+        }
+
         override suspend fun request(request: TdApi.Function<*>): TdApi.Object {
             requests += request
             return when (request) {
@@ -79,6 +97,8 @@ class TelegramSessionManagerTest {
                     else -> TdApi.Ok()
                 }
                 is TdApi.CheckAuthenticationCode -> if (failCode) TdApi.Error(400, "code invalid") else TdApi.Ok()
+                is TdApi.SetAuthenticationPhoneNumber ->
+                    if (failPhoneNumber) TdApi.Error(400, "phone invalid") else TdApi.Ok()
                 is TdApi.SetAuthenticationEmailAddress ->
                     if (failEmailAddress) TdApi.Error(400, "email invalid") else TdApi.Ok()
                 is TdApi.CheckAuthenticationEmailCode ->
@@ -382,6 +402,109 @@ class TelegramSessionManagerTest {
         assertTrue(
             "a late reply must not restore the email-code input",
             m.state.value !is TelegramAuthState.WaitingForEmailCode,
+        )
+        m.close()
+    }
+
+    // --- Sign-out and sign-in again ----------------------------------------------------------------
+
+    @Test
+    fun `a closed session resets the client so signing in again is possible`() = runBlocking {
+        // TDLib closes its client when the session reaches AuthorizationStateClosed — which is what a
+        // sign-out produces — and the Java binding unregisters that client's update handler at the
+        // same moment. The old client could therefore never be replaced: `open()` returned early on
+        // the dead reference, so "Connect" after a sign-out did nothing and only an app restart
+        // recovered.
+        val gateway = FakeGateway()
+        val m = manager(gateway)
+        m.initialize()
+        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        assertEquals(1, gateway.openCount)
+
+        gateway.emit(TdApi.AuthorizationStateClosed())
+        withTimeout(3_000) { while (gateway.resetCount < 1) delay(20) }
+        assertEquals("the closed session must reset the gateway", 1, gateway.resetCount)
+
+        // Signing in again opens a *fresh* client.
+        m.initialize()
+        withTimeout(3_000) { while (gateway.openCount < 2) delay(20) }
+        assertEquals(2, gateway.openCount)
+        m.close()
+    }
+
+    @Test
+    fun `a closed session forgets the account so a new sign-in is not reported as the old one`() = runBlocking {
+        // The account used to survive the sign-out, so a later re-authorization skipped the
+        // GetMe round trip and reported the *previous* account as Authorized — which would have the
+        // backup engine upload to the wrong account's channel.
+        val gateway = FakeGateway().apply { me = TdApi.User().apply { id = 42L; firstName = "Ada" } }
+        val m = manager(gateway)
+        m.initialize()
+        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        gateway.emit(TdApi.AuthorizationStateReady())
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+        assertEquals(42L, (m.state.value as TelegramAuthState.Authorized).user.id)
+
+        gateway.emit(TdApi.AuthorizationStateClosed())
+        withTimeout(3_000) { while (gateway.resetCount < 1) delay(20) }
+
+        // A *different* account signs in. The manager must fetch it rather than report the old one.
+        gateway.me = TdApi.User().apply { id = 7L; firstName = "Grace" }
+        gateway.emit(TdApi.AuthorizationStateReady())
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+        assertEquals(
+            "the session must report the account that signed in, not the one that signed out",
+            7L,
+            (m.state.value as TelegramAuthState.Authorized).user.id,
+        )
+        m.close()
+    }
+
+    @Test
+    fun `a late code reply never pulls an authorized session back to the input screen`() = runBlocking {
+        // TDLib moves on the moment a code is accepted, so a slow or duplicated reply would
+        // otherwise restore the code input for a code the server already took. Every further attempt
+        // would then be rejected as "no code pending" — and, worse, the backup engine would see the
+        // session as unauthorized and park the whole queue.
+        val gateway = FakeGateway().apply {
+            me = TdApi.User().apply { id = 42L; firstName = "Ada" }
+            failCode = true
+        }
+        val m = manager(gateway)
+        m.initialize()
+        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        gateway.emit(TdApi.AuthorizationStateReady())
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+
+        m.submitCode("00000")
+        delay(300)
+
+        assertTrue(
+            "a late reply must not sign the user out of a working session",
+            m.state.value is TelegramAuthState.Authorized,
+        )
+        m.close()
+    }
+
+    @Test
+    fun `a late phone-number reply never pulls an authorized session back to the input screen`() = runBlocking {
+        val gateway = FakeGateway().apply {
+            me = TdApi.User().apply { id = 42L; firstName = "Ada" }
+            failPhoneNumber = true
+        }
+        val m = manager(gateway)
+        m.initialize()
+        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        gateway.emit(TdApi.AuthorizationStateReady())
+        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+
+        // The number request is rejected.
+        m.submitPhoneNumber("+10000000000")
+        delay(300)
+
+        assertTrue(
+            "a late reply must not sign the user out of a working session",
+            m.state.value is TelegramAuthState.Authorized,
         )
         m.close()
     }

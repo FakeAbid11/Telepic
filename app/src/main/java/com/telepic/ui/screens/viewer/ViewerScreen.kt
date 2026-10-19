@@ -61,6 +61,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -160,8 +161,20 @@ fun ViewerScreen(
     val insetsController = remember(viewerView) {
         viewerView.context.hostingWindow()?.let { WindowInsetsControllerCompat(it, viewerView) }
     }
-    DisposableEffect(insetsController, controlsVisible) {
+    // Two effects, not one keyed on `controlsVisible`.
+    //
+    // A single effect re-ran on every chrome toggle, and `onDispose` runs *before* the new effect
+    // body: hiding the chrome therefore showed the system bars and hid them again, so the status
+    // and navigation bars flashed into view for a frame on every tap. The restore-on-exit belongs
+    // to the unmount, not to the toggle.
+    DisposableEffect(insetsController) {
         val controller = insetsController ?: return@DisposableEffect onDispose { }
+        val bars = WindowInsetsCompat.Type.systemBars()
+        // Restored on the way out, so no other screen ever inherits a hidden status bar.
+        onDispose { controller.show(bars) }
+    }
+    LaunchedEffect(insetsController, controlsVisible) {
+        val controller = insetsController ?: return@LaunchedEffect
         val bars = WindowInsetsCompat.Type.systemBars()
         if (controlsVisible) {
             controller.show(bars)
@@ -170,8 +183,6 @@ fun ViewerScreen(
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(bars)
         }
-        // Restored on the way out, so no other screen ever inherits a hidden status bar.
-        onDispose { controller.show(bars) }
     }
 
     // Warm Coil's cache for the swipe targets so a committed drag lands on a ready image.
@@ -399,6 +410,14 @@ private fun ViewerContent(
     var loadState by remember(model) { mutableStateOf(ImageLoadState.Loading) }
     var retryToken by remember(model) { mutableIntStateOf(0) }
 
+    // The swipe targets are read through `rememberUpdatedState` so the gesture block — which is keyed
+    // on the *source* and therefore not restarted when the neighbours change — always resolves the
+    // current pair instead of the one captured when the block was created. The video path already
+    // does this; the photo path did not, so a neighbour change under the same item could swipe to
+    // an item that was no longer adjacent.
+    val currentPrevious by rememberUpdatedState(state.previous)
+    val currentNext by rememberUpdatedState(state.next)
+
     // Back is not simply "leave": while the photo is zoomed the first press returns it to fit, and
     // while the chrome is hidden the first press brings it back — the same order the user expects from
     // a full-screen image. Only when neither applies does Back fall through to the route pop that
@@ -507,8 +526,13 @@ private fun ViewerContent(
                             val target = SwipeResolver.resolve(
                                 deltaPx = dragTotalX,
                                 widthPx = size.width.toFloat(),
-                                previous = state.previous,
-                                next = state.next,
+                                // Read through `rememberUpdatedState`: the gesture block is keyed on
+                                // the *source*, so it is not restarted when the neighbour set changes
+                                // (a MediaStore refresh, a scoped neighbour query re-resolving). Reading
+                                // `state.previous` directly would capture it by value and swipe to a
+                                // neighbour that is no longer there.
+                                previous = currentPrevious,
+                                next = currentNext,
                             )
                             // Always release the drag offset: a committed swap navigates anyway (and
                             // swaps the remembered offset), while a rejected or under-threshold drag

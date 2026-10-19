@@ -41,6 +41,14 @@ class DefaultMapLocationRepository(
     private val pageLoader: MediaPageLoader,
     private val extractor: LocationExtractor,
     private val cursorStore: ScanCursorStore,
+    /**
+     * The ids the library currently hides (archived, trashed).
+     *
+     * The sweep's page loader is the *timeline* loader, which excludes them — so without this the
+     * sweep read "absent from the library" as "deleted from the device" and destroyed the stored
+     * coordinates of every archived photo.
+     */
+    private val hiddenIdsProvider: suspend () -> Set<Long> = { emptySet() },
     private val clock: () -> Long = System::currentTimeMillis,
     private val pageSize: Int = 120,
     private val maxPages: Int = 2_000,
@@ -130,12 +138,19 @@ class DefaultMapLocationRepository(
         // still discovered; a capped one resumes where it stopped.
         persistCursor(if (reachedEnd) 0 else offset)
 
-        // Drop markers for media that is gone (deleted) or now hidden (archived/trashed — the
-        // pageLoader excludes those). Both tables are pruned from the union of what they know, so
-        // location rows written before this table existed are reconciled too.
+        // Drop markers for media that is **gone** (deleted from the device). Both tables are pruned
+        // from the union of what they know, so location rows written before this table existed are
+        // reconciled too.
+        //
+        // The page loader is the *timeline* loader, which excludes archived and trashed media — so
+        // a photo the user merely archived was treated as deleted and its stored coordinate was
+        // destroyed. Un-archiving it then cost a fresh EXIF re-read, and the map lost pins it
+        // already had. The hidden ids are therefore excluded from the prune: only media that is
+        // really absent is dropped.
         if (reachedEnd && startOffset == 0) {
+            val hidden = hiddenIdsProvider()
             val known = HashSet<Long>(scanned).apply { addAll(dao.cachedIds()) }
-            (known - present).forEach { id ->
+            (known - present - hidden).forEach { id ->
                 dao.delete(id)
                 dao.deleteScanned(id)
             }

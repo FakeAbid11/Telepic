@@ -186,10 +186,15 @@ class MapViewModel(
                 // A cancelled scan is not a failure: rethrown so it neither reports an error nor
                 // counts as one, the same rule the rest of the app follows.
                 throw cancellation
-            } catch (_: Exception) {
+            } catch (throwable: Exception) {
                 // Recorded rather than swallowed. The map still keeps whatever it already has — the
                 // empty state is not a lie either — but the failure is now reportable instead of
                 // being indistinguishable from an empty library.
+                //
+                // It also leaves a trace: this was the only exception path in the app that
+                // produced no log line at all, so a scan that kept failing was indistinguishable
+                // from a scan that never ran.
+                TelepicLog.warn("MapViewModel", "the map scan failed", throwable)
                 _scanFailed.value = true
             } finally {
                 grace.cancel()

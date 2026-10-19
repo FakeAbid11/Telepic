@@ -1,6 +1,7 @@
 package com.telepic.data.media
 
 import android.content.Context
+import android.os.Build
 import android.os.CancellationSignal
 import android.provider.MediaStore
 import androidx.paging.Pager
@@ -82,7 +83,10 @@ class MediaStoreAlbumRepository(
         // let archived/trashed media back into a large library's counts and covers.
         val hidden = hiddenIdsProvider()
         val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { it.toString() }})"
-        val realSelection = mediaSelection + typeFilterProvider().selectionSuffix() + exclusion
+        // The same visibility clause the timeline uses: a row another app is still writing, or one
+        // the system trash holds, must not appear in an album's count or as its cover.
+        val visibility = MediaSelectionBuilder.visibilitySelection(Build.VERSION.SDK_INT)?.let { " AND $it" } ?: ""
+        val realSelection = mediaSelection + typeFilterProvider().selectionSuffix() + visibility + exclusion
         // No bound arguments remain: every value (kind literals, hidden ids) is inlined, so the query
         // carries a null arg array.
         val args: Array<String>? = null
@@ -140,10 +144,12 @@ class MediaStoreAlbumRepository(
     }
 
     /**
-     * The most recently created bucket source. One album screen is open at a time, so a single field
-     * is enough — the same design [LocalMediaRepositoryImpl] uses for the timeline.
+     * Every live bucket pager.
+     *
+     * A single "last source" field lost the refresh whenever two pagers existed at once, so a
+     * library change reached only one of them.
      */
-    private var currentSource: MediaPagingSource? = null
+    private val sources = PagingSourceRegistry()
 
     override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = Pager(
         config = PagingConfig(
@@ -154,12 +160,12 @@ class MediaStoreAlbumRepository(
         ),
         pagingSourceFactory = {
             MediaPagingSource(MediaStoreBucketLoader(appContext, bucketId, hiddenIdsProvider, typeFilterProvider))
-                .also { currentSource = it }
+                .also { sources.track(it) }
         },
     ).flow
 
     override fun refresh() {
-        currentSource?.invalidate()
+        sources.invalidateAll()
     }
 
     private companion object {
@@ -205,9 +211,11 @@ class MediaStoreBucketLoader(
         // `Long`s, so this is injection-safe and no longer truncates at 500.
         val hidden = hiddenIdsProvider()
         val exclusion = if (hidden.isEmpty()) "" else " AND ${MediaStore.MediaColumns._ID} NOT IN (${hidden.joinToString(",") { it.toString() }})"
+        // The same visibility clause the timeline uses, so an album's contents agree with it.
+        val visibility = MediaSelectionBuilder.visibilitySelection(Build.VERSION.SDK_INT)?.let { " AND $it" } ?: ""
         // The kind filter carries no bound arguments (a constant MIME literal) and the hidden ids are
         // inlined, so `bucketId` is the only bound parameter and its position is unambiguous.
-        val realSelection = base + typeFilterProvider().selectionSuffix() + exclusion
+        val realSelection = base + typeFilterProvider().selectionSuffix() + visibility + exclusion
         val args = arrayOf(bucketId.toString())
         // Unlike the previous 5-arg query, this passes a CancellationSignal so a cancelled album
         // contents load aborts the provider-side query instead of merely stopping the cursor walk.

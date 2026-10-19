@@ -125,4 +125,63 @@ class BackupQueueDaoGuardTest {
         assertEquals(0, dao.requeueForRetry(backedId, 3L))
         assertEquals("BACKED_UP", find("m-backed").state)
     }
+
+    @Test
+    fun `a manual retry never disturbs a row that is mid-flight`() = runBlocking {
+        // Re-queuing a PREPARING/UPLOADING row would wipe the retry budget of a send that is still
+        // running, and the in-flight completion would then land on a row the user had already
+        // re-queued.
+        for (state in listOf("PREPARING", "UPLOADING")) {
+            val mediaId = "m-inflight-$state"
+            insert(row(state).copy(localMediaId = mediaId))
+            val id = find(mediaId).id
+            assertEquals("a $state row must not be re-queued", 0, dao.requeueForRetry(id, 2L))
+            assertEquals(state, find(mediaId).state)
+        }
+    }
+
+    @Test
+    fun `a permanent failure clears the pending remote identity`() = runBlocking {
+        // A rejected message will never be delivered, so keeping its id made every later attempt
+        // confirm the dead message and fail again — the row could never be uploaded, however many
+        // times the user pressed Retry.
+        val mediaId = "m-rejected"
+        insert(row("UPLOADING").copy(localMediaId = mediaId))
+        val id = find(mediaId).id
+        assertEquals(1, dao.recordPendingRemote(id, 100L, 500L, 2L))
+        assertEquals(500L, find(mediaId).pendingTelegramMessageId)
+
+        assertEquals(1, dao.markFailed(id, "rejected", 3L))
+        val stored = find(mediaId)
+        assertEquals("FAILED", stored.state)
+        assertNull("a rejected message can never be confirmed", stored.pendingTelegramMessageId)
+        assertNull(stored.pendingTelegramChatId)
+    }
+
+    @Test
+    fun `a manual retry keeps the pending identity so an in-flight send is confirmed, not duplicated`() = runBlocking {
+        // A cancelled row may still have a send in flight on Telegram's side. Clearing its pending
+        // id here would make the retry upload the same file a second time.
+        val mediaId = "m-cancelled-inflight"
+        insert(row("UPLOADING").copy(localMediaId = mediaId))
+        val id = find(mediaId).id
+        dao.recordPendingRemote(id, 100L, 500L, 2L)
+        assertEquals(1, dao.cancel(id, 3L))
+
+        assertEquals(1, dao.requeueForRetry(id, 4L))
+        val stored = find(mediaId)
+        assertEquals("QUEUED", stored.state)
+        assertEquals(500L, stored.pendingTelegramMessageId)
+    }
+
+    @Test
+    fun `an unknown waiting state is never written`() = runBlocking {
+        // A mistyped state name used to be written verbatim, and the mapping then reported the row
+        // as NOT_BACKED_UP — a silent loss of the row's real status.
+        val mediaId = "m-bad-state"
+        insert(row("QUEUED").copy(localMediaId = mediaId))
+        val id = find(mediaId).id
+        assertEquals(0, dao.markWaiting(id, "SOMETHING_ELSE", 2L))
+        assertEquals("QUEUED", find(mediaId).state)
+    }
 }

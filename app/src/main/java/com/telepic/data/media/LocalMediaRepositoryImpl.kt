@@ -23,7 +23,13 @@ class LocalMediaRepositoryImpl(
     private val searchLoaderFactory: (String) -> MediaPageLoader = { loader },
 ) : LocalMediaRepository {
 
-    private var currentSource: MediaPagingSource? = null
+    /**
+     * Every live pager this repository has handed out.
+     *
+     * A single "last source" field lost the refresh whenever two pagers existed at once — the
+     * timeline and a search, say — so a library change reached only one of them.
+     */
+    private val sources = PagingSourceRegistry()
 
     /** The unfiltered loader is reused for a blank query, so the common path allocates nothing new. */
     private fun loaderFor(query: String): MediaPageLoader =
@@ -38,12 +44,12 @@ class LocalMediaRepositoryImpl(
                 enablePlaceholders = false,
             ),
             pagingSourceFactory = {
-                MediaPagingSource(loaderFor(query)).also { currentSource = it }
+                MediaPagingSource(loaderFor(query)).also { sources.track(it) }
             },
         ).flow
 
     override fun refresh() {
-        currentSource?.invalidate()
+        sources.invalidateAll()
     }
 
     /**

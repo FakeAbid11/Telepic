@@ -282,6 +282,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             dao = mediaLocationDao,
             pageLoader = mediaLoader,
             extractor = AndroidLocationExtractor(appContext),
+            // The map sweep must not treat an archived photo as a deleted one: the timeline loader
+            // hides archived and trashed media, so the sweep needs to know they still exist.
+            hiddenIdsProvider = { mediaOrganizationRepository.hiddenIds() },
             // The map sweep has its own page cap, and without a cursor every open restarts at offset 0
             // — so a library past the cap can never be covered no matter how often the screen opens.
             cursorStore = PreferencesScanCursorStore(appContext.telepicDataStore),

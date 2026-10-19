@@ -31,7 +31,10 @@ class CloudViewModel(
             CloudUiState(status = status, destinationTitle = title, media = media)
         }.stateIn(
             scope = viewModelScope,
-            started = SharingStarted.Eagerly,
+            // `WhileSubscribed`, like every other screen: the manifest query is backed by TDLib and
+            // Room, and `Eagerly` kept it alive for the whole life of the ViewModel — including while
+            // the screen was off the back stack.
+            started = SharingStarted.WhileSubscribed(5_000),
             initialValue = CloudUiState(),
         )
 
