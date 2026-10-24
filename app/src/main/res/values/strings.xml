@@ -23,6 +23,12 @@
     <string name="cloud_refresh">Refresh</string>
     <string name="cloud_status_connected">Connected</string>
     <string name="cloud_status_setting_up">Setting up…</string>
+    <string name="cloud_status_connecting">Connecting…</string>
+    <string name="cloud_status_not_connected">Telegram not connected</string>
+    <string name="cloud_status_offline">Offline</string>
+    <string name="cloud_status_needs_attention">Needs attention</string>
+    <string name="cloud_status_failed">Something went wrong</string>
+    <string name="cloud_status_your_cloud">Your cloud</string>
     <string name="cloud_offline_title">Telegram is unavailable</string>
     <string name="cloud_offline_body">You appear to be offline. Local photos still work; your cloud will refresh once the connection returns.</string>
     <string name="cloud_notconnected_title">Telegram is not connected</string>

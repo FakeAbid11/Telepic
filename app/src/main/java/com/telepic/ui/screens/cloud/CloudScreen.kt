@@ -134,10 +134,18 @@ fun CloudScreen(
 @Composable
 private fun DestinationStatusBar(uiState: CloudUiState) {
     val spacing = TelepicTokens.spacing
-    val connected = uiState.status is CloudStatus.Ready || uiState.status is CloudStatus.Refreshing ||
-        uiState.status is CloudStatus.Empty
+    val status = uiState.status
+    // Only the states that are genuinely still resolving the destination may claim work is in
+    // progress; offline, signed out or failed must not read as "setting up".
+    val title = uiState.destinationTitle ?: stringResource(
+        when (status) {
+            CloudStatus.Initializing, CloudStatus.Connecting, CloudStatus.DestinationMissing,
+            is CloudStatus.DestinationInvalid -> R.string.cloud_settingup_title
+            else -> R.string.cloud_status_your_cloud
+        },
+    )
     Text(
-        text = uiState.destinationTitle ?: stringResource(R.string.cloud_settingup_title),
+        text = title,
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier
@@ -145,11 +153,23 @@ private fun DestinationStatusBar(uiState: CloudUiState) {
             .padding(horizontal = spacing.screenMargin, vertical = spacing.xxs),
     )
     Text(
-        text = stringResource(if (connected) R.string.cloud_status_connected else R.string.cloud_status_setting_up),
+        text = stringResource(statusLabel(status)),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = spacing.screenMargin),
     )
+}
+
+/** One honest label per status: the bar must never imply progress or success it cannot observe. */
+private fun statusLabel(status: CloudStatus): Int = when (status) {
+    CloudStatus.Initializing -> R.string.cloud_status_setting_up
+    CloudStatus.Connecting -> R.string.cloud_status_connecting
+    CloudStatus.Refreshing, CloudStatus.Ready, CloudStatus.Empty -> R.string.cloud_status_connected
+    CloudStatus.NotAuthenticated -> R.string.cloud_status_not_connected
+    CloudStatus.Offline -> R.string.cloud_status_offline
+    CloudStatus.DestinationMissing, is CloudStatus.DestinationInvalid,
+    is CloudStatus.DestinationConfirmation -> R.string.cloud_status_needs_attention
+    is CloudStatus.Failed -> R.string.cloud_status_failed
 }
 
 @Composable
