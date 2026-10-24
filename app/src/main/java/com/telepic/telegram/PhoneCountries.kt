@@ -155,6 +155,24 @@ object PhoneCountries {
     private val byIso = All.associateBy { it.iso }
 
     fun byIso(iso: String?): CountryDialCode? = iso?.let { byIso[it.uppercase()] }
+
+    /**
+     * The entries matching [query], in table order, for the login screen's country picker.
+     *
+     * A name is matched anywhere ("united"), an ISO code exactly ("PK"), and a dial code by its
+     * digits with or without the plus ("92", "+92") — the three things a user can plausibly type
+     * when they want a country and the one reason the flat 124-row list was unusable.
+     */
+    fun search(query: String): List<CountryDialCode> {
+        val needle = query.trim()
+        if (needle.isEmpty()) return All
+        val digits = needle.filter { it.isDigit() }
+        return All.filter { entry ->
+            entry.name.contains(needle, ignoreCase = true) ||
+                entry.iso.equals(needle, ignoreCase = true) ||
+                (digits.isNotEmpty() && entry.dialCode.trimStart('+').startsWith(digits))
+        }
+    }
 }
 
 /**

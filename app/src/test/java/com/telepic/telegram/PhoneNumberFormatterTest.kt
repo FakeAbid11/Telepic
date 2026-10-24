@@ -70,4 +70,25 @@ class PhoneNumberFormatterTest {
         assertEquals("+1", PhoneCountries.Default.dialCode)
         assertTrue(PhoneCountries.All.any { it.iso == "US" })
     }
+
+    @Test
+    fun `country search matches a name, an iso code and a dial code`() {
+        // The three ways a user can plausibly name a country — nothing else was searchable before.
+        assertEquals(listOf("PK"), PhoneCountries.search("pak").map { it.iso })
+        assertEquals(listOf("PK"), PhoneCountries.search("PK").map { it.iso })
+        assertTrue(PhoneCountries.search("+92").any { it.iso == "PK" })
+        assertTrue(PhoneCountries.search("92").any { it.iso == "PK" })
+    }
+
+    @Test
+    fun `country search is case-insensitive, tolerates padding and gets narrower`() {
+        assertTrue(PhoneCountries.search("  UNITED  ").map { it.iso }.containsAll(listOf("US", "GB", "AE")))
+        assertEquals(listOf("US"), PhoneCountries.search("united states").map { it.iso })
+        assertTrue(PhoneCountries.search("zzzz").isEmpty())
+    }
+
+    @Test
+    fun `an empty country search lists the whole table`() {
+        assertEquals(PhoneCountries.All, PhoneCountries.search("   "))
+    }
 }

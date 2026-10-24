@@ -9,21 +9,29 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -45,7 +53,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -60,6 +70,10 @@ import com.telepic.telegram.TelegramAuthState
 import com.telepic.telegram.normalizeE164
 import com.telepic.ui.theme.TelepicTokens
 import java.util.Locale
+
+/** Stable test tags for the country picker. */
+const val TAG_COUNTRY_FIELD = "country_field"
+const val TAG_COUNTRY_SEARCH = "country_search"
 
 /**
  * Screen 4 — Telegram Login (Phase 4, real).
@@ -127,7 +141,7 @@ private fun AuthContent(
             val defaultCountry = rememberDefaultCountry()
             var countryIso by rememberSaveable { mutableStateOf(defaultCountry.iso) }
             val country = PhoneCountries.byIso(countryIso) ?: defaultCountry
-            var menuExpanded by remember { mutableStateOf(false) }
+            var showCountryPicker by rememberSaveable { mutableStateOf(false) }
             // A fixed width is right for this field — a flag and a dial code are short and stable —
             // but it has to scale with the user's font size. At a large font scale a hard 132dp
             // clipped the very content it was sized for.
@@ -137,8 +151,8 @@ private fun AuthContent(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 ExposedDropdownMenuBox(
-                    expanded = menuExpanded,
-                    onExpandedChange = { menuExpanded = it },
+                    expanded = showCountryPicker,
+                    onExpandedChange = { showCountryPicker = it },
                     modifier = Modifier.width(countryFieldWidth),
                 ) {
                     OutlinedTextField(
@@ -147,22 +161,12 @@ private fun AuthContent(
                         readOnly = true,
                         label = { Text(stringResource(R.string.telegram_country_label)) },
                         singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuExpanded) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showCountryPicker) },
                         modifier = Modifier
                             .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .testTag(TAG_COUNTRY_FIELD)
                             .fillMaxWidth(),
                     )
-                    ExposedDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                        PhoneCountries.All.forEach { entry ->
-                            DropdownMenuItem(
-                                text = { Text("${entry.flag}  ${entry.name}  (${entry.dialCode})") },
-                                onClick = {
-                                    countryIso = entry.iso
-                                    menuExpanded = false
-                                },
-                            )
-                        }
-                    }
                 }
                 OutlinedTextField(
                     value = phone,
@@ -185,6 +189,18 @@ private fun AuthContent(
                         },
                     ),
                     modifier = Modifier.weight(1f),
+                )
+            }
+            if (showCountryPicker) {
+                // A dialog rather than the 124-row dropdown this used to be: the list is longer than
+                // a menu can usefully present, and there was no way to search it.
+                CountryPickerDialog(
+                    currentIso = country.iso,
+                    onSelect = { entry ->
+                        countryIso = entry.iso
+                        showCountryPicker = false
+                    },
+                    onDismiss = { showCountryPicker = false },
                 )
             }
             PrimaryButton(
@@ -403,6 +419,100 @@ private fun AuthContent(
 private fun PrimaryButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
     Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
         Text(label)
+    }
+}
+
+/**
+ * The country picker: a search field over [PhoneCountries], with the current choice marked.
+ *
+ * The field it replaces opened a dropdown holding every entry, with no way to narrow it — on a phone
+ * that is a scroll hunt through 124 rows for something as ordinary as typing "92".
+ */
+@Composable
+private fun CountryPickerDialog(
+    currentIso: String,
+    onSelect: (CountryDialCode) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val spacing = TelepicTokens.spacing
+    var query by rememberSaveable { mutableStateOf("") }
+    val matches = remember(query) { PhoneCountries.search(query) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.telegram_country_label)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.telegram_country_search)) },
+                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(TAG_COUNTRY_SEARCH),
+                )
+                Spacer(Modifier.height(spacing.xs))
+                if (matches.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.telegram_country_no_match),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = spacing.sm),
+                    )
+                } else {
+                    // Bounded so the dialog's buttons stay on screen; the list itself scrolls.
+                    LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                        items(matches, key = { it.iso }) { entry ->
+                            CountryRow(
+                                entry = entry,
+                                selected = entry.iso == currentIso,
+                                onClick = { onSelect(entry) },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.organization_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun CountryRow(entry: CountryDialCode, selected: Boolean, onClick: () -> Unit) {
+    val spacing = TelepicTokens.spacing
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = spacing.xs, vertical = spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = entry.flag, style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.width(spacing.sm))
+        Text(
+            text = entry.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = entry.dialCode,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (selected) {
+            // Decorative: the row's own selectable semantics already announce the selection.
+            Spacer(Modifier.width(spacing.xs))
+            Icon(
+                imageVector = Icons.Outlined.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 

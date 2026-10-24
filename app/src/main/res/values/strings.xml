@@ -239,6 +239,8 @@
     <string name="telegram_connecting">Connecting to Telegram…</string>
     <string name="telegram_phone_label">Phone number</string>
     <string name="telegram_country_label">Country code</string>
+    <string name="telegram_country_search">Search country or code</string>
+    <string name="telegram_country_no_match">No country matches that search.</string>
     <string name="telegram_phone_hint">Enter your number — the country code is added for you</string>
     <string name="telegram_send_code">Send code</string>
     <string name="telegram_code_label">Confirmation code</string>

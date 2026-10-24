@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -91,6 +92,25 @@ class TelegramStepUiTest {
         composeRule.onNode(hasSetTextAction()).performTextInput("+15550101234")
         composeRule.onNodeWithText("Send code").performClick()
         assertEquals("+15550101234", controller.submittedPhone)
+    }
+
+    @Test
+    fun `the country picker is searchable and selecting a result changes the dial code`() {
+        // The picker used to be a dropdown of all 124 entries with no way to narrow it — finding
+        // Pakistan meant scrolling past every country alphabetically before it.
+        render(FakeController(isBackendAvailable = true), TelegramAuthState.WaitingForPhoneNumber())
+        composeRule.onNodeWithTag(TAG_COUNTRY_FIELD).performClick()
+        composeRule.onNodeWithTag(TAG_COUNTRY_SEARCH).performTextInput("pak")
+        composeRule.onNodeWithText("Pakistan").performClick()
+        composeRule.onNodeWithText("🇵🇰 +92").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a country search with no matches says so instead of showing an empty list`() {
+        render(FakeController(isBackendAvailable = true), TelegramAuthState.WaitingForPhoneNumber())
+        composeRule.onNodeWithTag(TAG_COUNTRY_FIELD).performClick()
+        composeRule.onNodeWithTag(TAG_COUNTRY_SEARCH).performTextInput("zzzz")
+        composeRule.onNodeWithText("No country matches that search.").assertIsDisplayed()
     }
 
     @Test
