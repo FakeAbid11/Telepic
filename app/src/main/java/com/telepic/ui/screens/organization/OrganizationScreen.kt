@@ -203,6 +203,23 @@ fun OrganizationScreen(
                             }
                         }
                     }
+
+                    // Keyed on the ViewModel's counter, not on the message: two identical reports are
+                    // still two events, and keying on the value conflated them — the second one
+                    // produced no new bar, no new timer and no reject haptic.
+                    //
+                    // Anchored inside the grid's own area instead of at the screen's bottom edge:
+                    // while a selection is active the action bar sits directly below this region, and
+                    // the screen-level overlay drew the message on top of it — hiding the very
+                    // controls the message was telling the user to retry with.
+                    message?.let { pending ->
+                        TransientMessageBar(
+                            message = orgMessageText(pending, viewModel.kind),
+                            onDismiss = viewModel::consumeMessage,
+                            messageId = messageId,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
+                    }
                 }
 
                 if (selectionActive) {
@@ -225,18 +242,6 @@ fun OrganizationScreen(
                         onDeleteForever = onDeleteForever,
                     )
                 }
-            }
-
-            // Keyed on the ViewModel's counter, not on the message: two identical reports are still two
-            // events, and keying on the value conflated them — the second one produced no new bar, no
-            // new timer and no reject haptic.
-            message?.let { pending ->
-                TransientMessageBar(
-                    message = orgMessageText(pending, viewModel.kind),
-                    onDismiss = viewModel::consumeMessage,
-                    messageId = messageId,
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
             }
         }
     }
