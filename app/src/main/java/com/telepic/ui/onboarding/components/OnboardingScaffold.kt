@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.telepic.R
 import com.telepic.ui.theme.TelepicTokens
@@ -47,6 +48,14 @@ fun OnboardingScaffold(
     primaryLabel: String? = null,
     onPrimaryAction: (() -> Unit)? = null,
     primaryEnabled: Boolean = true,
+    /**
+     * Why the primary action cannot be used yet, shown above it while [primaryEnabled] is false.
+     *
+     * A disabled button on its own is indistinguishable from a broken one: the backup step's Continue
+     * went dead after a cancelled folder picker with nothing on screen saying a choice was still
+     * required. Null means the step has no explanation to offer and the button simply stays disabled.
+     */
+    primaryDisabledHint: String? = null,
     primaryTestTag: String = TAG_ONBOARDING_PRIMARY,
     secondaryLabel: String? = null,
     onSecondaryAction: (() -> Unit)? = null,
@@ -107,6 +116,15 @@ fun OnboardingScaffold(
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
                 if (primaryLabel != null && onPrimaryAction != null) {
+                    if (!primaryEnabled && primaryDisabledHint != null) {
+                        Text(
+                            text = primaryDisabledHint,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Button(
                         onClick = onPrimaryAction,
                         enabled = primaryEnabled,

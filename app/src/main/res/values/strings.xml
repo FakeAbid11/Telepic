@@ -278,6 +278,9 @@
     <string name="onboarding_backup_not_now_title">Not now</string>
     <string name="onboarding_backup_not_now_body">Continue without configuring backup. You can set it up anytime from Settings.</string>
     <string name="onboarding_backup_setup_failed">That choice could not be saved. Tap it again, or set backup up later in Settings.</string>
+    <!-- Shown under the disabled Continue on the backup step. Without it the button simply looked
+         broken after a cancelled folder picker. -->
+    <string name="onboarding_backup_choose_hint">Choose one of the three options to continue.</string>
 
     <!-- Screen 6 — Ready -->
     <string name="onboarding_ready_title">You\'re ready to use Telepic</string>

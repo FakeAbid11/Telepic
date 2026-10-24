@@ -87,6 +87,7 @@ fun OnboardingScreen(
     var primaryLabel: String? = null
     var onPrimaryAction: (() -> Unit)? = null
     var primaryEnabled = true
+    var primaryDisabledHint: String? = null
     var secondaryLabel: String? = null
     var onSecondaryAction: (() -> Unit)? = null
     var primaryTestTag = TAG_ONBOARDING_PRIMARY
@@ -140,6 +141,11 @@ fun OnboardingScreen(
             onPrimaryAction = goToNext
             // Only advance once a valid backup choice exists.
             primaryEnabled = backupPreference != null
+            // Cancelling the folder picker leaves no preference and no visible explanation, which
+            // reads as a broken button rather than as a choice still to be made.
+            if (backupPreference == null) {
+                primaryDisabledHint = stringResource(R.string.onboarding_backup_choose_hint)
+            }
         }
         5 -> {
             primaryLabel = stringResource(R.string.onboarding_ready_start)
@@ -160,6 +166,7 @@ fun OnboardingScreen(
         primaryLabel = primaryLabel,
         onPrimaryAction = onPrimaryAction,
         primaryEnabled = primaryEnabled,
+        primaryDisabledHint = primaryDisabledHint,
         primaryTestTag = primaryTestTag,
         secondaryLabel = secondaryLabel,
         onSecondaryAction = onSecondaryAction,
