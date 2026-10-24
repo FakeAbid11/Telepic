@@ -27,10 +27,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** On-disk footprint of Telepic's caches, in bytes. Never estimated — measured. */
 data class StorageSummary(
@@ -53,6 +55,23 @@ sealed interface SettingsMessage {
 
     /** An action did not complete. */
     data object ActionFailed : SettingsMessage
+}
+
+/**
+ * Where a confirmed sign-out stands.
+ *
+ * TDLib answers asynchronously — [TelegramAuthController.logout] only queues the request — so the
+ * dialog needs a state of its own instead of closing on the tap and hoping.
+ */
+enum class SignOutState {
+    /** Nothing in flight. */
+    Idle,
+
+    /** The request was sent; Telegram has not confirmed it yet. */
+    Working,
+
+    /** The request went unanswered; the account is still connected. */
+    Failed,
 }
 
 /**
@@ -293,7 +312,30 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         persist { settingsRepository.setAppLockEnabled(enabled) }
 
     fun logout() {
+        if (_signOutState.value == SignOutState.Working) return
+        _signOutState.value = SignOutState.Working
+        // Queued before waiting: the request must go out even if this ViewModel is cleared a moment
+        // later (the user leaves Settings while the dialog is closing).
         telegramAuthController.logout()
+        viewModelScope.launch {
+            val acknowledged = withTimeoutOrNull(SIGN_OUT_TIMEOUT_MS) {
+                // Leaving Authorized is TDLib's first observable response to LogOut; LoggingOut and
+                // then Closed follow from the session itself.
+                telegramAuthController.state.first { it !is TelegramAuthState.Authorized }
+            }
+            _signOutState.value = if (acknowledged == null) {
+                // Sent, never answered. Nothing was signed out, and the dialog says so.
+                TelepicLog.warn("SettingsViewModel", "telegram did not acknowledge the sign-out in time")
+                SignOutState.Failed
+            } else {
+                SignOutState.Idle
+            }
+        }
+    }
+
+    /** Starts the next attempt from a neutral question instead of the previous failure. */
+    fun clearSignOutFailure() {
+        if (_signOutState.value == SignOutState.Failed) _signOutState.value = SignOutState.Idle
     }
 
     /**
@@ -319,6 +361,9 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     /** Transient feedback for the actions whose only other trace is an unchanged size. */
     private val _message = MutableStateFlow<SettingsMessage?>(null)
     val message: StateFlow<SettingsMessage?> = _message.asStateFlow()
+
+    private val _signOutState = MutableStateFlow(SignOutState.Idle)
+    val signOutState: StateFlow<SignOutState> = _signOutState.asStateFlow()
 
     /**
      * Bumped on every emission so the transient bar can tell two identical events apart. The settings
@@ -468,4 +513,13 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private fun directorySize(root: File): Long =
         if (!root.exists()) 0L
         else root.walkBottomUp().filter { it.isFile }.fold(0L) { acc, file -> acc + file.length() }
+
+    private companion object {
+        /**
+         * How long a sign-out may go unacknowledged before it is reported as failed. TDLib's own
+         * per-request timeout is 30 s, so this sits just beyond it: the user sees one outcome, after
+         * the underlying request has already had its full chance.
+         */
+        const val SIGN_OUT_TIMEOUT_MS = 40_000L
+    }
 }

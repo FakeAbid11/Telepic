@@ -74,6 +74,8 @@
     <string name="settings_sign_out_title">Sign out?</string>
     <string name="settings_sign_out_body">Telepic will disconnect your Telegram account. Backups stop until you sign in again during setup or after reinstalling.</string>
     <string name="settings_sign_out_confirm">Sign out</string>
+    <string name="settings_sign_out_progress">Signing out…</string>
+    <string name="settings_sign_out_failed_body">Telegram didn\'t respond, so your account is still connected. Check your connection and try again.</string>
     <string name="settings_section_backup">Backup</string>
     <string name="settings_backup_preferences">Backup preferences</string>
     <string name="settings_backup_pref_unset">Not chosen yet</string>

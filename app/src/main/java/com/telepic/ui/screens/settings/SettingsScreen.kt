@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -21,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -490,20 +495,66 @@ fun SettingsScreen(
     }
 
     if (showSignOutConfirm) {
+        val signOutState by viewModel.signOutState.collectAsStateWithLifecycle()
+        // TDLib acknowledges a sign-out by leaving the authorized state. Until that happens the
+        // dialog still has a subject; once the session is gone there is nothing left to confirm.
+        val sessionGone = authState !is TelegramAuthState.Authorized &&
+            authState !is TelegramAuthState.LoggingOut &&
+            authState !is TelegramAuthState.Closing
+        LaunchedEffect(sessionGone) {
+            if (sessionGone) {
+                viewModel.clearSignOutFailure()
+                showSignOutConfirm = false
+            }
+        }
+        // LoggingOut/Closing are TDLib's own progress states: the request was accepted and the dialog
+        // keeps its spinner until the session is gone, even after the ViewModel's wait has returned.
+        val signingOut = signOutState == SignOutState.Working ||
+            authState is TelegramAuthState.LoggingOut ||
+            authState is TelegramAuthState.Closing
+        val signOutFailed = signOutState == SignOutState.Failed
         AlertDialog(
-            onDismissRequest = { showSignOutConfirm = false },
-            title = { Text(stringResource(R.string.settings_sign_out_title)) },
-            text = { Text(stringResource(R.string.settings_sign_out_body)) },
-            confirmButton = {
-                TextButton(onClick = {
+            // Not dismissable mid-request: hiding the only progress the user has would make the tap
+            // look ignored all over again.
+            onDismissRequest = {
+                if (!signingOut) {
+                    viewModel.clearSignOutFailure()
                     showSignOutConfirm = false
-                    viewModel.logout()
-                }) { Text(stringResource(R.string.settings_sign_out_confirm)) }
+                }
+            },
+            title = { Text(stringResource(R.string.settings_sign_out_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        if (signOutFailed) R.string.settings_sign_out_failed_body
+                        else R.string.settings_sign_out_body,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::logout, enabled = !signingOut) {
+                    if (signingOut) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(spacing.xs))
+                        Text(stringResource(R.string.settings_sign_out_progress))
+                    } else {
+                        Text(
+                            stringResource(
+                                if (signOutFailed) R.string.common_retry
+                                else R.string.settings_sign_out_confirm,
+                            ),
+                        )
+                    }
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showSignOutConfirm = false }) {
-                    Text(stringResource(R.string.organization_cancel))
-                }
+                TextButton(
+                    onClick = {
+                        viewModel.clearSignOutFailure()
+                        showSignOutConfirm = false
+                    },
+                    enabled = !signingOut,
+                ) { Text(stringResource(R.string.organization_cancel)) }
             },
         )
     }

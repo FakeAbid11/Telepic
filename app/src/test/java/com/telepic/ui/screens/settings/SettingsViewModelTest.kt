@@ -75,6 +75,9 @@ class SettingsViewModelTest {
         fun authorize() {
             _state.value = TelegramAuthState.Authorized(TelegramUser(id = 1L, firstName = "Ada", lastName = null, username = null))
         }
+        fun signOut() {
+            _state.value = TelegramAuthState.LoggingOut
+        }
     }
 
     private class FakeOnboarding : OnboardingRepository {
@@ -163,9 +166,11 @@ class SettingsViewModelTest {
         override suspend fun startPendingBackup() = Unit
     }
 
+    private val mainDispatcher = UnconfinedTestDispatcher()
+
     @Before
     fun setUp() {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        Dispatchers.setMain(mainDispatcher)
     }
 
     @After
@@ -204,6 +209,29 @@ class SettingsViewModelTest {
         val vm = viewModel(auth = auth)
         vm.logout()
         assertEquals(1, auth.logoutCalls)
+    }
+
+    @Test
+    fun `sign-out reports failure when telegram never acknowledges it`() = runTest {
+        // The old flow closed the dialog on the tap and never looked again: a request Telegram never
+        // answered looked exactly like a completed sign-out.
+        val auth = FakeAuthController().apply { authorize() }
+        val vm = viewModel(auth = auth)
+        vm.logout()
+        assertEquals(SignOutState.Working, vm.signOutState.value)
+        mainDispatcher.scheduler.advanceTimeBy(60_000L)
+        assertEquals(SignOutState.Failed, vm.signOutState.value)
+        assertEquals(1, auth.logoutCalls)
+    }
+
+    @Test
+    fun `sign-out settles once telegram leaves the authorized state`() = runTest {
+        val auth = FakeAuthController().apply { authorize() }
+        val vm = viewModel(auth = auth)
+        vm.logout()
+        assertEquals(SignOutState.Working, vm.signOutState.value)
+        auth.signOut()
+        assertEquals(SignOutState.Idle, vm.signOutState.value)
     }
 
     @Test
