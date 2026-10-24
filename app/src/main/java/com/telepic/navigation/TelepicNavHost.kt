@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -409,6 +410,9 @@ private fun TelepicNavGraph(
                             // Only the local route gets a coordinator: a cloud item *is* the backup, so
                             // the cloud viewer has nothing to back up.
                             backupCoordinator = container.backupCoordinator,
+                            // The route remembers the item the Viewer was opened with; this remembers
+                            // where swiping took the user, so process death does not rewind it.
+                            savedStateHandle = createSavedStateHandle(),
                         )
                     }
                 }
@@ -449,6 +453,7 @@ private fun TelepicNavGraph(
                             cloudRepository = container.cloudRepository,
                             restoreRepository = container.restoreRepository,
                             settingsRepository = container.settingsRepository,
+                            savedStateHandle = createSavedStateHandle(),
                         )
                     }
                 }

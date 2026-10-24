@@ -2,6 +2,7 @@ package com.telepic.ui.screens.viewer
 
 import android.content.Context
 import android.net.Uri
+import androidx.lifecycle.SavedStateHandle
 import androidx.paging.PagingData
 import androidx.test.core.app.ApplicationProvider
 import com.telepic.data.backup.BackupCoordinator
@@ -170,6 +171,60 @@ class ViewerViewModelTest {
         val state = vm.uiState.first { it.status != ViewerStatus.LOADING }
         assertEquals(ViewerStatus.MISSING, state.status)
         assertNull(state.item)
+    }
+
+    @Test
+    fun `the item swiped to is restored after process death`() = runBlocking {
+        // The route argument names the item the Viewer was opened with (5), so without saved state a
+        // killed process reopened a photo the user had long since swiped away from.
+        val handle = SavedStateHandle()
+        val lookup = FakeLookup(
+            mapOf(5L to local(5), 6L to local(6)),
+            newer = mapOf(5L to 6L),
+            older = mapOf(6L to 5L),
+        )
+        val first = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = lookup,
+            cloudRepository = FakeCloud(emptyList()),
+            savedStateHandle = handle,
+        )
+        first.uiState.first { it.status != ViewerStatus.LOADING }
+        first.open(MediaSource.Local(6))
+        first.uiState.first { it.source == MediaSource.Local(6) && it.status != ViewerStatus.LOADING }
+
+        // A second ViewModel over the same handle is what a recreated process produces.
+        val restored = ViewerViewModel(
+            initialSource = MediaSource.Local(5),
+            localLookup = lookup,
+            cloudRepository = FakeCloud(emptyList()),
+            savedStateHandle = handle,
+        )
+        assertEquals(MediaSource.Local(6), restored.uiState.value.source)
+        assertEquals(ViewerStatus.READY, restored.uiState.first { it.status != ViewerStatus.LOADING }.status)
+    }
+
+    @Test
+    fun `a cloud item swiped to is restored with its remote identity`() = runBlocking {
+        val handle = SavedStateHandle()
+        val cloud = FakeCloud(listOf(cloudItem(6), cloudItem(7), cloudItem(8)))
+        val first = ViewerViewModel(
+            initialSource = MediaSource.Cloud(100, 7),
+            localLookup = FakeLookup(emptyMap()),
+            cloudRepository = cloud,
+            savedStateHandle = handle,
+        )
+        first.uiState.first { it.status != ViewerStatus.LOADING }
+        first.open(MediaSource.Cloud(100, 8))
+        first.uiState.first { it.source == MediaSource.Cloud(100, 8) && it.status != ViewerStatus.LOADING }
+
+        val restored = ViewerViewModel(
+            initialSource = MediaSource.Cloud(100, 7),
+            localLookup = FakeLookup(emptyMap()),
+            cloudRepository = cloud,
+            savedStateHandle = handle,
+        )
+        assertEquals(MediaSource.Cloud(100, 8), restored.uiState.value.source)
     }
 
     @Test

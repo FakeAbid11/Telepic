@@ -1,6 +1,7 @@
 package com.telepic.ui.screens.viewer
 
 import androidx.compose.runtime.Immutable
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.data.backup.BackupCoordinator
@@ -193,6 +194,14 @@ class ViewerViewModel(
     private val settingsRepository: SettingsRepository? = null,
     private val customAlbumRepository: CustomAlbumRepository? = null,
     private val backupCoordinator: BackupCoordinator? = null,
+    /**
+     * Where the session's current item is remembered across process death, or null in tests.
+     *
+     * The route argument names the item the Viewer was *opened* with, but swiping moves the session
+     * without touching the route — so without this a killed process reopened the first photo of a
+     * long browsing session, not the one on screen.
+     */
+    private val savedStateHandle: SavedStateHandle? = null,
 ) : ViewModel() {
 
     /**
@@ -204,7 +213,9 @@ class ViewerViewModel(
         (settingsRepository?.startVideosMuted ?: flowOf(true))
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
-    private val _uiState = MutableStateFlow(ViewerUiState(initialSource))
+    private val startingSource: MediaSource = restoredSource() ?: initialSource
+
+    private val _uiState = MutableStateFlow(ViewerUiState(startingSource))
     val uiState: StateFlow<ViewerUiState> = _uiState.asStateFlow()
 
     /** Organization flags for the current local item; all-false for cloud items or when unwired. */
@@ -289,12 +300,14 @@ class ViewerViewModel(
     private var loadJob: Job? = null
 
     init {
-        load(initialSource)
+        persistSource(startingSource)
+        load(startingSource)
     }
 
     /** Navigate to another source (used by the swipe gesture to page to a neighbour). */
     fun open(newSource: MediaSource) {
         loadJob?.cancel()
+        persistSource(newSource)
         // A confirmation belongs to the item it describes: carrying "Moved to trash" onto the next
         // photo would report an outcome for something the user is no longer looking at.
         _message.value = null
@@ -709,6 +722,51 @@ class ViewerViewModel(
             download = CloudDownload.Idle,
             dateMillis = media.dateEpochSec?.times(1000L),
         )
+    }
+
+    /**
+     * Writes the current item into the saved state as plain ids — [MediaSource] itself is not a
+     * `Parcelable`, and the two variants carry different identities, so a kind tag keeps them apart.
+     */
+    private fun persistSource(source: MediaSource) {
+        val handle = savedStateHandle ?: return
+        when (source) {
+            is MediaSource.Local -> {
+                handle[KEY_SOURCE_KIND] = SOURCE_LOCAL
+                handle[KEY_MEDIA_ID] = source.mediaId
+                handle.remove<Long>(KEY_CHAT_ID)
+                handle.remove<Long>(KEY_MESSAGE_ID)
+            }
+            is MediaSource.Cloud -> {
+                handle[KEY_SOURCE_KIND] = SOURCE_CLOUD
+                handle[KEY_CHAT_ID] = source.chatId
+                handle[KEY_MESSAGE_ID] = source.messageId
+                handle.remove<Long>(KEY_MEDIA_ID)
+            }
+        }
+    }
+
+    /** The item a previous process had on screen, or null on a fresh open. */
+    private fun restoredSource(): MediaSource? {
+        val handle = savedStateHandle ?: return null
+        return when (handle.get<String>(KEY_SOURCE_KIND)) {
+            SOURCE_LOCAL -> handle.get<Long>(KEY_MEDIA_ID)?.let { MediaSource.Local(it) }
+            SOURCE_CLOUD -> {
+                val chatId = handle.get<Long>(KEY_CHAT_ID)
+                val messageId = handle.get<Long>(KEY_MESSAGE_ID)
+                if (chatId != null && messageId != null) MediaSource.Cloud(chatId, messageId) else null
+            }
+            else -> null
+        }
+    }
+
+    private companion object {
+        const val KEY_SOURCE_KIND = "viewer_source_kind"
+        const val KEY_MEDIA_ID = "viewer_source_media_id"
+        const val KEY_CHAT_ID = "viewer_source_chat_id"
+        const val KEY_MESSAGE_ID = "viewer_source_message_id"
+        const val SOURCE_LOCAL = "local"
+        const val SOURCE_CLOUD = "cloud"
     }
 }
 
