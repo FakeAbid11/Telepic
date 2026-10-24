@@ -2,7 +2,9 @@ package com.telepic.ui.screens.photos
 
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -124,6 +126,17 @@ class DateScrubberTest {
     fun `a pill taller than the track cannot move`() {
         assertEquals(0f, thumbTravelPx(trackHeightPx = 100f, thumbHeightPx = 250f), 1e-6f)
         assertEquals(0f, thumbTopPx(0.7f, 100f, 250f), 1e-6f)
+    }
+
+    @Test
+    fun `a scrub only starts on the pill`() {
+        // At half way the pill spans 400..600 on a 1000px track.
+        assertTrue(startsOnThumb(400f, 0.5f, 1000f, 200f))
+        assertTrue(startsOnThumb(600f, 0.5f, 1000f, 200f))
+        // A touch on the rail above or below the pill must fall through to the grid and scroll it.
+        assertFalse(startsOnThumb(399f, 0.5f, 1000f, 200f))
+        assertFalse(startsOnThumb(601f, 0.5f, 1000f, 200f))
+        assertFalse(startsOnThumb(0f, 0.5f, 1000f, 200f))
     }
 
     @Test

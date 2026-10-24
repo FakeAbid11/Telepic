@@ -4,9 +4,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -28,10 +29,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -141,6 +145,20 @@ internal fun thumbTravelPx(trackHeightPx: Float, thumbHeightPx: Float): Float =
 /** Top offset of the thumb for a track fraction — the position the pill is drawn at. */
 internal fun thumbTopPx(fraction: Float, trackHeightPx: Float, thumbHeightPx: Float): Float =
     fraction.coerceIn(0f, 1f) * thumbTravelPx(trackHeightPx, thumbHeightPx)
+
+/**
+ * Whether a touch at [y] landed on the drawn pill. Only a touch that starts here may begin a scrub;
+ * the rest of the rail's touch strip belongs to the grid underneath it.
+ */
+internal fun startsOnThumb(
+    y: Float,
+    fraction: Float,
+    trackHeightPx: Float,
+    thumbHeightPx: Float,
+): Boolean {
+    val top = thumbTopPx(fraction, trackHeightPx, thumbHeightPx)
+    return y >= top && y <= top + thumbHeightPx
+}
 
 /**
  * The thumb's vertical centre for a track fraction. Labels and the date bubble sit here so they line
@@ -262,6 +280,10 @@ internal fun DateScrubber(
     // Glide between scroll-driven positions, but track the finger exactly while dragging.
     val glidedFraction by animateFloatAsState(targetValue = rawFraction, label = "scrubGlide")
     val fraction = if (dragging) rawFraction else glidedFraction
+    // Read by the gesture detector, which outlives a recomposition; the animated fraction and the
+    // pill's height it must hit-test against both change after the first frame.
+    val currentFraction by rememberUpdatedState(fraction)
+    val currentThumbHeightPx by rememberUpdatedState(thumbHeightPx)
 
     // Derived rather than read directly: `layoutInfo` is snapshot state that is replaced on every
     // remeasure, i.e. on every frame of a scroll. Reading it in the composable body subscribed this
@@ -296,6 +318,20 @@ internal fun DateScrubber(
     val tickColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     val labelActiveColor = MaterialTheme.colorScheme.onSurface
     val labelIdleColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    // The mapping a drag applies: the fraction advances by the finger's travel over the pill's own
+    // travel, so the handle stays under the finger rather than drifting ahead or lagging behind it.
+    fun scrubBy(deltaPx: Float, thumbPx: Float) {
+        val next = (scrubFraction ?: thumb.first) +
+            dragFractionDelta(deltaPx, trackHeightPx, thumbPx)
+        val clamped = next.coerceIn(0f, 1f)
+        scrubFraction = clamped
+        val target = scrubIndex(clamped, gridState.layoutInfo.totalItemsCount)
+        if (target != gridState.firstVisibleItemIndex) {
+            scrubJob?.cancel()
+            scrubJob = scope.launch { gridState.scrollToItem(target) }
+        }
+    }
 
     Box(
         modifier = modifier
@@ -385,28 +421,34 @@ internal fun DateScrubber(
                         true
                     }
                 }
-                .draggable(
-                    state = rememberDraggableState { delta ->
-                        val next = (scrubFraction ?: thumb.first) +
-                            dragFractionDelta(delta, trackHeightPx, thumbHeightPx)
-                        val clamped = next.coerceIn(0f, 1f)
-                        scrubFraction = clamped
-                        val target = scrubIndex(clamped, gridState.layoutInfo.totalItemsCount)
-                        if (target != gridState.firstVisibleItemIndex) {
-                            scrubJob?.cancel()
-                            scrubJob = scope.launch { gridState.scrollToItem(target) }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        // The rail is a full 48dp strip down the edge of the grid — a comfortable
+                        // target, but one that used to claim *every* vertical drag that passed
+                        // through it, so scrolling near the right edge scrubbed the timeline
+                        // instead. A scrub now has to begin on the pill itself.
+                        if (!startsOnThumb(down.position.y, currentFraction, trackHeightPx, currentThumbHeightPx)) {
+                            return@awaitEachGesture
                         }
-                    },
-                    orientation = Orientation.Vertical,
-                    onDragStarted = {
+                        // Past the slop this is a scrub, and from here the rail outranks the grid:
+                        // the drag changes are consumed so the grid cannot also start scrolling.
+                        val slop = awaitVerticalTouchSlopOrCancellation(down.id) { change, _ ->
+                            change.consume()
+                        } ?: return@awaitEachGesture
                         dragging = true
                         scrubFraction = thumb.first
-                    },
-                    onDragStopped = {
+                        drag(slop.id) { change ->
+                            // Read the delta before consuming: positionChange() reports zero for a
+                            // change that has already been consumed.
+                            val delta = change.positionChange().y
+                            change.consume()
+                            scrubBy(delta, currentThumbHeightPx)
+                        }
                         scrubFraction = null
                         dragging = false
-                    },
-                ),
+                    }
+                },
         ) {
             // The pill: doubles as the drag handle, growing and darkening while held.
             Box(
