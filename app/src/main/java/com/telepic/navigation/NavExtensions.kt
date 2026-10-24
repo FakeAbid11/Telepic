@@ -50,10 +50,15 @@ fun NavHostController.navigateToSettings(settingsRoute: String = TelepicDestinat
  * Deliberately **not** [navigateToTopLevel]: the Map is a tab, but this is a hand-off *from* a detail
  * screen, so the top-level form's `popUpTo(start){saveState}` popped the Viewer and Back from the map
  * landed on Photos — the photo the user was looking at was gone. A plain push keeps the Viewer
- * underneath so Back returns to it, exactly like [navigateToSettings]. `launchSingleTop` keeps a
- * repeat request from stacking a second map.
+ * underneath so Back returns to it, exactly like [navigateToSettings].
+ *
+ * When the Map is already on the stack the push is wrong: the hand-off then started *on* the Map tab,
+ * so pushing would leave Map → Viewer → Map and Back would land on the Viewer the user had just left.
+ * Popping back to the existing entry instead returns to the tab they came from. `launchSingleTop`
+ * still covers the case where the Map is already the current destination.
  */
 fun NavHostController.navigateToMap(mapRoute: String = TelepicDestination.Map.route) {
+    if (popBackStack(mapRoute, inclusive = false)) return
     navigate(mapRoute) {
         launchSingleTop = true
     }
