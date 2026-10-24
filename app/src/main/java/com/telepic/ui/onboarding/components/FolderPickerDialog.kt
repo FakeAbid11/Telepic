@@ -39,6 +39,7 @@ import com.telepic.ui.theme.TelepicTokens
 /** Stable test tags for the folder picker. */
 const val TAG_FOLDER_PICKER_CONFIRM = "folder_picker_confirm"
 const val TAG_FOLDER_PICKER_EMPTY = "folder_picker_empty"
+const val TAG_FOLDER_PICKER_ERROR = "folder_picker_error"
 
 /**
  * Multi-select sheet over the device's media folders (MediaStore buckets). Identity is the stable
@@ -62,6 +63,9 @@ fun FolderPickerDialog(
     onConfirm: (Set<Long>) -> Unit,
     onDismiss: () -> Unit,
     loading: Boolean = false,
+    /** The bucket read failed — different from the device having no folders, and retryable. */
+    failed: Boolean = false,
+    onRetry: (() -> Unit)? = null,
 ) {
     // Rotation-surviving: the in-progress selection is user input, not seed data.
     var selected by rememberSaveable(
@@ -93,6 +97,24 @@ fun FolderPickerDialog(
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator()
+                }
+                // Checked before "empty": a failed read also yields no rows, and saying "no folders
+                // found" here blamed photo access for a provider error while offering no way out.
+                failed -> Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(TelepicTokens.spacing.xs),
+                ) {
+                    Text(
+                        text = stringResource(R.string.folder_picker_load_failed),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag(TAG_FOLDER_PICKER_ERROR),
+                    )
+                    if (onRetry != null) {
+                        TextButton(onClick = onRetry) {
+                            Text(stringResource(R.string.common_retry))
+                        }
+                    }
                 }
                 folders.isEmpty() -> {
                     Text(

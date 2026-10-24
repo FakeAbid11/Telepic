@@ -129,6 +129,7 @@ fun SettingsScreen(
     val bucketIds by viewModel.backupBucketIds.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val foldersLoaded by viewModel.foldersLoaded.collectAsStateWithLifecycle()
+    val foldersFailed by viewModel.foldersFailed.collectAsStateWithLifecycle()
     val storage by viewModel.storageSummary.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val messageId by viewModel.messageId.collectAsStateWithLifecycle()
@@ -473,6 +474,8 @@ fun SettingsScreen(
             folders = folders,
             initiallySelected = bucketIds,
             loading = !foldersLoaded,
+            failed = foldersFailed,
+            onRetry = viewModel::loadFolders,
             onConfirm = { ids ->
                 showFolderPicker = false
                 viewModel.setBackupChoice(BackupPreference.SELECT_FOLDER, ids)

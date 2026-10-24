@@ -275,6 +275,7 @@
     <string name="onboarding_folder_picker_title">Choose folders</string>
     <string name="onboarding_folder_picker_confirm">Back these up</string>
     <string name="onboarding_folder_picker_empty">No folders found yet. Allow photo access first, then reopen this picker.</string>
+    <string name="folder_picker_load_failed">Couldn\'t read your folders. Try again.</string>
     <string name="onboarding_backup_not_now_title">Not now</string>
     <string name="onboarding_backup_not_now_body">Continue without configuring backup. You can set it up anytime from Settings.</string>
     <string name="onboarding_backup_setup_failed">That choice could not be saved. Tap it again, or set backup up later in Settings.</string>

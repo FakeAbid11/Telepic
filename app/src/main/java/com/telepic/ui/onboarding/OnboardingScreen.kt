@@ -58,6 +58,8 @@ fun OnboardingScreen(
     onPickFolders: (Set<Long>) -> Unit,
     onComplete: () -> Unit,
     foldersLoaded: Boolean = true,
+    /** The folder read failed, so the picker can say so and retry instead of claiming "no folders". */
+    foldersFailed: Boolean = false,
     backupSetupFailed: Boolean = false,
     /**
      * The completion write failed — a different problem from a failed backup choice, and it needs
@@ -226,6 +228,7 @@ fun OnboardingScreen(
                             selectedBucketIds = backupBucketIds,
                             folders = folders,
                             foldersLoaded = foldersLoaded,
+                            foldersFailed = foldersFailed,
                             setupFailed = backupSetupFailed,
                             // Notification access is asked for on the Permissions step, one screen
                             // earlier. It is deliberately NOT re-asked here: prompting again inside the

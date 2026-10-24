@@ -52,6 +52,7 @@ fun BackupPreferencesStep(
     onPickFolders: (Set<Long>) -> Unit,
     modifier: Modifier = Modifier,
     foldersLoaded: Boolean = true,
+    foldersFailed: Boolean = false,
     setupFailed: Boolean = false,
 ) {
     val spacing = TelepicTokens.spacing
@@ -138,6 +139,10 @@ fun BackupPreferencesStep(
             folders = folders,
             initiallySelected = selectedBucketIds,
             loading = !foldersLoaded,
+            failed = foldersFailed,
+            // Re-runs the bucket query in place; the dialog stays open and switches back to its
+            // loading state, so a retry is one tap rather than close-and-reopen-the-card.
+            onRetry = onNeedFolders,
             onConfirm = { ids ->
                 showPicker = false
                 onPickFolders(ids)

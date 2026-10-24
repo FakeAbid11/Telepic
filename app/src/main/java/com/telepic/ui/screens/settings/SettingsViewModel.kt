@@ -195,6 +195,10 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val _foldersLoaded = MutableStateFlow(true)
     val foldersLoaded: StateFlow<Boolean> = _foldersLoaded.asStateFlow()
 
+    /** True when the bucket read failed, so the picker can retry instead of blaming permissions. */
+    private val _foldersFailed = MutableStateFlow(false)
+    val foldersFailed: StateFlow<Boolean> = _foldersFailed.asStateFlow()
+
     // --- Library information (local / cloud) ----------------------------------------------------
 
     /**
@@ -224,16 +228,18 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 
     fun loadFolders() {
         _foldersLoaded.value = false
+        _foldersFailed.value = false
         viewModelScope.launch {
             try {
                 _folders.value = foldersRepository?.albums().orEmpty()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
-                // Degrade to the picker's own honest empty state instead of letting a provider
-                // failure escape `viewModelScope` (an uncaught main-thread exception closes the app).
-                TelepicLog.warn("SettingsViewModel", "the folder list could not be loaded; showing the empty state", throwable)
+                // A provider failure must not escape `viewModelScope` (an uncaught main-thread
+                // exception closes the app), and it must not be reported as "no folders" either.
+                TelepicLog.warn("SettingsViewModel", "the folder list could not be loaded", throwable)
                 _folders.value = emptyList()
+                _foldersFailed.value = true
             } finally {
                 _foldersLoaded.value = true
             }

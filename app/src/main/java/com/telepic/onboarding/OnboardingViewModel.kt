@@ -75,6 +75,15 @@ class OnboardingViewModel(
     val foldersLoaded: StateFlow<Boolean> = _foldersLoaded.asStateFlow()
 
     /**
+     * True when the bucket read failed, as opposed to the device genuinely having no folders.
+     *
+     * The picker showed the same "no folders" copy for both, which blamed photo access for a
+     * provider error and offered the user nothing to do. A failure needs its own words and a retry.
+     */
+    private val _foldersFailed = MutableStateFlow(false)
+    val foldersFailed: StateFlow<Boolean> = _foldersFailed.asStateFlow()
+
+    /**
      * True when the last backup choice could not be persisted or applied, so the step can say so
      * instead of leaving a disabled Continue button with no explanation.
      */
@@ -102,6 +111,7 @@ class OnboardingViewModel(
     /** (Re)load the bucket list when the folder picker opens. */
     fun loadFolders() {
         _foldersLoaded.value = false
+        _foldersFailed.value = false
         viewModelScope.launch {
             try {
                 _folders.value = foldersRepository?.albums().orEmpty()
@@ -109,11 +119,11 @@ class OnboardingViewModel(
                 throw cancellation
             } catch (throwable: Throwable) {
                 // A failed bucket query (no media grant, a *limited* grant, a provider error) must
-                // degrade to the picker's own honest empty state — "allow photo access first, then
-                // reopen this picker" — rather than escape `viewModelScope`, where an uncaught
-                // exception on the main thread closes the app.
-                TelepicLog.warn("OnboardingViewModel", "folder list could not be loaded; showing the empty state", throwable)
+                // degrade to a state the picker can explain and retry — rather than escape
+                // `viewModelScope`, where an uncaught exception on the main thread closes the app.
+                TelepicLog.warn("OnboardingViewModel", "folder list could not be loaded", throwable)
                 _folders.value = emptyList()
+                _foldersFailed.value = true
             } finally {
                 _foldersLoaded.value = true
             }
