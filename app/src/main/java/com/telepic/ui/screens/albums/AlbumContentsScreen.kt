@@ -80,6 +80,7 @@ fun AlbumContentsScreen(
     val selectionReport by viewModel.selectionReport.collectAsStateWithLifecycle()
     val removalReport by viewModel.removalReport.collectAsStateWithLifecycle()
     val organizationReport by viewModel.organizationReport.collectAsStateWithLifecycle()
+    val albumWriteFailure by viewModel.albumWriteFailure.collectAsStateWithLifecycle()
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
     val isRemoving by viewModel.isRemoving.collectAsStateWithLifecycle()
     val isFavoriting by viewModel.isFavoriting.collectAsStateWithLifecycle()
@@ -228,6 +229,15 @@ fun AlbumContentsScreen(
             // Stacked so the transient message never draws on top of the selection action bar.
             // Same honest split as the timeline: new work vs items already covered.
             Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+                // A refused rename or delete closes its dialog and changes nothing, so it needs a
+                // word of its own; it goes first so it never hides the action bar below it.
+                albumWriteFailure?.let { pending ->
+                    TransientMessageBar(
+                        message = albumWriteMessage(pending.operation),
+                        onDismiss = viewModel::consumeAlbumWriteFailure,
+                        messageId = pending.eventId,
+                    )
+                }
                 selectionReport?.let { report ->
                     TransientMessageBar(
                         message = stringResource(

@@ -23,6 +23,14 @@ sealed interface AlbumsStatus {
     data object Error : AlbumsStatus
 }
 
+/** Which album write failed, so the screen can say what did not happen. */
+enum class AlbumWrite { CREATE, RENAME, DELETE }
+
+/**
+ * A failed album write. [eventId] keeps two identical failures from sharing one message-bar timer.
+ */
+data class AlbumWriteFailure(val operation: AlbumWrite, val eventId: Long)
+
 /**
  * Backs the Albums screen: the device's folder albums plus the user's own.
  *
@@ -48,6 +56,20 @@ class AlbumsViewModel(
     val customAlbums: StateFlow<List<CustomAlbum>> =
         (customAlbumRepository?.albums ?: flowOf(emptyList()))
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The last write that failed, or null once reported.
+     *
+     * The album flow alone cannot tell the user that a rename or delete was rejected: the album simply
+     * stays as it was, which reads as "nothing happened" rather than as "that did not work". Reported
+     * for all three writes because each one closes its dialog first and has no other feedback path.
+     */
+    private val _failure = MutableStateFlow<AlbumWriteFailure?>(null)
+    val failure: StateFlow<AlbumWriteFailure?> = _failure.asStateFlow()
+
+    fun consumeFailure() {
+        _failure.value = null
+    }
 
     /**
      * Re-read the folder albums.
@@ -88,44 +110,48 @@ class AlbumsViewModel(
     /**
      * Creates a user-created album.
      *
-     * Nothing is reported back: [customAlbums] is observed, so an album that was created appears and one
-     * that was not does not. A blank name is refused by the repository rather than by a check here, so
-     * the rule has exactly one home.
+     * [customAlbums] is observed, so an album that was created appears on its own; a create that was
+     * refused is reported through [failure], because otherwise it is indistinguishable from the user
+     * not having asked. A blank name is refused by the repository rather than by a check here, so the
+     * rule has exactly one home.
      */
     fun createAlbum(name: String) {
         val repo = customAlbumRepository ?: return
-        persist { repo.create(name) }
+        persist(AlbumWrite.CREATE) { repo.create(name) }
     }
 
     /** Renames a user-created album. */
     fun renameAlbum(albumId: Long, name: String) {
         val repo = customAlbumRepository ?: return
-        persist { repo.rename(albumId, name) }
+        persist(AlbumWrite.RENAME) { repo.rename(albumId, name) }
     }
 
     /** Deletes a user-created album. The media itself is untouched; only the album goes. */
     fun deleteAlbum(albumId: Long) {
         val repo = customAlbumRepository ?: return
-        persist { repo.delete(albumId) }
+        persist(AlbumWrite.DELETE) { repo.delete(albumId) }
     }
 
     /**
      * The one exception boundary for this screen's writes.
      *
      * Anything that escapes `viewModelScope` is an uncaught exception on the main thread and the app
-     * closes itself with no message. Nothing is claimed when a write fails: the album flow is the honest
-     * report, so a create that did not land simply produces no new album.
+     * closes itself with no message. Nothing is *claimed* when a write fails — no optimistic edit is
+     * made — but the failure is reported, because the dialogs close on confirm and the grid showing
+     * the old album is the only other signal the user gets.
      */
-    private fun persist(action: suspend () -> Unit) {
+    private fun persist(
+        operation: AlbumWrite,
+        action: suspend () -> Unit,
+    ) {
         viewModelScope.launch {
             try {
                 action()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
-                // The observed album list is still the report, but a failed write now leaves a trace
-                // instead of vanishing.
                 TelepicLog.warn("AlbumsViewModel", "an album change could not be saved", throwable)
+                _failure.value = AlbumWriteFailure(operation, System.nanoTime())
             }
         }
     }

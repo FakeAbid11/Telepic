@@ -70,6 +70,7 @@ import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.components.TelepicHaptics
+import com.telepic.ui.components.TransientMessageBar
 import com.telepic.ui.components.rememberTelepicHaptics
 import com.telepic.ui.theme.TelepicTokens
 
@@ -109,6 +110,7 @@ fun AlbumsScreen(
     val status by viewModel.status.collectAsStateWithLifecycle()
     val customAlbums by viewModel.customAlbums.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val writeFailure by viewModel.failure.collectAsStateWithLifecycle()
     val haptics = rememberTelepicHaptics()
     val spacing = TelepicTokens.spacing
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
@@ -212,6 +214,20 @@ fun AlbumsScreen(
                     )
                 }
             }
+
+            // Every album dialog closes on confirm before the write runs, so a refusal would
+            // otherwise leave the grid unchanged with no explanation. Lifted clear of the FAB:
+            // the bar is full-width and would have covered the button this screen exists for.
+            writeFailure?.let { pending ->
+                TransientMessageBar(
+                    message = albumWriteMessage(pending.operation),
+                    onDismiss = viewModel::consumeFailure,
+                    messageId = pending.eventId,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = FAB_SIZE_DP.dp + spacing.lg),
+                )
+            }
         }
     }
 
@@ -228,9 +244,9 @@ fun AlbumsScreen(
     }
 
     // Both dialogs are the same two the album's own overflow uses (AlbumContentsScreen), reached here
-    // so the user does not have to open an album just to rename or delete it. Nothing is reported
-    // back: `customAlbums` is an observed flow, so a rename or delete that did not land simply leaves
-    // the grid as it was — the same contract `createAlbum` has.
+    // so the user does not have to open an album just to rename or delete it. A write that does not
+    // land leaves the grid as it was, so it is reported through the message bar rather than reading
+    // as a no-op.
     val pendingRename = renameAlbumId
     if (pendingRename != null) {
         AlbumNameDialog(
@@ -497,3 +513,15 @@ private fun LibraryShortcuts(onOpenOrganization: (OrganizationKind) -> Unit) {
         }
     }
 }
+
+/**
+ * Copy for a failed album write, shared with the album's own contents screen so the same failure
+ * cannot end up worded two different ways.
+ */
+@Composable
+internal fun albumWriteMessage(operation: AlbumWrite): String = stringResource(
+    when (operation) {
+        AlbumWrite.DELETE -> R.string.album_delete_failed
+        AlbumWrite.CREATE, AlbumWrite.RENAME -> R.string.album_save_failed
+    },
+)

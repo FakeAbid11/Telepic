@@ -148,6 +148,19 @@ class AlbumContentsViewModel(
         _removalReport.value = null
     }
 
+    /**
+     * The last rename or delete that failed, or null once reported.
+     *
+     * Both dialogs close on confirm, so without this a refused write looks exactly like a completed
+     * one until the user notices the old name or the album still being there.
+     */
+    private val _albumWriteFailure = MutableStateFlow<AlbumWriteFailure?>(null)
+    val albumWriteFailure: StateFlow<AlbumWriteFailure?> = _albumWriteFailure.asStateFlow()
+
+    fun consumeAlbumWriteFailure() {
+        _albumWriteFailure.value = null
+    }
+
     /** Long-press entry: begin a selection containing this item (idempotent if already selecting). */
     fun beginSelection(media: LocalMedia) {
         _selected.update { if (it.containsKey(media.id)) it else LinkedHashMap(it).also { m -> m[media.id] = media } }
@@ -294,8 +307,10 @@ class AlbumContentsViewModel(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
-                // The observed name is the report: a rename that did not land leaves the old title.
+                // Nothing is claimed — no optimistic edit was made — but the dialog has already
+                // closed, so the failure has to be said out loud.
                 TelepicLog.warn("AlbumContentsViewModel", "renaming the album failed", throwable)
+                _albumWriteFailure.value = AlbumWriteFailure(AlbumWrite.RENAME, System.nanoTime())
             }
         }
     }
@@ -313,6 +328,7 @@ class AlbumContentsViewModel(
             } catch (throwable: Throwable) {
                 // Stay on the album: the delete did not happen, so navigating away would be a lie.
                 TelepicLog.warn("AlbumContentsViewModel", "deleting the album failed", throwable)
+                _albumWriteFailure.value = AlbumWriteFailure(AlbumWrite.DELETE, System.nanoTime())
             }
         }
     }

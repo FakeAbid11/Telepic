@@ -428,6 +428,8 @@
     <string name="album_delete_title">Delete this album?</string>
     <string name="album_delete_body">The album is removed and its photos are taken out of it. Nothing is deleted from your device — they stay in your library and in your Telegram backup.</string>
     <string name="album_delete_confirm">Delete album</string>
+    <string name="album_save_failed">Couldn\'t save the album change.</string>
+    <string name="album_delete_failed">Couldn\'t delete the album.</string>
 
     <!-- Album contents (one album\'s media grid) -->
     <string name="album_contents_empty_title">Nothing to show in this album</string>
