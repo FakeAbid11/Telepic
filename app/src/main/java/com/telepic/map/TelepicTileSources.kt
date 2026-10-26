@@ -31,6 +31,9 @@ object TelepicTileSources {
     /** CARTO serves 256px raster tiles. */
     private const val TILE_SIZE_PX = 256
 
+    /** The extension osmdroid appends to a tile URL; CARTO's `*_all` endpoints are PNG. */
+    private const val TILE_EXTENSION = ".png"
+
     private const val BASE_URL = "https://basemaps.cartocdn.com/"
 
     /** Required by both providers: the data is OpenStreetMap's, the tiles are CARTO's. */
@@ -39,10 +42,13 @@ object TelepicTileSources {
     /**
      * The light basemap, for the light theme.
      *
-     * Note the argument order: `XYTileSource` takes the **copyright notice before** the base URLs
-     * (`name, minZoom, maxZoom, tileSize, copyright, baseUrls[]`) — the reverse of what the parameter
-     * names read like, and a swap compiles or not depending on arity, so [TelepicTileSourcesTest]
-     * asserts the resulting tile URL rather than trusting the call.
+     * Note the argument order, which is not the obvious one:
+     * `XYTileSource(name, minZoom, maxZoom, tileSizePx, imageFilenameEnding, baseUrls[], copyrightNotice)`.
+     * The copyright is the **last** argument, after the URL array, and the 6-arg overload silently
+     * leaves it `null` (verified from the 6.1.20 bytecode: it delegates with `aconst_null` in that
+     * slot). Passing the notice fifth compiles and produces a source whose `copyrightNotice` is null
+     * and whose tile URL ends with the notice instead of `.png` — which is why
+     * [TelepicTileSourcesTest] asserts the resolved URL and the notice rather than trusting the call.
      *
      * The name is **load-bearing**, not cosmetic: osmdroid keys its tile cache directory by
      * tile-source name, so two distinct names give the two styles separate on-disk caches. Sharing a
@@ -54,8 +60,9 @@ object TelepicTileSources {
         MIN_ZOOM,
         MAX_ZOOM,
         TILE_SIZE_PX,
-        COPYRIGHT,
+        TILE_EXTENSION,
         arrayOf("${BASE_URL}light_all/"),
+        COPYRIGHT,
     )
 
     /** The dark basemap, for the dark theme. See [Light] for why the name must differ. */
@@ -64,8 +71,9 @@ object TelepicTileSources {
         MIN_ZOOM,
         MAX_ZOOM,
         TILE_SIZE_PX,
-        COPYRIGHT,
+        TILE_EXTENSION,
         arrayOf("${BASE_URL}dark_all/"),
+        COPYRIGHT,
     )
 
     /**

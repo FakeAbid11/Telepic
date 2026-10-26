@@ -49,8 +49,10 @@ class TelepicTileSourcesTest {
 
         assertTrue("light tiles must come from light_all, got $light", light.contains("light_all/"))
         assertTrue("dark tiles must come from dark_all, got $dark", dark.contains("dark_all/"))
-        // A swapped constructor argument would put the copyright where the URL belongs, and the map
-        // would silently request nothing. These two assertions are what catch that.
+        // The constructor's argument order is a trap: `XYTileSource` takes the filename extension
+        // fifth and the copyright *last*, and its 6-arg overload leaves the copyright null. Getting
+        // it wrong still compiles, still produces a plausible-looking source, and appends the notice
+        // to every tile URL instead of `.png` — so the resolved URL is what gets asserted here.
         assertTrue("a tile URL must be https, got $light", light.startsWith("https://"))
         assertTrue("a tile URL must be a png, got $dark", dark.endsWith(".png"))
     }
