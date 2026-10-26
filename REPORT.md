@@ -390,3 +390,35 @@ State definitions: **Complete** = implemented end-to-end and covered by JVM/Robo
 ## Verification limits
 
 This review is static. The following claims are inherently unverified without a real ARM device and a live Telegram session: TDLib request/response shapes, authentication round-trip, cloud history/preview/download, live upload and confirmation, MediaStore write/delete consent, ExoPlayer playback, osmdroid rendering, Coil GIF decode, and the device-credential prompt. No build or test was run; the 909-test figure and all counts come from the source tree.
+
+---
+
+## Remediation status — 26 October 2026
+
+Implemented on branch **`fix/audit-findings`** (PR #8):
+
+| Finding | Status | Commit |
+|---|---|---|
+| D1 app-lock recovery fail-open | Fixed: resolution no longer authenticates; observation resumes after retry; regression tests | `298b6a8` |
+| D2/D12 partial deletion and stale album/location rows | Fixed: exact deleted/failed/consent split; transactional cross-table cleanup; tests | `cce6b28` |
+| D3 account-scoped cloud state | Fixed: account-owned destination migration, queue re-scope, ledger clear, same-account preservation | `cce6b28` |
+| D4 staging ENOSPC/provider failure | Fixed: transient classification and free-space preflight; test | `5589e0a` |
+| D5 backup-status map on main | Partially fixed: Long-keyed snapshot, duplicate remaps removed, map built on `Dispatchers.Default`; the query still reads the full queue | `5589e0a` |
+| D8 release signing/placeholder gate | Fixed: unsigned smoke separated from a manual signed job; secret validation; signature verification | `fa2232c`, `49c2efe` |
+| D9/D10 accessibility and partial access | Fixed: Viewer actions, Map list, selection label, partial-access action, backup Connect action | `5589e0a` |
+| D11 diagnostics | Fixed: bounded local warn/error file and user-controlled Settings share | `656b510` |
+| D13/D14/D16 scheduling, cursor, cloud Viewer | Fixed: appended follow-up run, persisted failed offset, single-flight pass mutex, indexed neighbours | `5589e0a` |
+| D21 restore ledger | Fixed: best-effort write after publish, versioned format with legacy readability | `5589e0a` |
+| D26 backup consent copy/network disclosure | Fixed: copy says photos **and videos**; onboarding discloses mobile-data use | `5589e0a` |
+| Worker foreground-time budget | Fixed: 30-minute run handoff with continuation | `5589e0a` |
+| Room v12 schema baseline | Committed (`12.json`), migration chain updated | `7b5f7f3` |
+
+Still outstanding by design or environment:
+
+- D6/D7: large-library MediaStore paging/order and the unbounded archived/trashed `NOT IN` selection were not rewritten in this pass. This is the next performance workstream.
+- D15: the cloud history rebuild still holds `networkMutex` for the whole walk; the Viewer no longer loads the full manifest.
+- D20/D22/D23/D24/D25/D27–D31: Coil prefetch sizing, pre-marker dedup verification, title-only channel consent, saved-instance credentials, Android 13 image-only grants, and the remaining low-severity findings are not addressed.
+- Deleted-channel recovery is covered for account switching, but an individually deleted channel still needs an explicit “reset destination” recovery path.
+- No instrumented/device suite; live TDLib, MediaStore write/delete, ExoPlayer, osmdroid, and the credential prompt remain device-gated.
+- No dependency verification/locking was added, and the third-party TDLib artifact remains the main supply-chain risk.
+- The signed release job was not run because repository signing/Telegram secrets are not available here; the unsigned R8/AAB smoke job passed and asserted its artifact is not distributable.
