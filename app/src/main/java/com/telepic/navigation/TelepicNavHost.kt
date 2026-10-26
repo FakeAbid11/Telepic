@@ -190,6 +190,7 @@ private fun TelepicNavGraph(
                             organizationRepository = container.mediaOrganizationRepository,
                             localLookup = container.localMediaLookup,
                             deleter = container.mediaDeleter,
+                            cleanup = container.permanentMediaCleanup,
                         )
                     }
                 }

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -198,6 +199,72 @@ class TelegramCloudRepositoryTest {
         assertEquals(2, db.cloudMediaManifestDao().count())
         val stored = db.cloudDestinationDao().find("telegram")
         assertTrue(stored != null && stored.validated && stored.chatId == 100L)
+    }
+
+    @Test
+    fun `reconcileAccount adopts a legacy destination without clearing its manifest`() = runBlocking {
+        db.cloudDestinationDao().upsert(
+            CloudDestinationEntity(
+                provider = "telegram",
+                chatId = 100L,
+                title = "Telepic Backup",
+                validated = true,
+                createdAt = 1L,
+                updatedAt = 1L,
+                accountId = null,
+            ),
+        )
+        db.cloudMediaManifestDao().upsertAll(listOf(manifestRow(messageId = 1L)))
+        val r = repo(FakeDataSource())
+
+        assertFalse(r.reconcileAccount(8L))
+
+        assertEquals(8L, db.cloudDestinationDao().find("telegram")?.accountId)
+        assertEquals(1, db.cloudMediaManifestDao().count())
+    }
+
+    @Test
+    fun `reconcileAccount clears a destination owned by a different account`() = runBlocking {
+        db.cloudDestinationDao().upsert(
+            CloudDestinationEntity(
+                provider = "telegram",
+                chatId = 100L,
+                title = "Telepic Backup",
+                validated = true,
+                createdAt = 1L,
+                updatedAt = 1L,
+                accountId = 7L,
+            ),
+        )
+        db.cloudMediaManifestDao().upsertAll(listOf(manifestRow(messageId = 1L)))
+        val r = repo(FakeDataSource())
+
+        assertTrue(r.reconcileAccount(8L))
+
+        assertNull(db.cloudDestinationDao().find("telegram"))
+        assertEquals(0, db.cloudMediaManifestDao().count())
+    }
+
+    @Test
+    fun `reconcileAccount keeps the same account's destination and manifest`() = runBlocking {
+        db.cloudDestinationDao().upsert(
+            CloudDestinationEntity(
+                provider = "telegram",
+                chatId = 100L,
+                title = "Telepic Backup",
+                validated = true,
+                createdAt = 1L,
+                updatedAt = 1L,
+                accountId = 7L,
+            ),
+        )
+        db.cloudMediaManifestDao().upsertAll(listOf(manifestRow(messageId = 1L)))
+        val r = repo(FakeDataSource())
+
+        assertFalse(r.reconcileAccount(7L))
+
+        assertEquals(7L, db.cloudDestinationDao().find("telegram")?.accountId)
+        assertEquals(1, db.cloudMediaManifestDao().count())
     }
 
     @Test

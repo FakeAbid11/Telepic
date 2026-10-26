@@ -237,4 +237,20 @@ interface BackupQueueDao {
             "WHERE state IN ('PREPARING', 'UPLOADING')",
     )
     suspend fun recoverInterruptedToQueued(now: Long): Int
+
+    /**
+     * Account switch: a confirmed remote identity from the previous account is not evidence of
+     * backup for the new one. Return those rows to QUEUED and clear every remote id so the content
+     * is re-uploaded to the new destination; cancelled rows stay cancelled and in-flight rows are
+     * handled by the repository while the process mutex is held.
+     */
+    @Query(
+        "UPDATE backup_queue SET state = 'QUEUED', telegramChatId = NULL, telegramMessageId = NULL, " +
+            "telegramFileId = NULL, pendingTelegramChatId = NULL, pendingTelegramMessageId = NULL, " +
+            "pendingWaitAttempts = NULL, retryCount = 0, lastError = NULL, startedAt = NULL, " +
+            "completedAt = NULL, updatedAt = :now " +
+            "WHERE state != 'CANCELLED' AND (state = 'BACKED_UP' OR telegramChatId IS NOT NULL " +
+            "OR pendingTelegramChatId IS NOT NULL)",
+    )
+    suspend fun resetForAccountSwitch(now: Long): Int
 }

@@ -139,12 +139,17 @@ class BackupMigration10To11Test {
             .addMigrations(
                 // The upgrade under test: a real v10 file walking exactly one step to 11.
                 TelepicDatabase.MIGRATION_10_11,
+                TelepicDatabase.MIGRATION_11_12,
             )
             .allowMainThreadQueries()
             .build()
 
         // Prior data survives across every table.
-        assertNotNull(db.cloudDestinationDao().find("telegram"))
+        val destination = db.cloudDestinationDao().find("telegram")
+        assertNotNull(destination)
+        // 11 -> 12 adds a nullable owner; an upgraded row is adopted by the first account, never
+        // guessed during the migration itself.
+        assertNull(destination?.accountId)
         val manifest = db.cloudMediaManifestDao().get(100L, 7L)
         assertEquals("deadbeef", manifest?.contentHash)
         assertEquals(1000L, manifest?.contentSizeBytes)

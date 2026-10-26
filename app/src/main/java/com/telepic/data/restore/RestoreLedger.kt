@@ -39,6 +39,13 @@ interface RestoreLedger {
 
     /** Drops the mapping for [identity] — used when the recorded row no longer exists. */
     suspend fun forget(identity: RestoreIdentity)
+
+    /**
+     * Drops every mapping. Used when the Telegram account changes: the old identities belong to a
+     * destination the new account cannot reach, and keeping them would let stale state answer a
+     * restore question for a session that never published that copy. Default no-op for fakes.
+     */
+    suspend fun clear() = Unit
 }
 
 /**
@@ -70,6 +77,10 @@ class DataStoreRestoreLedger(
                 preferences[KEY_LEDGER] = encode(map)
             }
         }
+    }
+
+    override suspend fun clear() {
+        dataStore.edit { preferences -> preferences.remove(KEY_LEDGER) }
     }
 
     private suspend fun readRaw(): String? = try {

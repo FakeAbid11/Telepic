@@ -3,6 +3,7 @@ package com.telepic.data.organization
 import android.app.RecoverableSecurityException
 import android.content.ContentResolver
 import android.content.Context
+import android.content.IntentSender
 import android.os.Build
 import android.provider.MediaStore
 import androidx.annotation.RequiresApi
@@ -15,10 +16,30 @@ import kotlinx.coroutines.withContext
 /** The outcome of asking to permanently delete a local file. Never claims success it did not get. */
 sealed interface DeleteRequest {
     /**
-     * The system requires user consent: the UI must launch [intentSender] and only treat the item as
-     * deleted if the user accepts (RESULT_OK). Deletion is never implied from this state alone.
+     * The system requires user consent: the UI must launch [intentSender] and only treat the items
+     * in [consentMedia] as deleted if the user accepts (RESULT_OK). Deletion is never implied from
+     * this state alone.
+     *
+     * [deletedIds] are already gone (an API 29 provider can delete some items before refusing one);
+     * [failedIds] could not be deleted at all; [remainingMedia] has not been attempted yet and must
+     * be retried after consent. The caller may forget only [consentMedia] when the result is OK.
      */
-    data class NeedsConsent(val intentSender: android.content.IntentSender) : DeleteRequest
+    data class NeedsConsent(
+        val intentSender: IntentSender,
+        val deletedIds: List<Long> = emptyList(),
+        val failedIds: List<Long> = emptyList(),
+        val consentMedia: List<LocalMedia> = emptyList(),
+        val remainingMedia: List<LocalMedia> = emptyList(),
+    ) : DeleteRequest
+
+    /**
+     * Some files were deleted and some were not, without a consent step. The caller must forget only
+     * [deletedIds] and keep [failedIds] available for retry.
+     */
+    data class PartiallyDeleted(
+        val deletedIds: List<Long>,
+        val failedIds: List<Long>,
+    ) : DeleteRequest
 
     /** Deletion succeeded without a consent step (legacy path where the app already has rights). */
     data object Deleted : DeleteRequest
@@ -34,11 +55,14 @@ interface LocalMediaDeleter {
     /**
      * The batch form, for "Delete forever" over a selection.
      *
-     * One request covers every uri, because `MediaStore.createDeleteRequest` takes a list: asking the
-     * user to confirm item by item would be N system dialogs for one action. [DeleteRequest.Deleted]
-     * means **every** requested file was removed — a partial result is reported as
-     * [DeleteRequest.Failed] rather than as a success for files that are still on the device, which
-     * would have the caller forget rows for media it did not delete.
+     * API 30+ can cover the whole list with one consent prompt. API 29 can only carry one
+     * [RecoverableSecurityException] at a time, so a partial delete returns
+     * [DeleteRequest.NeedsConsent] with the already-deleted ids and the unattempted remainder; the
+     * caller resumes the remainder after the consent result.
+     *
+     * [DeleteRequest.Deleted] means **every** requested file was removed. A mixed result is never
+     * reported as success: it is either [DeleteRequest.PartiallyDeleted] or
+     * [DeleteRequest.NeedsConsent] with the exact split.
      *
      * An empty list is [DeleteRequest.Failed]: there is nothing to consent to and nothing to claim.
      */
@@ -78,19 +102,14 @@ class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
         // `viewModelScope`). Move the whole exchange to IO so a slow provider cannot jank or ANR.
         return withContext(Dispatchers.IO) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // One consent prompt covers the whole list — the platform accepts a list of uris here.
-                    val pending = MediaStore.createDeleteRequest(resolver, media.map { it.contentUri })
-                    DeleteRequest.NeedsConsent(pending.intentSender)
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    deleteWithRecoverableConsent(media)
-                } else {
-                    // Pre-R has no batch consent, so the files go one at a time and all of them must go for
-                    // this to be reported as a success. A partial delete is Failed, never a success: see
-                    // the contract on [LocalMediaDeleter.requestDeleteAll].
-                    var deleted = 0
-                    media.forEach { if (resolver.delete(it.contentUri, null, null) > 0) deleted++ }
-                    if (deleted == media.size) DeleteRequest.Deleted else DeleteRequest.Failed
+                when {
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                        // One consent prompt covers the whole list — the platform accepts a list of uris here.
+                        val pending = MediaStore.createDeleteRequest(resolver, media.map { it.contentUri })
+                        DeleteRequest.NeedsConsent(pending.intentSender, consentMedia = media)
+                    }
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> deleteWithRecoverableConsent(media)
+                    else -> deleteDirectly(media)
                 }
             } catch (security: SecurityException) {
                 // Any other refusal: the item stays in trash, and the reason now leaves a trace
@@ -108,6 +127,23 @@ class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
         }
     }
 
+    /** API 26–28: the app holds the legacy write permission; record exactly which deletes succeeded. */
+    private fun deleteDirectly(media: List<LocalMedia>): DeleteRequest {
+        val deleted = ArrayList<Long>(media.size)
+        val failed = ArrayList<Long>()
+        for (item in media) {
+            try {
+                if (resolver.delete(item.contentUri, null, null) > 0) deleted += item.id else failed += item.id
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("MediaDelete", "direct delete failed for mediaId=${item.id}", throwable)
+                failed += item.id
+            }
+        }
+        return completedOutcome(deleted, failed)
+    }
+
     /**
      * Android 10 (API 29): delete directly, and turn the provider's refusal into the system consent
      * prompt it carries.
@@ -122,23 +158,49 @@ class MediaStoreLocalDeleter(context: Context) : LocalMediaDeleter {
      */
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun deleteWithRecoverableConsent(media: List<LocalMedia>): DeleteRequest {
-        var deleted = 0
-        try {
-            media.forEach { if (resolver.delete(it.contentUri, null, null) > 0) deleted++ }
-        } catch (recoverable: RecoverableSecurityException) {
-            val intentSender = recoverable.userAction?.actionIntent?.intentSender
-            if (intentSender == null) {
-                TelepicLog.warn(
-                    "MediaDelete",
-                    "the provider refused the delete without a consent prompt",
-                    recoverable,
+        val deleted = ArrayList<Long>(media.size)
+        val failed = ArrayList<Long>()
+        for (index in media.indices) {
+            val item = media[index]
+            try {
+                if (resolver.delete(item.contentUri, null, null) > 0) deleted += item.id else failed += item.id
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (recoverable: RecoverableSecurityException) {
+                val intentSender = recoverable.userAction?.actionIntent?.intentSender
+                if (intentSender == null) {
+                    TelepicLog.warn(
+                        "MediaDelete",
+                        "the provider refused the delete without a consent prompt for mediaId=${item.id}",
+                        recoverable,
+                    )
+                    failed += item.id
+                    continue
+                }
+                // The prompt covers only this item. Return the exact split; after the user accepts,
+                // the caller resumes the unattempted remainder and asks again if needed.
+                return DeleteRequest.NeedsConsent(
+                    intentSender = intentSender,
+                    deletedIds = deleted.toList(),
+                    failedIds = failed.toList(),
+                    consentMedia = listOf(item),
+                    remainingMedia = media.drop(index + 1),
                 )
-                return DeleteRequest.Failed
+            } catch (throwable: Throwable) {
+                TelepicLog.warn("MediaDelete", "recoverable-consent delete failed for mediaId=${item.id}", throwable)
+                failed += item.id
             }
-            return DeleteRequest.NeedsConsent(intentSender)
         }
-        // A partial delete is Failed, never a success: see the contract on
-        // [LocalMediaDeleter.requestDeleteAll].
-        return if (deleted == media.size) DeleteRequest.Deleted else DeleteRequest.Failed
+        return completedOutcome(deleted, failed)
+    }
+
+    /**
+     * The one place the all/none/some mapping is decided. Empty [deleted] is a total failure; empty
+     * [failed] is complete success; anything else is a partial result the caller must split.
+     */
+    private fun completedOutcome(deleted: List<Long>, failed: List<Long>): DeleteRequest = when {
+        deleted.isEmpty() -> DeleteRequest.Failed
+        failed.isEmpty() -> DeleteRequest.Deleted
+        else -> DeleteRequest.PartiallyDeleted(deleted, failed)
     }
 }

@@ -35,6 +35,17 @@ interface CloudRepository {
     suspend fun ensureDestination(): TelepicCloudDestination?
 
     /**
+     * Make the persisted cloud state belong to [accountId].
+     *
+     * Returns true when a destination from a different account was found and cleared. The caller
+     * must then reset account-scoped backup/restore state. A null legacy account id is adopted, not
+     * cleared, so an upgrade keeps its existing channel.
+     *
+     * Default false so test fakes that do not model accounts need no implementation.
+     */
+    suspend fun reconcileAccount(accountId: Long): Boolean = false
+
+    /**
      * Recognition's manifest lookup, exposed for the upload path's pre-send backstop: the remote
      * identity whose content hash and byte count match exactly, or null when this install knows of
      * none. The default null ("nothing known") keeps test fakes honest — only a manifest-backed

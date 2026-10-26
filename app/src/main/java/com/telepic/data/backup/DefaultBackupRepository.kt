@@ -114,6 +114,14 @@ class DefaultBackupRepository(
         Unit
     }
 
+    override suspend fun resetForAccountSwitch() = withContext(dispatcher) {
+        // Wait for a running pass to finish before rewriting its rows. The remote identity being
+        // cleared belongs to a different account; without the mutex, a late markBackedUp could
+        // resurrect it for the new session.
+        processMutex.withLock { dao.resetForAccountSwitch(clock()) }
+        Unit
+    }
+
     override suspend fun processPendingWork(maxItems: Int): BackupProcessSummary =
         withContext(dispatcher) {
             processMutex.withLock {

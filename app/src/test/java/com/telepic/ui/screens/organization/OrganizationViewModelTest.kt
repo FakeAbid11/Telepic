@@ -10,6 +10,7 @@ import com.telepic.data.media.NeighborDirection
 import com.telepic.data.organization.DeleteRequest
 import com.telepic.data.organization.LocalMediaDeleter
 import com.telepic.data.organization.MediaOrganizationRepository
+import com.telepic.data.organization.PermanentMediaCleanup
 import com.telepic.domain.media.LocalMedia
 import com.telepic.domain.media.MediaType
 import com.telepic.navigation.OrganizationKind
@@ -125,6 +126,24 @@ class OrganizationViewModelTest {
             calls++
             requested = media
             return outcome
+        }
+    }
+
+    /** Returns one outcome per round, so an API-29 consent split can resume the remainder. */
+    private class SequenceDeleter(vararg outcomes: DeleteRequest) : LocalMediaDeleter {
+        private val remaining = ArrayDeque(outcomes.toList())
+        val requestedIds = mutableListOf<List<Long>>()
+        override suspend fun requestDelete(media: LocalMedia): DeleteRequest = requestDeleteAll(listOf(media))
+        override suspend fun requestDeleteAll(media: List<LocalMedia>): DeleteRequest {
+            requestedIds += media.map { it.id }
+            return if (remaining.isEmpty()) DeleteRequest.Failed else remaining.removeFirst()
+        }
+    }
+
+    private class FakeCleanup : PermanentMediaCleanup {
+        val cleaned = mutableListOf<Long>()
+        override suspend fun cleanup(ids: Collection<Long>) {
+            cleaned += ids
         }
     }
 
@@ -391,6 +410,85 @@ class OrganizationViewModelTest {
         vm.finishConsent(success = true)
         runCurrent()
         assertTrue(repo.removed.isEmpty())
+        assertFalse(vm.isDeleting.value)
+    }
+
+    @Test
+    fun `a partial direct delete forgets only confirmed items and keeps the rest selected`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val cleanup = FakeCleanup()
+        val deleter = FakeDeleter(
+            DeleteRequest.PartiallyDeleted(deletedIds = listOf(1L), failedIds = listOf(2L, 3L)),
+        )
+        val vm = OrganizationViewModel(OrganizationKind.TRASH, FakeRepo(), FakeLookup(), deleter, cleanup)
+        vm.selectAll(listOf(media(1), media(2), media(3)))
+        vm.requestDeleteSelected { org.junit.Assert.fail("a partial direct delete needs no consent") }
+        runCurrent()
+
+        assertEquals(listOf(1L), cleanup.cleaned)
+        assertEquals(setOf(2L, 3L), vm.selectedItems.value.keys)
+        assertEquals(OrgMessage.PartiallyDeleted(deleted = 1, failed = 2), vm.message.value)
+        assertFalse(vm.isDeleting.value)
+    }
+
+    @Test
+    fun `an api 29 consent split resumes the unattempted remainder`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val cleanup = FakeCleanup()
+        val deleter = SequenceDeleter(
+            DeleteRequest.NeedsConsent(
+                intentSender = intentSender(),
+                deletedIds = listOf(1L),
+                consentMedia = listOf(media(2)),
+                remainingMedia = listOf(media(3)),
+            ),
+            DeleteRequest.Deleted,
+        )
+        val vm = OrganizationViewModel(OrganizationKind.TRASH, FakeRepo(), FakeLookup(), deleter, cleanup)
+        vm.selectAll(listOf(media(1), media(2), media(3)))
+
+        var consentLaunches = 0
+        vm.requestDeleteSelected { consentLaunches++ }
+        runCurrent()
+        assertEquals(1, consentLaunches)
+        assertEquals(listOf(1L), cleanup.cleaned)
+        assertEquals(setOf(2L, 3L), vm.selectedItems.value.keys)
+        assertTrue(vm.isDeleting.value)
+
+        assertTrue(vm.finishConsent(success = true))
+        runCurrent()
+
+        // Only after consent is item 2 forgotten; item 3 was then attempted and confirmed.
+        assertEquals(listOf(1L, 2L, 3L), cleanup.cleaned)
+        assertEquals(listOf(listOf(1L, 2L, 3L), listOf(3L)), deleter.requestedIds)
+        assertTrue(vm.selectedItems.value.isEmpty())
+        assertEquals(OrgMessage.DeletedFromDevice(3), vm.message.value)
+        assertFalse(vm.isDeleting.value)
+    }
+
+    @Test
+    fun `a cancelled consent after a partial delete keeps the undecided items selected`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val cleanup = FakeCleanup()
+        val deleter = SequenceDeleter(
+            DeleteRequest.NeedsConsent(
+                intentSender = intentSender(),
+                deletedIds = listOf(1L),
+                consentMedia = listOf(media(2)),
+                remainingMedia = listOf(media(3)),
+            ),
+        )
+        val vm = OrganizationViewModel(OrganizationKind.TRASH, FakeRepo(), FakeLookup(), deleter, cleanup)
+        vm.selectAll(listOf(media(1), media(2), media(3)))
+        vm.requestDeleteSelected { }
+        runCurrent()
+
+        assertFalse(vm.finishConsent(success = false))
+        runCurrent()
+
+        assertEquals(listOf(1L), cleanup.cleaned)
+        assertEquals(setOf(2L, 3L), vm.selectedItems.value.keys)
+        assertEquals(1, deleter.requestedIds.size)
         assertFalse(vm.isDeleting.value)
     }
 }

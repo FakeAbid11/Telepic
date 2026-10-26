@@ -55,6 +55,10 @@ interface CloudMediaManifestDao {
     @Query("SELECT COUNT(*) FROM cloud_media_manifest")
     suspend fun count(): Int
 
+    /** Drops all manifest rows. Used only when the persisted destination belongs to another account. */
+    @Query("DELETE FROM cloud_media_manifest")
+    suspend fun clearAll()
+
     @Query("UPDATE cloud_media_manifest SET isDownloaded = :downloaded WHERE chatId = :chatId AND messageId = :messageId")
     suspend fun setDownloaded(chatId: Long, messageId: Long, downloaded: Boolean)
 

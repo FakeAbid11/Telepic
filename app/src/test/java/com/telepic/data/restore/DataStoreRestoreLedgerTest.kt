@@ -67,6 +67,20 @@ class DataStoreRestoreLedgerTest {
     }
 
     @Test
+    fun `clear drops every mapping across accounts`() = runTest {
+        val (ledger, _) = newLedger("clear")
+        val a = RestoreIdentity(1L, 1L)
+        val b = RestoreIdentity(2L, 2L)
+        ledger.record(a, "content://media/1")
+        ledger.record(b, "content://media/2")
+
+        ledger.clear()
+
+        assertNull(ledger.publishedUri(a))
+        assertNull(ledger.publishedUri(b))
+    }
+
+    @Test
     fun `a corrupt value degrades to no record instead of throwing`() = runTest {
         val (ledger, dataStore) = newLedger("corrupt")
         val identity = RestoreIdentity(5L, 5L)

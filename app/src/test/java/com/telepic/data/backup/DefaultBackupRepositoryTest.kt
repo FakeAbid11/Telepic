@@ -345,6 +345,35 @@ class DefaultBackupRepositoryTest {
     }
 
     @Test
+    fun `account switch requeues remote-backed rows and leaves cancelled rows alone`() = runBlocking {
+        val dao = db.backupQueueDao()
+        val r = repo(FakeCloud())
+        r.enqueue(media(1))
+        val backed = dao.observeAll().first().first()
+        val now = System.currentTimeMillis()
+        dao.markPreparing(backed.id, now)
+        dao.markUploading(backed.id, now)
+        dao.markBackedUp(backed.id, 100L, 500L, 7, now)
+
+        r.enqueue(media(2))
+        val cancelled = dao.observeAll().first().first { it.localMediaId == "2" }
+        dao.cancel(cancelled.id, now)
+
+        r.resetForAccountSwitch()
+
+        val rows = dao.observeAll().first()
+        val requeued = rows.first { it.localMediaId == "1" }
+        assertEquals(BackupState.QUEUED.name, requeued.state)
+        assertNull(requeued.telegramChatId)
+        assertNull(requeued.telegramMessageId)
+        assertNull(requeued.telegramFileId)
+        assertEquals(0, requeued.retryCount)
+
+        val stillCancelled = rows.first { it.localMediaId == "2" }
+        assertEquals(BackupState.CANCELLED.name, stillCancelled.state)
+    }
+
+    @Test
     fun `exhausting retries stops picking up an item`() = runBlocking {
         val cloud = FakeCloud(uploadError = CloudNetworkException())
         val r = repo(cloud)

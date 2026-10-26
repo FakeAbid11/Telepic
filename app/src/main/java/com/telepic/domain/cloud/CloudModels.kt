@@ -19,6 +19,8 @@ data class TelepicCloudDestination(
     val isChannel: Boolean,
     val canPostMessages: Boolean,
     val isValidated: Boolean,
+    /** The Telegram account that owns this destination; null only for pre-scoping rows. */
+    val accountId: Long? = null,
 )
 
 /**

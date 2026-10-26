@@ -571,6 +571,8 @@
         <item quantity="one">Android didn\'t allow the deletion. The item stays in trash.</item>
         <item quantity="other">Android didn\'t allow the deletion. The items stay in trash.</item>
     </plurals>
+    <!-- A mixed outcome is named as such: some files are gone, some are still present. -->
+    <string name="trash_delete_partial_result">%1$d deleted, %2$d could not be deleted</string>
 
     <!-- ============================ Map (Phase 10) ============================ -->
     <string name="map_title">Map</string>
