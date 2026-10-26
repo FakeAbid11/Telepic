@@ -10,15 +10,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -123,6 +128,8 @@ fun MapScreen(
     val permissionState = controller.state
     val locations by viewModel.locations.collectAsStateWithLifecycle()
     val locationCount by viewModel.locationCount.collectAsStateWithLifecycle()
+    // A list is the accessible equivalent of the canvas markers: TalkBack can reach every item.
+    var showLocationList by remember { mutableStateOf(false) }
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val scanFailed by viewModel.scanFailed.collectAsStateWithLifecycle()
     val savedCamera by viewModel.savedCamera.collectAsStateWithLifecycle()
@@ -148,6 +155,9 @@ fun MapScreen(
                 trailing = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (locationCount > 0) {
+                            TextButton(onClick = { showLocationList = true }) {
+                                Text(stringResource(R.string.map_list_action))
+                            }
                             Text(
                                 text = pluralStringResource(R.plurals.map_locations_count, locationCount, locationCount),
                                 style = MaterialTheme.typography.labelLarge,
@@ -167,6 +177,7 @@ fun MapScreen(
                         horizontal = TelepicTokens.spacing.screenMargin,
                         vertical = TelepicTokens.spacing.sm,
                     ),
+                    onManageAccess = controller.openAppSettings,
                 )
             }
             when {
@@ -234,8 +245,57 @@ fun MapScreen(
                     )
                 }
             }
+            if (showLocationList) {
+                PhotoLocationListDialog(
+                    locations = locations,
+                    onOpenMedia = onOpenMedia,
+                    onDismiss = { showLocationList = false },
+                )
+            }
         }
     }
+}
+
+/**
+ * The map's accessible counterpart: a plain list of every visible geotagged item. Canvas markers
+ * cannot carry individual semantics, so this is the only way a screen-reader user can open a photo
+ * from the Map tab.
+ */
+@Composable
+private fun PhotoLocationListDialog(
+    locations: List<GeotaggedMedia>,
+    onOpenMedia: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.map_list_title)) },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                items(locations, key = { it.mediaId }) { item ->
+                    TextButton(
+                        onClick = {
+                            onDismiss()
+                            onOpenMedia(item.mediaId)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.map_list_item,
+                                formatCoordinate(item.location.latitude, item.location.longitude),
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.map_list_close))
+            }
+        },
+    )
 }
 
 @Composable

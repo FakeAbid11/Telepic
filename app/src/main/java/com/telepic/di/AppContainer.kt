@@ -7,6 +7,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.telepic.BuildConfig
+import com.telepic.data.account.DataStoreTelegramAccountStore
+import com.telepic.data.account.TelegramAccountCoordinator
+import com.telepic.data.account.TelegramAccountStore
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupRecognitionRepository
 import com.telepic.data.backup.BackupRepository
@@ -51,9 +54,12 @@ import com.telepic.data.organization.DefaultMediaOrganizationRepository
 import com.telepic.data.organization.LocalMediaDeleter
 import com.telepic.data.organization.MediaOrganizationRepository
 import com.telepic.data.organization.MediaStoreLocalDeleter
+import com.telepic.data.organization.PermanentMediaCleanup
+import com.telepic.data.organization.RoomPermanentMediaCleanup
 import com.telepic.data.restore.AndroidMediaStorePublisher
 import com.telepic.data.restore.DataStoreRestoreLedger
 import com.telepic.data.restore.DefaultRestoreRepository
+import com.telepic.data.restore.RestoreLedger
 import com.telepic.data.restore.RestoreRepository
 import com.telepic.onboarding.OnboardingRepository
 import com.telepic.onboarding.OnboardingRepositoryImpl
@@ -108,6 +114,13 @@ interface AppContainer {
     val customAlbumRepository: CustomAlbumRepository
     val mediaOrganizationRepository: MediaOrganizationRepository
     val mediaDeleter: LocalMediaDeleter
+
+    /**
+     * Removes every app-owned reference to media confirmed deleted from MediaStore: organization
+     * state, custom-album membership/covers and the location cache. App-scoped because permanent
+     * deletion spans those tables, not just the Trash screen's own repository.
+     */
+    val permanentMediaCleanup: PermanentMediaCleanup
     val mapLocationRepository: MapLocationRepository
 
     /**
@@ -133,6 +146,14 @@ interface AppContainer {
      * next launch is the first moment anybody can notice it. Called once at startup.
      */
     suspend fun sweepBackupStaging()
+
+    /**
+     * Scope persisted cloud/queue/restore state to the authenticated Telegram account.
+     *
+     * Same-account re-login is a no-op. A different account clears the old destination/manifest,
+     * re-queues remote-backed rows for the new destination, and drops the restore ledger.
+     */
+    suspend fun reconcileTelegramAccount(accountId: Long)
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -163,6 +184,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         OnboardingRepositoryImpl(appContext.telepicDataStore)
     }
 
+    private val telegramAccountStore: TelegramAccountStore by lazy {
+        DataStoreTelegramAccountStore(appContext.telepicDataStore)
+    }
+
     private val database: TelepicDatabase by lazy {
         Room.databaseBuilder(appContext, TelepicDatabase::class.java, TelepicDatabase.NAME)
             .addMigrations(
@@ -176,6 +201,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                 TelepicDatabase.MIGRATION_8_9,
                 TelepicDatabase.MIGRATION_9_10,
                 TelepicDatabase.MIGRATION_10_11,
+                TelepicDatabase.MIGRATION_11_12,
             )
             .build()
     }
@@ -277,6 +303,15 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     private val mediaLocationDao: com.telepic.data.media.db.MediaLocationDao by lazy { database.mediaLocationDao() }
 
+    override val permanentMediaCleanup: PermanentMediaCleanup by lazy {
+        RoomPermanentMediaCleanup(
+            db = database,
+            organizationDao = mediaOrganizationDao,
+            customAlbumDao = customAlbumDao,
+            mediaLocationDao = mediaLocationDao,
+        )
+    }
+
     override val mapLocationRepository: MapLocationRepository by lazy {
         DefaultMapLocationRepository(
             dao = mediaLocationDao,
@@ -310,6 +345,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         AndroidMediaMetadataReader(appContext)
     }
 
+    private val restoreLedger: RestoreLedger by lazy {
+        DataStoreRestoreLedger(appContext.telepicDataStore)
+    }
+
     override val restoreRepository: RestoreRepository by lazy {
         DefaultRestoreRepository(
             cloudRepository = cloudRepository,
@@ -317,7 +356,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             // App-owned record of (remote identity -> published uri) so a repeat "Save to device"
             // reuses the earlier copy instead of publishing a duplicate. Keyed on the real Telegram
             // identity, never on name/size/MIME.
-            ledger = DataStoreRestoreLedger(appContext.telepicDataStore),
+            ledger = restoreLedger,
         )
     }
 
@@ -387,7 +426,19 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         WorkManagerBackupScheduler(appContext, settingsRepository)
     }
 
+    private val telegramAccountCoordinator: TelegramAccountCoordinator by lazy {
+        TelegramAccountCoordinator(
+            accountStore = telegramAccountStore,
+            cloudRepository = cloudRepository,
+            backupRepository = backupRepository,
+            restoreLedger = restoreLedger,
+        )
+    }
+
     override suspend fun sweepBackupStaging() = backupStager.sweep()
+
+    override suspend fun reconcileTelegramAccount(accountId: Long) =
+        telegramAccountCoordinator.onAuthorized(accountId)
 
     override val backupCoordinator: BackupCoordinator by lazy {
         DefaultBackupCoordinator(

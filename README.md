@@ -105,7 +105,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 **To build or contribute**
 - **No local toolchain is required.** The canonical build runs in **GitHub Actions** — you do not need Android Studio, Gradle, or the Android SDK installed to produce an APK.
 - A GitHub account, to run the workflow.
-- Telegram API credentials, only if you want a login-capable build (see [Configuration](#configuration)).
+- Telegram API credentials, only if you want a login-capable local build (see [Configuration](#configuration)). The CI debug APK deliberately does not include them.
 
 ### 💾 Install the prebuilt debug APK (recommended)
 
@@ -116,15 +116,16 @@ Every push to `main` produces a debug APK as a CI artifact.
 3. Scroll to **Artifacts** and download **`telepic-debug-apk`**.
 4. Unzip it and install the APK on your device. You may need to allow *Install unknown apps* for your file manager or browser.
 
-> The APK is a **debug** build and is not signed for distribution. Telegram login only works if the
-> build was produced with API credentials configured (see below).
+> The APK is a **debug** build and is not signed for distribution. The CI artifact is built without
+> Telegram credentials on purpose (so no real `api_hash` is published in a downloadable APK);
+> Telegram login therefore requires a **local** build with the environment variables below.
 
 ### 🔨 Build it yourself through CI
 
 1. **Fork** the repository (or clone it and push to your own remote).
-2. *(Optional)* Add Telegram credentials as repository secrets so login is available — see [Configuration](#configuration).
+2. *(Optional)* Add the release credentials/signing secrets if you intend to build a signed release; they are not used for the debug APK — see [Configuration](#configuration).
 3. Trigger a build by pushing a commit, opening a pull request, or using **Actions → Android CI → Run workflow** (`workflow_dispatch`).
-4. Download the **`telepic-debug-apk`** artifact from the finished run.
+4. Download the **`telepic-debug-apk`** artifact from the finished run. For Telegram login, build locally with credentials.
 
 ### ✅ Verify Telegram login on a device
 
@@ -152,7 +153,7 @@ Open **Photos** for the full timeline, or **Albums** to browse by folder. Scroll
 
 **3. Turn on backup**
 Choose a backup mode during onboarding or later in **Settings → Backup**:
-- **Back up all photos** — discovers and uploads eligible media automatically.
+- **Back up all photos and videos** — discovers and uploads eligible media automatically.
 - **Select a folder** — opens a picker listing the device's actual media folders; only the folders you tick are scanned and uploaded. Confirm requires at least one folder, and nothing else is uploaded automatically.
 - **Not now** — never uploads automatically.
 
@@ -180,22 +181,36 @@ Tap the **gear in the top-right corner** — available on every tab — for acco
 
 ### GitHub Actions secrets
 
-Configure these under **Settings → Secrets and variables → Actions**. All are optional for a debug
-build — without them the app still compiles and runs, but Telegram login is unavailable.
+Configure these under **Settings → Secrets and variables → Actions**. They are used only by the
+manual **signed release** job. The debug CI artifact is built without Telegram credentials on
+purpose, so it can never publish the real `api_hash`; local login builds read the two Telegram
+variables from the environment.
 
 | Secret | Required | Purpose |
 |---|---|---|
-| `TELEGRAM_API_ID` | For login | Numeric API id from your [Telegram developer account](https://my.telegram.org). Injected into `BuildConfig`. |
-| `TELEGRAM_API_HASH` | For login | API hash string. Injected into `BuildConfig`. |
-| `RELEASE_KEYSTORE_BASE64` | Release only | Base64-encoded keystore for signing a release build. |
-| `RELEASE_KEYSTORE_PASSWORD` | Release only | Keystore password. |
-| `RELEASE_KEY_ALIAS` | Release only | Signing key alias. |
-| `RELEASE_KEY_PASSWORD` | Release only | Signing key password. |
+| `TELEGRAM_API_ID` | Signed release / local login | Numeric API id from your [Telegram developer account](https://my.telegram.org). Injected into `BuildConfig`. |
+| `TELEGRAM_API_HASH` | Signed release / local login | API hash string. Injected into `BuildConfig`. |
+| `RELEASE_KEYSTORE_BASE64` | Signed release | Base64-encoded keystore. |
+| `RELEASE_KEYSTORE_PASSWORD` | Signed release | Keystore password. |
+| `RELEASE_KEY_ALIAS` | Signed release | Signing key alias. |
+| `RELEASE_KEY_PASSWORD` | Signed release | Signing key password. |
 
-**Secrets are never committed, hardcoded, or logged.** Debug builds without credentials use a safe
-placeholder (`api_id = 0`). A **release** build refuses to run at all unless real Telegram credentials
-are present, so a secret-less release cannot ship with a permanently dead login. If a non-numeric
-`TELEGRAM_API_ID` is supplied, the build fails fast rather than silently falling back to `0`.
+**Secrets are never committed, hardcoded, or logged.** A **signed release** (and every local
+`assembleRelease`/`bundleRelease`) fails before packaging unless real Telegram credentials and all
+four signing variables are present. A non-numeric `TELEGRAM_API_ID` fails fast rather than silently
+becoming `0`. The only exception is the explicitly named unsigned smoke build, which requires
+`-Ptelepic.allowUnsignedRelease=true` and is not distributable.
+
+### Local credentials and build
+
+```bash
+export TELEGRAM_API_ID=123456
+export TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef
+./gradlew assembleDebug
+```
+
+The same environment variables are required for a local release, together with the four signing
+variables. See [Producing a release](#producing-a-release).
 
 ### Build configuration
 
@@ -218,7 +233,7 @@ Dependency versions are centralized in [`gradle/libs.versions.toml`](gradle/libs
 | Setting | Location | Options |
 |---|---|---|
 | Theme | Settings → Appearance | Dark (default), Light, System default |
-| Backup mode | Settings → Backup | Back up all photos / Select a folder / Not now |
+| Backup mode | Settings → Backup | Back up all photos and videos / Select a folder / Not now |
 | Manual backup | Settings → Backup | **Back up now** (enabled once a backup mode is configured) |
 | Cache | Settings → Storage | Measured Telegram session and staging cache sizes; **Clear backup cache** |
 | Account | Settings → Account | Telegram account, connection state, backup channel, sign-out |
@@ -301,11 +316,11 @@ app/src/main/java/com/telepic/
 
 ### Database
 
-Room is at **version 11**, with explicit migrations and **no destructive fallback**:
+Room is at **version 12**, with explicit migrations and **no destructive fallback**:
 
 | Table | Purpose | Introduced |
 |---|---|---|
-| `cloud_destination` | The single validated Telepic Backup channel | v1 |
+| `cloud_destination` | The single validated Telepic Backup channel, owned by a Telegram account id | v1 (owner added 11 → 12) |
 | `cloud_media_manifest` | Cloud media index, keyed by `chatId + messageId` | v1 |
 | `backup_queue` | Source of truth for backup state | 1 → 2 |
 | `media_organization` | Favorites / Archive / Trash state | 3 → 4 |
@@ -314,13 +329,13 @@ Room is at **version 11**, with explicit migrations and **no destructive fallbac
 | `custom_album_media` | Album membership, keyed `(albumId, localMediaId)`, cascading on delete | 6 → 7 |
 | `media_location_scan` | Which items the map has already examined for GPS — including those that carry none | 7 → 8 |
 
-Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, `5 → 6`, `6 → 7`, `7 → 8`, `8 → 9` (index-only), `9 → 10` (adds `cloud_media_manifest.contentSizeBytes`) and `10 → 11` (adds `backup_queue.pendingWaitAttempts` — the pending-wait counter kept on the row, so a process restart cannot silently reset the retry cap). Each has a migration test that builds the previous version and proves existing rows survive. Note that `TelepicDatabase` is always the latest version, so each of those tests chains *every* migration from its starting version — a version bump therefore touches all of them.
+Migrations are `1 → 2`, `2 → 3`, `3 → 4`, `4 → 5`, `5 → 6`, `6 → 7`, `7 → 8`, `8 → 9` (index-only), `9 → 10` (adds `cloud_media_manifest.contentSizeBytes`), `10 → 11` (adds `backup_queue.pendingWaitAttempts`, the durable pending-send wait cap) and `11 → 12` (adds the nullable `cloud_destination.accountId`; existing rows are adopted by the first authenticated account rather than guessed). Migration tests build a previous version with raw SQL and reopen the real database, so Room validates the result against the compiled entities. `TelepicDatabase` is always the latest version, so a version bump touches every chained test; the `9 → 10` and `11 → 12` steps are currently covered transitively rather than by a test starting at exactly v9/v11.
 
 The schema JSON Room exports per version lives in `app/schemas/`, and CI uploads it as the
-`telepic-room-schemas` artifact. **It must be committed with the migration that produced it**: the
-committed baseline is what a hand-written future migration is checked against. The migration tests
-themselves do not need it — they build the previous version with raw SQL and then open the real
-database, so Room's runtime migration validation compares the result against the compiled entities.
+`telepic-room-schemas` artifact. Baselines are committed from **v9 onward**; versions 1–8 predate the
+exported baseline and are reconstructed from the migration tests. **A new schema JSON must be
+committed with the migration that produced it**: the migration tests themselves build the previous
+version with raw SQL, so Room's runtime validation does not read the JSON.
 
 ---
 
@@ -463,7 +478,7 @@ never run against the real thing.
 
 ### Roadmap
 
-Next up: **full-device integration & hardening** (Phases 11–12), plus date and place search.
+Next up: **full-device validation of the code-complete work through Phase 14**, plus date and place search.
 
 The chronological phase-by-phase log lives in [**docs/development-history.md**](docs/development-history.md).
 
@@ -477,7 +492,7 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 - **Reinstall recognition cannot cover media backed up by a build without the caption marker.** Those manifest rows carry no hash, so only the kinds Telegram gives a filename to (videos, GIFs, documents) can be recovered by name and size; photos backed up by such a build are re-uploaded once and then carry the marker themselves.
 - **Hiding videos or GIFs does not change what gets backed up.** The Media preferences filter the library *views* only; backup eligibility stays governed by the backup preference. The folder picker therefore lists folders by what a backup would take, not by what the timeline happens to show.
 - **No instrumented tests, and no emulator job in CI.** All tests are JVM/Robolectric; there is no `app/src/androidTest` source set, and an emulator running on every push was deliberately deferred — it would multiply CI minutes for coverage the JVM suite largely overlaps. Nothing device-bound is covered by automated tests.
-- **Logging is minimal.** One seam exists (`diagnostics/TelepicLog`), and it is wired only at the fallbacks that used to be invisible — an aborted backup pass, a denied foreground notification, a swallowed TDLib request failure, a refused MediaStore delete. There is no analytics, no crash reporting, and no log of the happy path, so a device-gated failure is still easier to reproduce than to diagnose from the outside.
+- **Diagnostics are local and deliberately bounded.** Warn/error events go through `diagnostics/TelepicLog` to logcat and to a self-rotating, app-private file; Settings → Storage → **Share diagnostics** sends that file through the system share sheet only when the user asks. The file excludes debug lines and the API hash/phone/code/token/media-path rules are enforced at the call sites. There is still no analytics, remote crash reporting, or happy-path logging.
 - **No offline map tiles.** The map requires connectivity.
 - **`SELECT_FOLDER` is keyed to MediaStore buckets.** A folder *is* a bucket, and the bucket id is derived from the folder's path — so a folder renamed or moved outside the app drops out of the selection and has to be picked again. Only folders that currently hold photos or videos are offered (an empty folder produces no bucket), and on Android 9 and below there is no `RELATIVE_PATH`, so two folders sharing a name cannot be told apart in the picker there.
 - **Restored images are not byte-for-byte identical** to the source, because Telegram may recompress photos; only the *restored* bytes are hashed.
@@ -486,14 +501,14 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 - **An unreadable app-lock preference fails closed.** If the persisted lock setting cannot be read, Telepic hides the library behind a recovery screen with a retry instead of assuming the lock is off and opening the content it protects. The window is also protected (`FLAG_SECURE`) whenever the state is unknown.
 - **The open-source licence list is hand-maintained** (`OpenSourceLicenses.kt`), so it has to be updated whenever a runtime dependency changes. It mirrors `gradle/libs.versions.toml` rather than being generated.
 - **ARM-only**, `minSdk 26`.
-- **No shipping release is built.** The artifact installed while the project is tested is the debug APK. The `release-smoke` job compiles the R8/minified configuration and builds an AAB on **every push to `main`** (and on manual dispatch), so shrinking and the bundle path cannot rot — but nothing is signed for distribution unless `RELEASE_KEYSTORE_BASE64` is configured, and nothing is published.
+- **No shipping release has been produced yet.** Every push to `main` runs an explicitly **unsigned** R8/AAB smoke job (no Telegram credentials, no signing key, not distributable). A separate manual **signed release** job exists; it refuses to build unless the Telegram credentials and all four signing variables are present, verifies the AAB signature, and uploads it as an inspection artifact. Nothing is published to Play.
 
 ---
 
 <a id="testing"></a>
 ## 🧪 Testing
 
-The suite is **882 tests across 123 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
+The suite is **932 tests across 127 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
 
 ```bash
 # Unit tests (JUnit 4 + kotlinx-coroutines-test + Robolectric)
@@ -509,21 +524,49 @@ The suite is **882 tests across 123 files** — all JVM-based, all run in CI; no
 These are exactly the commands the [CI workflow](.github/workflows/android-ci.yml) runs on every push.
 If you build locally, you will need JDK 17 and the Android SDK; if you don't, CI will run them for you.
 
-The release configuration is smoke-tested on the same push:
+The R8 configuration is exercised on every push by an explicitly unsigned smoke build:
 
 ```bash
-# R8 + resource shrinking + the AAB Play consumes
-./gradlew assembleRelease bundleRelease
+# Compile-only: no credentials, no signing key, NOT distributable
+./gradlew assembleRelease bundleRelease -Ptelepic.allowUnsignedRelease=true
 ```
 
-That is the `release-smoke` job, which runs on **every push to `main`** in parallel with the test job
-(and on demand via *Actions → Android CI → Run workflow*). It fails any release task when
-`TELEGRAM_API_ID`/`TELEGRAM_API_HASH` are absent, so a credential-less release cannot be produced by
-accident, and it warns loudly when the AAB ends up unsigned.
+That is `release-unsigned-smoke`. It has no Telegram credentials and asserts that its AAB is
+unsigned, so a green run can never be mistaken for a shippable artifact.
+
+<a id="producing-a-release"></a>
+### Producing a signed release
+
+The signed path is manual and fails before packaging if any secret is missing. It is not triggered by
+an ordinary push.
+
+1. Bump `versionCode`/`versionName` (or export `VERSION_CODE`/`VERSION_NAME`).
+2. Encode the upload keystore:
+   ```bash
+   base64 -w0 release.jks    # Linux; on macOS use `base64 -i release.jks`
+   ```
+3. Configure all six actions secrets from the table above.
+4. Run **Actions → Android CI → Run workflow** with **sign_release** enabled, or reproduce locally:
+   ```bash
+   export TELEGRAM_API_ID=...
+   export TELEGRAM_API_HASH=...
+   export RELEASE_KEYSTORE_BASE64="$(base64 -w0 release.jks)"
+   export RELEASE_KEYSTORE_PASSWORD=...
+   export RELEASE_KEY_ALIAS=...
+   export RELEASE_KEY_PASSWORD=...
+   ./gradlew assembleRelease bundleRelease
+   jarsigner -verify app/build/outputs/bundle/release/*.aab
+   ```
+5. The signed job verifies the AAB signature and uploads `telepic-release-aab`. It does not publish to
+   Play; upload it yourself through the Play Console.
+
+A local release without a keystore fails intentionally. Use the named unsigned-smoke property only
+for compile validation.
 
 What the suite covers: the backup state machine (including the durable pending-wait cap that keeps
-its retry budget across a restart), every Room migration proven from its previous schema through
-v11, hashing and recognition/dedup, viewer race conditions, the builder ↔ pattern ↔ argument route
+its retry budget across a restart), the Room migration chain through v12, partial/permission-gated
+deletion bookkeeping, account-scoped cloud state, hashing and recognition/dedup, viewer race
+conditions, the builder ↔ pattern ↔ argument route
 contract, settings / app-lock / organization / album-contents UI states, permission policy,
 persistence, and the pure logic seams (`MediaDay`, `AlbumGrouper`, `MapClusterer`, `GpsCoordinates`,
 `ZoomState`). It also pins the behaviours that are easy to regress silently: that signing out can be

@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.telepic.R
@@ -221,8 +223,13 @@ fun SelectionActionBar(
             if (hasOverflow) {
                 // The organisation actions, behind one icon. The glyph spins while either of them is
                 // running, so the bar never looks idle while a write is in flight.
+                val moreActionsLabel = stringResource(R.string.photos_selection_more_actions)
                 Box {
-                    IconButton(onClick = { menuOpen = true }, enabled = !anyBusy) {
+                    IconButton(
+                        onClick = { menuOpen = true },
+                        enabled = !anyBusy,
+                        modifier = Modifier.semantics { contentDescription = moreActionsLabel },
+                    ) {
                         ActionGlyph(
                             busy = favoriteBusy || trashBusy,
                             icon = Icons.Outlined.MoreVert,

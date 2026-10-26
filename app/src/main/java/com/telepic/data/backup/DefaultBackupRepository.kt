@@ -114,6 +114,14 @@ class DefaultBackupRepository(
         Unit
     }
 
+    override suspend fun resetForAccountSwitch() = withContext(dispatcher) {
+        // Wait for a running pass to finish before rewriting its rows. The remote identity being
+        // cleared belongs to a different account; without the mutex, a late markBackedUp could
+        // resurrect it for the new session.
+        processMutex.withLock { dao.resetForAccountSwitch(clock()) }
+        Unit
+    }
+
     override suspend fun processPendingWork(maxItems: Int): BackupProcessSummary =
         withContext(dispatcher) {
             processMutex.withLock {
@@ -290,7 +298,21 @@ class DefaultBackupRepository(
             )
             return ProcessOutcome.Superseded
         }
-        val staged = stager?.stage(item.localMediaId, item.contentUri)
+        val staged = try {
+            stager?.stage(item.localMediaId, item.contentUri, item.sizeBytes)
+        } catch (cancellation: kotlinx.coroutines.CancellationException) {
+            throw cancellation
+        } catch (storage: BackupStagingException) {
+            // Storage/provider state, not a vanished source. Retry instead of claiming the user's
+            // media was deleted.
+            TelepicLog.warn("BackupRepository", "staging failed transiently for row ${item.id}", storage)
+            dao.recordTransientFailure(item.id, safeError(storage), clock())
+            return ProcessOutcome.Waiting
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("BackupRepository", "staging failed unexpectedly for row ${item.id}", throwable)
+            dao.recordTransientFailure(item.id, safeError(throwable), clock())
+            return ProcessOutcome.Waiting
+        }
         if (stager != null && staged == null) {
             dao.markFailed(item.id, "Local media is no longer available.", clock())
             return ProcessOutcome.PermanentFailure

@@ -54,7 +54,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import com.telepic.domain.media.DurationLabel
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -335,6 +337,9 @@ fun VideoViewer(
         interactionToken++
     }
 
+    val previousActionLabel = stringResource(R.string.viewer_previous)
+    val nextActionLabel = stringResource(R.string.viewer_next)
+
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
@@ -349,6 +354,22 @@ fun VideoViewer(
             // on a touch and consume their own drags.
             modifier = Modifier
                 .fillMaxSize()
+                .semantics {
+                    customActions = listOfNotNull(
+                        state.previous?.let { target ->
+                            CustomAccessibilityAction(previousActionLabel) {
+                                onNavigate(target)
+                                true
+                            }
+                        },
+                        state.next?.let { target ->
+                            CustomAccessibilityAction(nextActionLabel) {
+                                onNavigate(target)
+                                true
+                            }
+                        },
+                    )
+                }
                 .videoPlayerGestures(
                     key = state.source,
                     previous = state.previous,

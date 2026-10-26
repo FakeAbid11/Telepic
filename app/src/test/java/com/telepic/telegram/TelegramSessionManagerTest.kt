@@ -25,6 +25,9 @@ import org.robolectric.annotation.Config
  * `initialize()` again, and because TDLib does not re-announce `WaitTdlibParameters` after a rejected
  * `SetTdlibParameters`, the retry must re-drive the parameters itself (previously it was a no-op).
  */
+/** The session runs on real dispatchers, so allow generous headroom on a loaded CI runner. */
+private const val AWAIT_TIMEOUT_MS = 10_000L
+
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class TelegramSessionManagerTest {
@@ -141,7 +144,7 @@ class TelegramSessionManagerTest {
         val manager = manager(gateway)
         manager.initialize()
 
-        withTimeout(3_000) {
+        withTimeout(AWAIT_TIMEOUT_MS) {
             while (gateway.requests.none { it is TdApi.SetTdlibParameters }) delay(20)
         }
         assertTrue(gateway.requests.any { it is TdApi.SetTdlibParameters })
@@ -162,7 +165,7 @@ class TelegramSessionManagerTest {
         m.initialize()
         m.initialize()
 
-        withTimeout(3_000) { while (gateway.requests.none { it is TdApi.SetTdlibParameters }) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.requests.none { it is TdApi.SetTdlibParameters }) delay(20) }
         assertEquals(1, gateway.openCount)
         m.close()
     }
@@ -174,7 +177,7 @@ class TelegramSessionManagerTest {
         m.initialize()
 
         // The failure surfaces as Failed, and the parameters were attempted at least once.
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
         assertTrue(m.state.value is TelegramAuthState.Failed)
         val attemptsBeforeRetry = gateway.setParametersSent()
         assertTrue(attemptsBeforeRetry >= 1)
@@ -185,14 +188,14 @@ class TelegramSessionManagerTest {
         // Retry — exactly what the onboarding "Try again" button triggers. It must re-drive, not no-op,
         // since TDLib won't re-emit the parameters wait on its own.
         m.initialize()
-        withTimeout(3_000) { while (gateway.setParametersSent() <= attemptsBeforeRetry) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() <= attemptsBeforeRetry) delay(20) }
         assertTrue(
             "retry should re-send SetTdlibParameters",
             gateway.setParametersSent() > attemptsBeforeRetry,
         )
 
         // Once the resend succeeds, the flow is no longer Failed.
-        withTimeout(3_000) { while (m.state.value is TelegramAuthState.Failed) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value is TelegramAuthState.Failed) delay(20) }
         assertTrue(m.state.value !is TelegramAuthState.Failed)
         m.close()
     }
@@ -207,7 +210,7 @@ class TelegramSessionManagerTest {
         val m = manager(gateway, FakeKeyProvider(fail = true))
         m.initialize()
 
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
         val state = m.state.value
         assertTrue(state is TelegramAuthState.Failed)
         assertTrue(
@@ -228,13 +231,13 @@ class TelegramSessionManagerTest {
         val m = manager(gateway, keyProvider)
         m.initialize()
 
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
         assertEquals(0, gateway.setParametersSent())
 
         // The keystore recovers: the retry (onboarding "Try again") must be able to send again.
         keyProvider.fail = false
         m.initialize()
-        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() < 1) delay(20) }
         assertTrue("retry should send SetTdlibParameters once the key is available", gateway.setParametersSent() >= 1)
         m.close()
     }
@@ -249,7 +252,7 @@ class TelegramSessionManagerTest {
         val m = manager(gateway)
         m.initialize()
 
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.Failed) delay(20) }
         val state = m.state.value
         assertTrue(state is TelegramAuthState.Failed)
         assertTrue(
@@ -282,7 +285,7 @@ class TelegramSessionManagerTest {
         val m = manager(gateway)
         m.submitCode("00000")
 
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForCode) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.WaitingForCode) delay(20) }
         val state = m.state.value as TelegramAuthState.WaitingForCode
         // Recoverable: still the code-waiting state (input stays visible) carrying an inline reason.
         assertNotNull(state.error)
@@ -297,7 +300,7 @@ class TelegramSessionManagerTest {
         val m = manager(gateway)
         m.submitEmailAddress("not-an-address")
 
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForEmailAddress) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.WaitingForEmailAddress) delay(20) }
         val state = m.state.value as TelegramAuthState.WaitingForEmailAddress
         // Still the email-waiting state, with an inline reason — the input never disappears.
         assertNotNull(state.error)
@@ -325,17 +328,17 @@ class TelegramSessionManagerTest {
         // state pushed before that exchange finishes is dropped rather than replayed. Wait for the
         // parameters request to be issued first — sendParameters() publishes nothing on success, so
         // once it has been sent nothing else will overwrite what we push next.
-        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() < 1) delay(20) }
         // Drive TDLib into the email-code wait, as it would after accepting an address.
         gateway.emit(
             TdApi.AuthorizationStateWaitEmailCode().apply {
                 codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("a***@gmail.com", 5)
             },
         )
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForEmailCode) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.WaitingForEmailCode) delay(20) }
 
         m.submitEmailCode("00000")
-        withTimeout(3_000) {
+        withTimeout(AWAIT_TIMEOUT_MS) {
             while ((m.state.value as? TelegramAuthState.WaitingForEmailCode)?.error == null) delay(20)
         }
         val state = m.state.value as TelegramAuthState.WaitingForEmailCode
@@ -354,16 +357,16 @@ class TelegramSessionManagerTest {
         // state pushed before that exchange finishes is dropped rather than replayed. Wait for the
         // parameters request to be issued first — sendParameters() publishes nothing on success, so
         // once it has been sent nothing else will overwrite what we push next.
-        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() < 1) delay(20) }
         gateway.emit(
             TdApi.AuthorizationStateWaitEmailCode().apply {
                 codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("old***@gmail.com", 4)
             },
         )
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForEmailCode) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.WaitingForEmailCode) delay(20) }
 
         m.resendEmailCode()
-        withTimeout(3_000) {
+        withTimeout(AWAIT_TIMEOUT_MS) {
             while ((m.state.value as? TelegramAuthState.WaitingForEmailCode)?.emailPattern != "a***@gmail.com") delay(20)
         }
         val state = m.state.value as TelegramAuthState.WaitingForEmailCode
@@ -384,17 +387,17 @@ class TelegramSessionManagerTest {
         m.initialize()
         // See the note above: wait for the parameters request before pushing state, or replay = 1 with
         // DROP_OLDEST discards it when open()'s own parameters wait lands on the same flow.
-        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() < 1) delay(20) }
         gateway.emit(
             TdApi.AuthorizationStateWaitEmailCode().apply {
                 codeInfo = TdApi.EmailAddressAuthenticationCodeInfo("a***@gmail.com", 5)
             },
         )
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.WaitingForEmailCode) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.WaitingForEmailCode) delay(20) }
 
         // TDLib accepts the code and leaves the wait.
         gateway.emit(TdApi.AuthorizationStateReady())
-        withTimeout(3_000) { while (m.state.value is TelegramAuthState.WaitingForEmailCode) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value is TelegramAuthState.WaitingForEmailCode) delay(20) }
 
         m.submitEmailCode("00000")
         delay(200)
@@ -418,16 +421,16 @@ class TelegramSessionManagerTest {
         val gateway = FakeGateway()
         val m = manager(gateway)
         m.initialize()
-        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() < 1) delay(20) }
         assertEquals(1, gateway.openCount)
 
         gateway.emit(TdApi.AuthorizationStateClosed())
-        withTimeout(3_000) { while (gateway.resetCount < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.resetCount < 1) delay(20) }
         assertEquals("the closed session must reset the gateway", 1, gateway.resetCount)
 
         // Signing in again opens a *fresh* client.
         m.initialize()
-        withTimeout(3_000) { while (gateway.openCount < 2) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.openCount < 2) delay(20) }
         assertEquals(2, gateway.openCount)
         m.close()
     }
@@ -440,22 +443,22 @@ class TelegramSessionManagerTest {
         val gateway = FakeGateway().apply { me = TdApi.User().apply { id = 42L; firstName = "Ada" } }
         val m = manager(gateway)
         m.initialize()
-        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() < 1) delay(20) }
         gateway.emit(TdApi.AuthorizationStateReady())
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
         assertEquals(42L, (m.state.value as TelegramAuthState.Authorized).user.id)
 
         gateway.emit(TdApi.AuthorizationStateClosed())
-        withTimeout(3_000) { while (gateway.resetCount < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.resetCount < 1) delay(20) }
 
         // The user taps "Connect" again: a fresh client, a fresh collector.
         m.initialize()
-        withTimeout(3_000) { while (gateway.openCount < 2) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.openCount < 2) delay(20) }
 
         // A *different* account signs in. The manager must fetch it rather than report the old one.
         gateway.me = TdApi.User().apply { id = 7L; firstName = "Grace" }
         gateway.emit(TdApi.AuthorizationStateReady())
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
         assertEquals(
             "the session must report the account that signed in, not the one that signed out",
             7L,
@@ -476,9 +479,9 @@ class TelegramSessionManagerTest {
         }
         val m = manager(gateway)
         m.initialize()
-        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() < 1) delay(20) }
         gateway.emit(TdApi.AuthorizationStateReady())
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
 
         m.submitCode("00000")
         delay(300)
@@ -498,9 +501,9 @@ class TelegramSessionManagerTest {
         }
         val m = manager(gateway)
         m.initialize()
-        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() < 1) delay(20) }
         gateway.emit(TdApi.AuthorizationStateReady())
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
 
         // The number request is rejected.
         m.submitPhoneNumber("+10000000000")
@@ -522,9 +525,9 @@ class TelegramSessionManagerTest {
         m.initialize()
         // Wait for the parameters request before pushing state: replay = 1 with DROP_OLDEST discards
         // an update that lands while open()'s own parameters wait is on the same flow.
-        withTimeout(3_000) { while (gateway.setParametersSent() < 1) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (gateway.setParametersSent() < 1) delay(20) }
         gateway.emit(TdApi.AuthorizationStateReady())
-        withTimeout(3_000) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
+        withTimeout(AWAIT_TIMEOUT_MS) { while (m.state.value !is TelegramAuthState.Authorized) delay(20) }
         val user = (m.state.value as TelegramAuthState.Authorized).user
         m.close()
         return user

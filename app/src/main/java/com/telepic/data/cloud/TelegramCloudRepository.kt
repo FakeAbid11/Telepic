@@ -11,6 +11,7 @@ import com.telepic.domain.cloud.ChatCandidate
 import com.telepic.domain.cloud.ChatValidator
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
+import com.telepic.domain.cloud.CloudMediaWindow
 import com.telepic.domain.cloud.CloudPreview
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.cloud.CloudUploadProgress
@@ -272,7 +273,35 @@ class TelegramCloudRepository(
     private suspend fun ensureDestinationLocked(): TelepicCloudDestination? {
         return networkMutex.withLock {
             val existing = dbMutex.withLock { currentDestination() }
-            if (existing != null) return@withLock existing
+            if (existing != null) {
+                val accountId = currentAccountId()
+                when {
+                    accountId == null || existing.accountId == accountId -> return@withLock existing
+                    // Legacy rows have no owner; adopt the first authenticated account rather than
+                    // destroying a working destination on upgrade.
+                    existing.accountId == null -> {
+                        dbMutex.withLock {
+                            destinationDao.find(PROVIDER)?.let { row ->
+                                destinationDao.upsert(
+                                    row.copy(accountId = accountId, updatedAt = clock()),
+                                )
+                            }
+                        }
+                        return@withLock existing.copy(accountId = accountId)
+                    }
+                    // A destination from another account must never be reused. Clear the cloud
+                    // state and fall through to discovery for the current account.
+                    else -> {
+                        dbMutex.withLock {
+                            destinationDao.delete(PROVIDER)
+                            manifestDao.clearAll()
+                            _pendingConfirmation.value = null
+                            _destinationTitle.value = null
+                            _status.value = CloudStatus.Initializing
+                        }
+                    }
+                }
+            }
 
             try {
                 val candidates = dataSource.searchDestinationCandidates()
@@ -304,6 +333,31 @@ class TelegramCloudRepository(
             } catch (throwable: Throwable) {
                 _status.value = CloudStatus.Failed(safeMessage(throwable))
                 null
+            }
+        }
+    }
+
+    override suspend fun reconcileAccount(accountId: Long): Boolean = withContext(dispatcher) {
+        dbMutex.withLock {
+            val existing = destinationDao.find(PROVIDER) ?: return@withLock false
+            when {
+                existing.accountId == accountId -> false
+                existing.accountId == null -> {
+                    // Upgrade path: no owner was recorded, so the first authenticated account adopts
+                    // the existing destination. This is the only case where silence is safe.
+                    destinationDao.upsert(
+                        existing.copy(accountId = accountId, updatedAt = clock()),
+                    )
+                    false
+                }
+                else -> {
+                    destinationDao.delete(PROVIDER)
+                    manifestDao.clearAll()
+                    _pendingConfirmation.value = null
+                    _destinationTitle.value = null
+                    _status.value = CloudStatus.Initializing
+                    true
+                }
             }
         }
     }
@@ -365,6 +419,17 @@ class TelegramCloudRepository(
         }
         return persistDestination(created)
     }
+
+    override suspend fun mediaAround(chatId: Long, messageId: Long): CloudMediaWindow =
+        withContext(dispatcher) {
+            val item = manifestDao.get(chatId, messageId) ?: return@withContext CloudMediaWindow()
+            val date = item.dateEpochSec ?: 0L
+            CloudMediaWindow(
+                item = item.toDomain(),
+                previous = manifestDao.newerNeighbor(chatId, messageId, date)?.toDomain(),
+                next = manifestDao.olderNeighbor(chatId, messageId, date)?.toDomain(),
+            )
+        }
 
     override suspend fun getPreview(media: CloudMedia): CloudPreview? = withContext(dispatcher) {
         try {
@@ -558,6 +623,7 @@ class TelegramCloudRepository(
             isChannel = true,
             canPostMessages = true,
             isValidated = entity.validated,
+            accountId = entity.accountId,
         )
     }
 
@@ -580,6 +646,7 @@ class TelegramCloudRepository(
                 validated = true,
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
+                accountId = currentAccountId(),
             ),
         )
         _destinationTitle.value = candidate.title
@@ -589,8 +656,12 @@ class TelegramCloudRepository(
             isChannel = candidate.isChannel,
             canPostMessages = candidate.canPostMessages,
             isValidated = true,
+            accountId = currentAccountId(),
         )
     }
+
+    private fun currentAccountId(): Long? =
+        (authState.value as? TelegramAuthState.Authorized)?.user?.id
 
     private fun ChatCandidate.isValid(): Boolean =
         ChatValidator.validate(this) is DestinationVerdict.Valid

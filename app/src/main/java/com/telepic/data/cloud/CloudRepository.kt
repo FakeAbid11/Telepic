@@ -2,6 +2,7 @@ package com.telepic.data.cloud
 
 import com.telepic.domain.backup.RemoteMediaIdentity
 import com.telepic.domain.cloud.CloudMedia
+import com.telepic.domain.cloud.CloudMediaWindow
 import com.telepic.domain.cloud.CloudPreview
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.cloud.CloudUploadProgress
@@ -11,6 +12,7 @@ import com.telepic.domain.cloud.LocalDownloadedMedia
 import com.telepic.domain.cloud.TelepicCloudDestination
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 
 /**
  * The Cloud layer boundary consumed by the ViewModels and the backup engine. Tackles Telegram as a
@@ -33,6 +35,17 @@ interface CloudRepository {
 
     /** Resolve the Telepic Backup destination (reuse → discover → create), persisting it. */
     suspend fun ensureDestination(): TelepicCloudDestination?
+
+    /**
+     * Make the persisted cloud state belong to [accountId].
+     *
+     * Returns true when a destination from a different account was found and cleared. The caller
+     * must then reset account-scoped backup/restore state. A null legacy account id is adopted, not
+     * cleared, so an upgrade keeps its existing channel.
+     *
+     * Default false so test fakes that do not model accounts need no implementation.
+     */
+    suspend fun reconcileAccount(accountId: Long): Boolean = false
 
     /**
      * Recognition's manifest lookup, exposed for the upload path's pre-send backstop: the remote
@@ -59,6 +72,22 @@ interface CloudRepository {
      * which is what the discovery path does when nothing usable is found. Same no-op guard.
      */
     suspend fun createNewDestination(): TelepicCloudDestination?
+
+    /**
+     * The requested item and its immediate neighbours in the manifest order, without materialising
+     * the whole cloud library. The default keeps test fakes honest by deriving the same window from
+     * their [media] flow; the TDLib implementation answers with three indexed Room queries.
+     */
+    suspend fun mediaAround(chatId: Long, messageId: Long): CloudMediaWindow {
+        val all = media.first()
+        val index = all.indexOfFirst { it.chatId == chatId && it.messageId == messageId }
+        if (index < 0) return CloudMediaWindow()
+        return CloudMediaWindow(
+            item = all[index],
+            previous = all.getOrNull(index - 1),
+            next = all.getOrNull(index + 1),
+        )
+    }
 
     suspend fun getPreview(media: CloudMedia): CloudPreview?
 

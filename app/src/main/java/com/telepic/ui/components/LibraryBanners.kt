@@ -64,7 +64,10 @@ internal fun RefreshErrorBanner(onRetry: () -> Unit, modifier: Modifier = Modifi
  * and the header's count was read as the whole library.
  */
 @Composable
-internal fun PartialAccessBanner(modifier: Modifier = Modifier) {
+internal fun PartialAccessBanner(
+    modifier: Modifier = Modifier,
+    onManageAccess: (() -> Unit)? = null,
+) {
     val spacing = TelepicTokens.spacing
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -87,7 +90,13 @@ internal fun PartialAccessBanner(modifier: Modifier = Modifier) {
                 text = stringResource(R.string.photos_partial_access_banner),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
             )
+            if (onManageAccess != null) {
+                TextButton(onClick = onManageAccess) {
+                    Text(stringResource(R.string.photos_partial_access_action))
+                }
+            }
         }
     }
 }

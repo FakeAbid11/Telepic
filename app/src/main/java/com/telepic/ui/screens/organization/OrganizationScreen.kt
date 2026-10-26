@@ -112,7 +112,9 @@ fun OrganizationScreen(
     // A refused delete says "no" to the hand as well as on screen: the message bar is the only other
     // signal, and it appears exactly where the user is not looking.
     LaunchedEffect(message) {
-        if (message is OrgMessage.DeleteFailed) haptics.reject()
+        if (message is OrgMessage.DeleteFailed || message is OrgMessage.PartiallyDeleted) {
+            haptics.reject()
+        }
     }
 
     Surface(modifier = modifier.fillMaxSize(), color = TelepicTokens.colors.mediaBackdrop) {
@@ -281,6 +283,8 @@ private fun orgMessageText(message: OrgMessage, kind: OrganizationKind): String 
         pluralStringResource(R.plurals.trash_delete_failed_count, message.count)
     is OrgMessage.DeletedFromDevice ->
         pluralStringResource(R.plurals.organization_deleted_count, message.count, message.count)
+    is OrgMessage.PartiallyDeleted ->
+        stringResource(R.string.trash_delete_partial_result, message.deleted, message.failed)
     is OrgMessage.MembershipChanged -> when (kind) {
         OrganizationKind.FAVORITES ->
             pluralStringResource(R.plurals.organization_unfavorited_count, message.count, message.count)

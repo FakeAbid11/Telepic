@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -39,6 +40,8 @@ class BackupWorker(
      * falls back to `Result.retry()`, which is correct but slower.
      */
     private val scheduler: BackupWorkScheduler? = null,
+    /** Monotonic clock, injected so the run budget is testable. */
+    private val now: () -> Long = SystemClock::elapsedRealtime,
 ) : CoroutineWorker(appContext, params) {
 
     /**
@@ -160,6 +163,7 @@ class BackupWorker(
         // those retries.
         var total = BackupProcessSummary()
         var batches = 0
+        val startedAt = now()
         while (true) {
             val summary = repo.processPendingWork(maxItems = MAX_ITEMS_PER_RUN)
             total += summary
@@ -187,12 +191,13 @@ class BackupWorker(
             // This batch found nothing actionable: the drain is complete.
             if (summary.processed == 0) break
             batches++
-            if (batches >= MAX_BATCHES_PER_RUN) {
-                // The batch cap was reached with work still queued. The rest goes to a fresh run
-                // rather than inheriting this run's (now large) backoff.
+            if (batches >= MAX_BATCHES_PER_RUN || now() - startedAt >= MAX_RUN_MILLIS) {
+                // The batch or wall-clock cap was reached with work still queued. The rest goes to
+                // a fresh run rather than inheriting this run's (now large) backoff or running up
+                // against Android's dataSync foreground-service limit.
                 TelepicLog.warn(
                     "BackupWorker",
-                    "batch cap reached with work still queued; handing the remainder to a fresh run",
+                    "run budget reached (${batches} batches, ${now() - startedAt} ms); handing the remainder to a fresh run",
                 )
                 return continueInFreshRun()
             }
@@ -293,5 +298,12 @@ class BackupWorker(
          * finishes — without any of it waiting on an exponential backoff.
          */
         const val MAX_BATCHES_PER_RUN = 20
+
+        /**
+         * Wall-clock ceiling for one foreground run. Android 15+ caps dataSync foreground services
+         * at six hours per day; 30 minutes leaves ample room while preventing one run from owning a
+         * notification for hours. The queue continues in a fresh run.
+         */
+        const val MAX_RUN_MILLIS = 30L * 60L * 1000L
     }
 }

@@ -82,4 +82,27 @@ interface CustomAlbumDao {
 
     @Query("DELETE FROM custom_album_media WHERE albumId = :albumId")
     suspend fun clearMembers(albumId: Long)
+
+    /**
+     * Removes one deleted media id from every album that held it.
+     *
+     * A permanent MediaStore delete must not leave a membership row behind: the album count joins
+     * this table and would otherwise keep counting a file that no longer exists.
+     */
+    @Query("DELETE FROM custom_album_media WHERE localMediaId IN (:localMediaIds)")
+    suspend fun removeMembers(localMediaIds: List<Long>): Int
+
+    /** Clears a cover hint that names a deleted media item, and marks the album as changed. */
+    @Query(
+        "UPDATE custom_album SET coverMediaId = NULL, updatedAt = :now " +
+            "WHERE coverMediaId IN (:localMediaIds)",
+    )
+    suspend fun clearCovers(localMediaIds: List<Long>, now: Long): Int
+
+    /** Moves albums that lost a member to the front of the grid, matching any other content edit. */
+    @Query(
+        "UPDATE custom_album SET updatedAt = :now WHERE id IN (" +
+            "SELECT DISTINCT albumId FROM custom_album_media WHERE localMediaId IN (:localMediaIds))",
+    )
+    suspend fun touchAlbumsContaining(localMediaIds: List<Long>, now: Long): Int
 }

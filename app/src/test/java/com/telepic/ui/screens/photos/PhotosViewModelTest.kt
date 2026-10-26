@@ -131,14 +131,13 @@ class PhotosViewModelTest {
     @Test
     fun `exposes backup status keyed by the numeric media id`() = runTest {
         val statusRepository = object : BackupStatusRepository {
-            override val visualStates: Flow<Map<String, MediaBackupVisualState>> =
-                flowOf(mapOf("7" to MediaBackupVisualState.BACKED_UP, "not-a-number" to MediaBackupVisualState.QUEUED))
+            override val visualStates: Flow<Map<Long, MediaBackupVisualState>> =
+                flowOf(mapOf(7L to MediaBackupVisualState.BACKED_UP))
         }
         val viewModel = PhotosViewModel(FakeRepository(), FakeWatcher(), statusRepository)
         // WhileSubscribed state needs a subscriber to begin; collect in the test scope.
         val job = launch { viewModel.backupStates.collect { } }
         runCurrent()
-        // Non-numeric keys are dropped; the id stays the Long navigation identity.
         assertEquals(mapOf(7L to MediaBackupVisualState.BACKED_UP), viewModel.backupStates.value)
         job.cancel()
     }

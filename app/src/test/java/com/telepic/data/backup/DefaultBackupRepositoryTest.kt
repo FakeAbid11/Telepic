@@ -345,6 +345,35 @@ class DefaultBackupRepositoryTest {
     }
 
     @Test
+    fun `account switch requeues remote-backed rows and leaves cancelled rows alone`() = runBlocking {
+        val dao = db.backupQueueDao()
+        val r = repo(FakeCloud())
+        r.enqueue(media(1))
+        val backed = dao.observeAll().first().first()
+        val now = System.currentTimeMillis()
+        dao.markPreparing(backed.id, now)
+        dao.markUploading(backed.id, now)
+        dao.markBackedUp(backed.id, 100L, 500L, 7, now)
+
+        r.enqueue(media(2))
+        val cancelled = dao.observeAll().first().first { it.localMediaId == "2" }
+        dao.cancel(cancelled.id, now)
+
+        r.resetForAccountSwitch()
+
+        val rows = dao.observeAll().first()
+        val requeued = rows.first { it.localMediaId == "1" }
+        assertEquals(BackupState.QUEUED.name, requeued.state)
+        assertNull(requeued.telegramChatId)
+        assertNull(requeued.telegramMessageId)
+        assertNull(requeued.telegramFileId)
+        assertEquals(0, requeued.retryCount)
+
+        val stillCancelled = rows.first { it.localMediaId == "2" }
+        assertEquals(BackupState.CANCELLED.name, stillCancelled.state)
+    }
+
+    @Test
     fun `exhausting retries stops picking up an item`() = runBlocking {
         val cloud = FakeCloud(uploadError = CloudNetworkException())
         val r = repo(cloud)
@@ -395,11 +424,24 @@ class DefaultBackupRepositoryTest {
         private val height: Int? = null,
         private val durationMs: Long? = null,
     ) : BackupStager {
-        override suspend fun stage(localMediaId: String, contentUri: String): StagedFile {
+        override suspend fun stage(
+            localMediaId: String,
+            contentUri: String,
+            expectedBytes: Long?,
+        ): StagedFile {
             val file = java.io.File(stagingDir, "staging_$localMediaId.tmp")
             file.writeText("staged bytes")
             return StagedFile(file, width = width, height = height, durationMs = durationMs)
         }
+    }
+
+    /** A staging pass that fails for a storage reason; the queue must retry, not call it deleted. */
+    private class ThrowingStager(private val error: Throwable) : BackupStager {
+        override suspend fun stage(
+            localMediaId: String,
+            contentUri: String,
+            expectedBytes: Long?,
+        ): StagedFile? = throw error
     }
 
     /**
@@ -425,6 +467,29 @@ class DefaultBackupRepositoryTest {
         assertEquals(1080, request.width ?: -1)
         assertEquals(1920, request.height ?: -1)
         assertEquals(12_000L, request.durationMs ?: -1L)
+    }
+
+    /**
+     * A storage failure is not proof that the source vanished. It must park the row for a bounded
+     * retry instead of recording the misleading permanent "local media is no longer available".
+     */
+    @Test
+    fun `a storage staging failure waits for retry instead of permanently failing`() = runBlocking {
+        val dao = db.backupQueueDao()
+        val r = repo(
+            FakeCloud(),
+            stager = ThrowingStager(BackupStagingException("staging cache is full")),
+        )
+        r.enqueue(media(1))
+
+        val summary = r.processPendingWork(maxItems = 10)
+
+        assertEquals(0, summary.failed)
+        assertEquals(1, summary.waiting)
+        val row = dao.findByLocalId("1")!!
+        assertEquals(BackupState.WAITING_FOR_NETWORK.name, row.state)
+        assertEquals(1, row.retryCount)
+        assertNull(row.telegramChatId)
     }
 
     /**
@@ -561,7 +626,7 @@ class DefaultBackupRepositoryTest {
             val cloud = FakeCloud()
             lateinit var r: DefaultBackupRepository
             val stager = object : BackupStager {
-                override suspend fun stage(localMediaId: String, contentUri: String): StagedFile {
+                override suspend fun stage(localMediaId: String, contentUri: String, expectedBytes: Long?): StagedFile {
                     // The cancel lands while the file is being staged — after the row was claimed
                     // for preparation but before the upload begins.
                     r.cancel(db.backupQueueDao().observeAll().first().single().id)

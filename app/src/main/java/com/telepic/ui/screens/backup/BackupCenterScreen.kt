@@ -52,6 +52,7 @@ fun BackupCenterScreen(
     viewModel: BackupViewModel,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    onConnectTelegram: (() -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
@@ -101,7 +102,10 @@ fun BackupCenterScreen(
                         icon = Icons.Outlined.CloudUpload,
                         title = stringResource(R.string.backup_center_empty_title),
                         description = stringResource(R.string.backup_center_empty_body),
-                        primaryAction = StateActionStartBackup(viewModel::startBackup, enabled = !state.isRunning),
+                        primaryAction = StateActionStartBackup(
+                            viewModel::startBackup,
+                            enabled = state.isAuthorized && !state.isRunning,
+                        ),
                     )
                     return@Column
                 }
@@ -112,14 +116,22 @@ fun BackupCenterScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = spacing.screenMargin),
                 )
+                if (!state.isAuthorized && state.hasWaitingForAuth && onConnectTelegram != null) {
+                    TextButton(
+                        onClick = onConnectTelegram,
+                        modifier = Modifier.padding(horizontal = spacing.md),
+                    ) {
+                        Text(stringResource(R.string.cloud_connect_action))
+                    }
+                }
 
                 StatsRow(stats = state.stats, modifier = Modifier.padding(horizontal = spacing.screenMargin, vertical = spacing.md))
 
                 Button(
                     onClick = viewModel::startBackup,
-                    // Honest gating: while TDLib is uploading (stats.uploading > 0), a second start
-                    // would just queue against a live run — the disabled state says so.
-                    enabled = !state.isRunning,
+                    // Honest gating: an upload run needs a live session, and while TDLib is uploading
+                    // a second start would just queue against a live run.
+                    enabled = state.isAuthorized && !state.isRunning,
                     modifier = Modifier
                         .padding(horizontal = spacing.screenMargin)
                         .fillMaxWidth(),

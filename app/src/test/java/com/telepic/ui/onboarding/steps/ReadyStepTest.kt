@@ -55,7 +55,7 @@ class ReadyStepTest {
     @Test
     fun `backing up everything summarizes as all photos`() {
         render(backupPreference = BackupPreference.BACKUP_ALL)
-        composeRule.onNodeWithText("All photos").assertIsDisplayed()
+        composeRule.onNodeWithText("All photos & videos").assertIsDisplayed()
     }
 
     @Test

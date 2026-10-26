@@ -44,6 +44,7 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
 
     override fun onCreate() {
         super.onCreate()
+        TelepicLog.initialize(this)
         installCrashLogger()
         // Configure osmdroid once, before any map exists, so its User-Agent and tile cache are the
         // app's and not the library defaults.
@@ -73,7 +74,22 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
         appScope.launch {
             container.telegramAuthController.state
                 .filter { it is TelegramAuthState.Authorized }
-                .collect {
+                .collect { state ->
+                    val accountId = (state as TelegramAuthState.Authorized).user.id
+                    // Scope persisted cloud/queue/restore state before handing work to the queue.
+                    // If this fails, uploading would target a destination that belongs to a
+                    // different account, so the queue is left parked until the next authorized
+                    // emission rather than risking a wrong-account upload.
+                    val reconciled = runCatching { container.reconcileTelegramAccount(accountId) }
+                        .onFailure {
+                            TelepicLog.error(
+                                "TelegramAccount",
+                                "could not scope persisted state to the signed-in account",
+                                it,
+                            )
+                        }
+                        .isSuccess
+                    if (!reconciled) return@collect
                     runCatching { container.backupCoordinator.startPendingBackup() }
                         .onFailure { TelepicLog.error("BackupScheduler", "could not resume the queue after sign-in", it) }
                 }

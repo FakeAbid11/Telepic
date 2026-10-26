@@ -21,9 +21,15 @@ val telegramApiHash = System.getenv("TELEGRAM_API_HASH").orEmpty()
 // but an unexpected character must not break (or inject into) the generated BuildConfig.
 val telegramApiHashLiteral = telegramApiHash.replace("\\", "\\\\").replace("\"", "\\\"")
 
-// Release builds must never ship with placeholder credentials: a secret-less release would install
-// fine but leave login permanently dead. Fail the moment a release/bundle task is actually requested
-// (debug builds and CI test runs stay green on the placeholder).
+// Release signing comes from CI secrets (base64 keystore). A signed release is the default; the
+// explicitly named unsigned smoke path exists only to keep R8/resource shrinking exercised in CI.
+val releaseKeystoreB64 = System.getenv("RELEASE_KEYSTORE_BASE64").orEmpty()
+val allowUnsignedRelease =
+    providers.gradleProperty("telepic.allowUnsignedRelease").orNull == "true"
+
+// Release builds must never ship with placeholder credentials, and a distributable release must be
+// signed. Fail the moment a release/bundle task is actually requested (debug/test/lint runs stay
+// green). The unsigned smoke task opts in explicitly; it is not a distributable artifact.
 gradle.taskGraph.whenReady {
     // Match the "release"/"debug" variant suffix case-insensitively (assembleRelease, bundleRelease,
     // lintRelease, minifyReleaseWithR8…), while still excluding "bundleDebugClassesToCompileJar" and
@@ -32,17 +38,23 @@ gradle.taskGraph.whenReady {
     val releaseRequested = allTasks.any {
         it.name.contains("release", ignoreCase = true) && !it.name.contains("debug", ignoreCase = true)
     }
-    if (releaseRequested) {
+    if (releaseRequested && !allowUnsignedRelease) {
         require(telegramApiId != 0 && telegramApiHash.isNotBlank()) {
             "TELEGRAM_API_ID and TELEGRAM_API_HASH must be provided for release builds"
         }
     }
+    // Only packaging consumes the signing config. lint/test release variants do not need a key.
+    val releasePackagingRequested = allTasks.any {
+        it.name == "assembleRelease" || it.name == "bundleRelease"
+    }
+    if (releasePackagingRequested && !allowUnsignedRelease) {
+        require(releaseKeystoreB64.isNotBlank()) {
+            "A release build must be signed. Provide RELEASE_KEYSTORE_BASE64, " +
+                "RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS and RELEASE_KEY_PASSWORD, or run " +
+                "the explicitly unsigned smoke build with -Ptelepic.allowUnsignedRelease=true."
+        }
+    }
 }
-
-// Release signing comes from CI secrets (base64 keystore). Without them the release AAB is still
-// produced but unsigned (Play App Signing can accept it later); the Telegram-credential gate above
-// applies to every release task regardless of signing.
-val releaseKeystoreB64 = System.getenv("RELEASE_KEYSTORE_BASE64").orEmpty()
 
 android {
     namespace = "com.telepic"
@@ -56,8 +68,9 @@ android {
         // 2026-08-31); edge-to-edge is enforced there and handled via enableEdgeToEdge +
         // inset-aware scaffolds.
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // Release CI can supply an explicit version; local/debug builds keep the milestone default.
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "0.1.0"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -73,15 +86,28 @@ android {
 
     signingConfigs {
         if (releaseKeystoreB64.isNotBlank()) {
+            val storePasswordValue = System.getenv("RELEASE_KEYSTORE_PASSWORD").orEmpty()
+            val keyAliasValue = System.getenv("RELEASE_KEY_ALIAS").orEmpty()
+            val keyPasswordValue = System.getenv("RELEASE_KEY_PASSWORD").orEmpty()
+            // A half-configured signing config used to produce an empty password/alias and an
+            // opaque signing failure. Fail at configuration time with the missing names instead.
+            val missing = listOf(
+                "RELEASE_KEYSTORE_PASSWORD" to storePasswordValue,
+                "RELEASE_KEY_ALIAS" to keyAliasValue,
+                "RELEASE_KEY_PASSWORD" to keyPasswordValue,
+            ).filter { it.second.isBlank() }.map { it.first }
+            require(missing.isEmpty()) {
+                "Release signing is incomplete; missing: ${missing.joinToString()}"
+            }
             // CI decodes the base64 secret into build/release.keystore (gitignored).
             val keystoreFile = File(layout.buildDirectory.get().asFile, "release.keystore")
             keystoreFile.parentFile.mkdirs()
             keystoreFile.writeBytes(Base64.getDecoder().decode(releaseKeystoreB64))
             create("release") {
                 storeFile = keystoreFile
-                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD").orEmpty()
-                keyAlias = System.getenv("RELEASE_KEY_ALIAS").orEmpty()
-                keyPassword = System.getenv("RELEASE_KEY_PASSWORD").orEmpty()
+                storePassword = storePasswordValue
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
             }
         }
     }

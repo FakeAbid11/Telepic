@@ -142,6 +142,7 @@ fun AlbumsScreen(
                             horizontal = TelepicTokens.spacing.screenMargin,
                             vertical = TelepicTokens.spacing.sm,
                         ),
+                        onManageAccess = controller.openAppSettings,
                     )
                 }
                 val currentStatus = status

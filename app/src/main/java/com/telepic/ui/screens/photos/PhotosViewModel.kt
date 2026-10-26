@@ -34,7 +34,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -98,11 +97,6 @@ class PhotosViewModel(
      */
     val backupStates: StateFlow<Map<Long, MediaBackupVisualState>> =
         (backupStatusRepository?.visualStates ?: flowOf(emptyMap()))
-            .map { rows ->
-                buildMap(rows.size) {
-                    rows.forEach { (id, state) -> id.toLongOrNull()?.let { put(it, state) } }
-                }
-            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Favorited ids for the tile badge — one batched snapshot, no per-tile query. */

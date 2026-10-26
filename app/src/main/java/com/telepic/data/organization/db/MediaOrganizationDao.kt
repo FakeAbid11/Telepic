@@ -42,6 +42,10 @@ interface MediaOrganizationDao {
     @Query("DELETE FROM media_organization WHERE localMediaId = :localMediaId")
     suspend fun delete(localMediaId: String)
 
+    /** Removes all organization state for a confirmed permanent deletion, in one statement. */
+    @Query("DELETE FROM media_organization WHERE localMediaId IN (:localMediaIds)")
+    suspend fun deleteAll(localMediaIds: List<String>)
+
     /** Drops favorite rows whose media no longer exists, keeping state tidy without a full scan. */
     @Query("SELECT localMediaId FROM media_organization")
     suspend fun allIds(): List<String>

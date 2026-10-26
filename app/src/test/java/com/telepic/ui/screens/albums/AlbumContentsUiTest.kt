@@ -82,7 +82,7 @@ class AlbumContentsUiTest {
     }
 
     private class EmptyStatusRepository : BackupStatusRepository {
-        override val visualStates: Flow<Map<String, MediaBackupVisualState>> = flowOf(emptyMap())
+        override val visualStates: Flow<Map<Long, MediaBackupVisualState>> = flowOf(emptyMap())
     }
 
     private class FakeCustomAlbums : CustomAlbumRepository {

@@ -118,11 +118,17 @@ fun OnboardingScreen(
                 secondaryLabel = continueLabel
                 onSecondaryAction = goToNext
             }
-            MediaPermissionState.Granted,
-            MediaPermissionState.Partial,
-            -> {
+            MediaPermissionState.Granted -> {
                 primaryLabel = continueLabel
                 onPrimaryAction = goToNext
+            }
+            MediaPermissionState.Partial -> {
+                primaryLabel = continueLabel
+                onPrimaryAction = goToNext
+                // Partial access is a real state, not a dead end: reopen the system picker so the
+                // user can add media without hunting for Android Settings.
+                secondaryLabel = stringResource(R.string.onboarding_permissions_choose_photos)
+                onSecondaryAction = permission.requestPermission
             }
         }
         3 -> {

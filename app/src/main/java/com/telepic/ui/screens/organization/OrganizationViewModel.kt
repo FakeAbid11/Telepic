@@ -7,6 +7,7 @@ import com.telepic.data.media.LocalMediaLookup
 import com.telepic.data.organization.DeleteRequest
 import com.telepic.data.organization.LocalMediaDeleter
 import com.telepic.data.organization.MediaOrganizationRepository
+import com.telepic.data.organization.PermanentMediaCleanup
 import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.LocalMedia
 import com.telepic.navigation.OrganizationKind
@@ -51,6 +52,9 @@ sealed interface OrgMessage {
 
     /** [count] items were permanently deleted from the device. */
     data class DeletedFromDevice(val count: Int) : OrgMessage
+
+    /** Some items were deleted and others remain; neither half may be reported as a full success. */
+    data class PartiallyDeleted(val deleted: Int, val failed: Int) : OrgMessage
 }
 
 /**
@@ -71,7 +75,26 @@ class OrganizationViewModel(
     private val organizationRepository: MediaOrganizationRepository,
     private val localLookup: LocalMediaLookup,
     private val deleter: LocalMediaDeleter,
+    private val cleanup: PermanentMediaCleanup,
 ) : ViewModel() {
+
+    /**
+     * Test/legacy constructor. It preserves the old organization-row-only cleanup for callers that
+     * do not have the app database; production must pass [RoomPermanentMediaCleanup] so album
+     * membership and location rows are removed too.
+     */
+    constructor(
+        kind: OrganizationKind,
+        organizationRepository: MediaOrganizationRepository,
+        localLookup: LocalMediaLookup,
+        deleter: LocalMediaDeleter,
+    ) : this(
+        kind = kind,
+        organizationRepository = organizationRepository,
+        localLookup = localLookup,
+        deleter = deleter,
+        cleanup = OrganizationOnlyCleanup(organizationRepository),
+    )
 
     private val _message = MutableStateFlow<OrgMessage?>(null)
     val message: StateFlow<OrgMessage?> = _message.asStateFlow()
@@ -215,14 +238,21 @@ class OrganizationViewModel(
     }
 
     /**
-     * The ids a consent prompt currently covers.
-     *
-     * Held here rather than saved in the screen because the ViewModel outlives Activity recreation,
-     * and because the result is a single yes/no for the whole batch — the screen has nothing to match
-     * it back up to. If the process is killed while the system dialog is up this is empty when the
-     * result arrives, and nothing is forgotten: an unverifiable delete is never claimed.
+     * The system prompt currently outstanding, with the exact items it covers and the items that
+     * still need a later round. Held here rather than saved in the screen because the ViewModel
+     * outlives Activity recreation; it is cleared before acting so one result cannot delete twice.
      */
-    private var pendingConsentIds: List<Long> = emptyList()
+    private var pendingConsent: PendingConsent? = null
+
+    private data class PendingConsent(
+        val media: List<LocalMedia>,
+        val remaining: List<LocalMedia>,
+        val launcher: (IntentSender) -> Unit,
+    )
+
+    /** Counts across all consent rounds, so the final report describes the whole operation. */
+    private val deletedThisOperation = LinkedHashSet<Long>()
+    private val failedThisOperation = LinkedHashSet<Long>()
 
     /**
      * Request a permanent delete for the whole selection in [viewModelScope]: the delete work must
@@ -235,78 +265,135 @@ class OrganizationViewModel(
         if (selection.isEmpty()) return
         if (_isDeleting.value) return
         _isDeleting.value = true
+        pendingConsent = null
+        deletedThisOperation.clear()
+        failedThisOperation.clear()
         viewModelScope.launch {
             // The deleter talks to MediaStore's delete-request API, which can throw for a provider
             // reason no branch here models. Without this boundary the exception escaped
             // viewModelScope (an uncaught main-thread crash) *and* left `_isDeleting` true forever, so
             // the delete bar spun with no way out. A failed request is reported and the bar is freed.
-            val outcome = try {
-                deleter.requestDeleteAll(selection)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (throwable: Throwable) {
-                TelepicLog.warn("OrganizationViewModel", "permanent-delete request failed", throwable)
-                _isDeleting.value = false
-                reportDeleteFailed(selection.size)
-                return@launch
+            runDeleteRound(selection, onNeedsConsent)
+        }
+    }
+
+    /**
+     * One delete attempt. API 30 usually resolves in one call; API 29 can return an exact split of
+     * deleted/failed/consent-required/remaining, and this method continues with the remainder.
+     */
+    private suspend fun runDeleteRound(media: List<LocalMedia>, launcher: (IntentSender) -> Unit) {
+        if (media.isEmpty()) {
+            finishDeletion()
+            return
+        }
+        val outcome = try {
+            deleter.requestDeleteAll(media)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("OrganizationViewModel", "permanent-delete request failed", throwable)
+            failedThisOperation += media.map { it.id }
+            finishDeletion()
+            return
+        }
+        when (outcome) {
+            is DeleteRequest.NeedsConsent -> {
+                confirmedDeleted(outcome.deletedIds)
+                failedThisOperation += outcome.failedIds
+                val consent = outcome.consentMedia.ifEmpty { media }
+                pendingConsent = PendingConsent(consent, outcome.remainingMedia, launcher)
+                launcher(outcome.intentSender)
             }
-            when (outcome) {
-                is DeleteRequest.NeedsConsent -> {
-                    pendingConsentIds = selection.map { it.id }
-                    onNeedsConsent(outcome.intentSender)
-                }
-                DeleteRequest.Deleted -> {
-                    onDeleteConfirmed(selection.map { it.id })
-                    clearSelection()
-                    publishMessage(OrgMessage.DeletedFromDevice(selection.size))
-                    _isDeleting.value = false
-                }
-                DeleteRequest.Failed -> {
-                    reportDeleteFailed(selection.size)
-                    _isDeleting.value = false
-                }
+            is DeleteRequest.PartiallyDeleted -> {
+                confirmedDeleted(outcome.deletedIds)
+                failedThisOperation += outcome.failedIds
+                finishDeletion()
+            }
+            DeleteRequest.Deleted -> {
+                confirmedDeleted(media.map { it.id })
+                finishDeletion()
+            }
+            DeleteRequest.Failed -> {
+                failedThisOperation += media.map { it.id }
+                finishDeletion()
             }
         }
     }
 
     /**
-     * Resolve the consent contract: clears the busy state and, only on a consented success, forgets
-     * the items the prompt covered. Returns whether the delete succeeded so the screen can react.
+     * Forget exactly the ids the platform confirmed. The cleanup is one transaction over every
+     * table that keys on a MediaStore id; a cleanup failure is logged because the file is already
+     * gone and must not turn a real deletion into a claimed failure.
      */
-    fun finishConsent(success: Boolean): Boolean {
-        val ids = pendingConsentIds
-        pendingConsentIds = emptyList()
-        _isDeleting.value = false
-        if (success && ids.isNotEmpty()) {
-            onDeleteConfirmed(ids)
-            clearSelection()
-            publishMessage(OrgMessage.DeletedFromDevice(ids.size))
-        }
-        return success
-    }
-
-    /** Called only after a consented delete reports success: forget the items entirely. */
-    fun onDeleteConfirmed(ids: Collection<Long>) = viewModelScope.launch {
-        // Deliberately does NOT call markDeletedFromStore first: `remove` deletes the whole
-        // organization row, so the flag would be written and destroyed in the same coroutine and
-        // could never be read. Forgetting the item is what this path means; the `deletedFromStore`
-        // column is left over from when the row survived, and is unused.
+    private suspend fun confirmedDeleted(ids: Collection<Long>) {
+        if (ids.isEmpty()) return
+        deletedThisOperation += ids
+        _selected.update { selected -> selected - ids.toSet() }
         try {
-            ids.forEach { organizationRepository.remove(it) }
+            cleanup.cleanup(ids)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (throwable: Throwable) {
-            // Bookkeeping only: the media is already gone from the device, so a failed row write must
-            // not crash the app. The id-set flow simply re-emits whatever is still there.
             TelepicLog.warn("OrganizationViewModel", "could not forget deleted items", throwable)
         }
     }
 
-    fun reportDeleteFailed(count: Int) {
-        publishMessage(OrgMessage.DeleteFailed(count))
+    /** Publish the totals for this operation and release the busy state. */
+    private fun finishDeletion() {
+        pendingConsent = null
+        _isDeleting.value = false
+        val deleted = deletedThisOperation.size
+        val failed = failedThisOperation.size
+        when {
+            deleted > 0 && failed > 0 -> publishMessage(OrgMessage.PartiallyDeleted(deleted, failed))
+            deleted > 0 -> publishMessage(OrgMessage.DeletedFromDevice(deleted))
+            failed > 0 -> publishMessage(OrgMessage.DeleteFailed(failed))
+        }
+        if (_selected.value.isEmpty()) clearSelection()
+    }
+
+    /**
+     * Resolve the consent contract. Only a positive result forgets the items the prompt covered;
+     * the unattempted remainder is then processed in a new round, which may ask for consent again.
+     * Returns the platform result so the screen can react, matching the previous contract.
+     */
+    fun finishConsent(success: Boolean): Boolean {
+        val pending = pendingConsent
+        pendingConsent = null
+        if (pending == null) {
+            _isDeleting.value = false
+            return success
+        }
+        if (!success) {
+            // Already-confirmed items were cleaned as they were deleted; the prompt's items and the
+            // unattempted remainder stay selected so the user can retry.
+            _isDeleting.value = false
+            return false
+        }
+        viewModelScope.launch {
+            confirmedDeleted(pending.media.map { it.id })
+            if (pending.remaining.isNotEmpty()) {
+                runDeleteRound(pending.remaining, pending.launcher)
+            } else {
+                finishDeletion()
+            }
+        }
+        return true
     }
 
     fun consumeMessage() {
         _message.value = null
+    }
+}
+
+/**
+ * Legacy/test cleanup: organization rows only. Production supplies [RoomPermanentMediaCleanup],
+ * which also removes album membership, cover hints and location rows.
+ */
+private class OrganizationOnlyCleanup(
+    private val repository: MediaOrganizationRepository,
+) : PermanentMediaCleanup {
+    override suspend fun cleanup(ids: Collection<Long>) {
+        ids.forEach { repository.remove(it) }
     }
 }

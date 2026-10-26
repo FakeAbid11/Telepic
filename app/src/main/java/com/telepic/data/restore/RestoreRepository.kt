@@ -3,6 +3,7 @@ package com.telepic.data.restore
 import com.telepic.data.backup.hash.ContentStreamSource
 import com.telepic.data.backup.hash.hashContent
 import com.telepic.data.cloud.CloudRepository
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.cloud.CloudMedia
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -96,7 +97,14 @@ class DefaultRestoreRepository(
             if (publisher.exists(recorded)) {
                 return RestoreResult.Restored(recorded, restoredContentHash = null)
             }
-            ledger.forget(identity)
+            try {
+                ledger.forget(identity)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                // Dropping a stale mapping is bookkeeping; it must not abort the re-publish.
+                TelepicLog.warn("RestoreLedger", "could not forget a stale published uri", throwable)
+            }
         }
 
         // `onFailure { throw }` keeps cancellation flowing: without it a cancelled scope would be
@@ -133,7 +141,16 @@ class DefaultRestoreRepository(
             )
         ) {
             is PublishResult.Inserted -> {
-                ledger?.record(identity, published.uri)
+                try {
+                    ledger?.record(identity, published.uri)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (throwable: Throwable) {
+                    // The file is already in the gallery. A failed ledger write only costs duplicate
+                    // suppression on a later restore; reporting the save as failed would be a lie and
+                    // a retry would publish the file twice.
+                    TelepicLog.warn("RestoreLedger", "the published uri could not be recorded", throwable)
+                }
                 RestoreResult.Restored(published.uri, restoredHash)
             }
             PublishResult.NoSpace -> RestoreResult.Failed(RestoreFailure.LOW_STORAGE)

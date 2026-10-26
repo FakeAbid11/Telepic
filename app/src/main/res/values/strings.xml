@@ -150,6 +150,9 @@
     <!-- Settings — storage, image cache -->
     <string name="settings_storage_image_cache">Clear image cache</string>
     <string name="settings_storage_image_cache_summary">Frees cached thumbnails and decoded images. They reload as you browse.</string>
+    <string name="settings_storage_diagnostics">Share diagnostics</string>
+    <string name="settings_storage_diagnostics_summary">Share the local warning/error log with support. It contains no phone numbers, login codes, tokens, media paths, or GPS data.</string>
+    <string name="settings_diagnostics_chooser">Share diagnostics</string>
 
     <!-- Settings — about, open-source licenses -->
     <string name="settings_about_licenses">Open source licenses</string>
@@ -274,8 +277,9 @@
     <!-- Screen 5 — Backup Preferences -->
     <string name="onboarding_backup_title">Choose your backup</string>
     <string name="onboarding_backup_subtitle">Pick how Telepic should back up your media. You can change this later in Settings.</string>
-    <string name="onboarding_backup_all_title">Back up all photos</string>
-    <string name="onboarding_backup_all_body">Telepic can back up your photo library according to your backup settings.</string>
+    <string name="onboarding_backup_all_title">Back up all photos and videos</string>
+    <string name="onboarding_backup_all_body">Telepic can back up your photo and video library according to your backup settings.</string>
+    <string name="onboarding_backup_network_note">Automatic uploads may use mobile data. You can switch to Wi-Fi only in Settings → Backup.</string>
     <string name="onboarding_backup_folder_title">Select a folder</string>
     <string name="onboarding_backup_folder_body">Choose exactly which folders Telepic backs up.</string>
     <plurals name="onboarding_backup_folder_selected">
@@ -304,7 +308,7 @@
     <string name="onboarding_ready_value_not_granted">Not granted</string>
     <string name="onboarding_ready_value_connected">Connected</string>
     <string name="onboarding_ready_value_not_connected">Not connected</string>
-    <string name="onboarding_ready_value_backup_all">All photos</string>
+    <string name="onboarding_ready_value_backup_all">All photos &amp; videos</string>
     <string name="onboarding_ready_value_backup_folder">Selected folder</string>
     <string name="onboarding_ready_value_backup_none">Not configured</string>
     <string name="onboarding_ready_start">Start using Telepic</string>
@@ -381,6 +385,8 @@
     <!-- ============================ Photos UI (Phase 8) ============================ -->
     <string name="settings_action">Settings</string>
     <string name="photos_partial_access_banner">Showing only the photos and videos you selected. You can grant full access in Settings.</string>
+    <string name="photos_partial_access_action">Manage access</string>
+    <string name="onboarding_permissions_choose_photos">Choose photos</string>
     <string name="photos_loading_more">Loading more photos…</string>
     <string name="photos_load_more_error">Couldn\'t load more</string>
     <string name="photos_refresh_failed">Couldn\'t refresh. Showing what\'s already loaded.</string>
@@ -458,6 +464,8 @@
     <string name="viewer_more_actions">More actions</string>
     <string name="viewer_missing">This media is no longer available</string>
     <string name="viewer_content_description">Media viewer image</string>
+    <string name="viewer_previous">Previous item</string>
+    <string name="viewer_next">Next item</string>
     <string name="viewer_image_error">This image couldn\'t be loaded</string>
     <string name="viewer_playback_error">Playback error</string>
     <string name="viewer_video_play">Play</string>
@@ -571,9 +579,15 @@
         <item quantity="one">Android didn\'t allow the deletion. The item stays in trash.</item>
         <item quantity="other">Android didn\'t allow the deletion. The items stay in trash.</item>
     </plurals>
+    <!-- A mixed outcome is named as such: some files are gone, some are still present. -->
+    <string name="trash_delete_partial_result">%1$d deleted, %2$d could not be deleted</string>
 
     <!-- ============================ Map (Phase 10) ============================ -->
     <string name="map_title">Map</string>
+    <string name="map_list_action">List</string>
+    <string name="map_list_title">Photo locations</string>
+    <string name="map_list_item">Photo at %1$s, %2$s</string>
+    <string name="map_list_close">Close</string>
     <string name="map_empty_title">No locations yet</string>
     <string name="map_empty_description">Photos and videos that contain GPS coordinates appear on the map. Telepic never invents a location for media without coordinates.</string>
     <string name="map_scan_failed_title">Couldn\'t scan your library</string>
@@ -613,6 +627,7 @@
     <!-- Bulk favourite / trash, behind the selection bar's overflow -->
     <string name="photos_selection_favorite">Add to favorites</string>
     <string name="photos_selection_trash">Move to trash</string>
+    <string name="photos_selection_more_actions">More actions</string>
     <string name="photos_favorited_result">%1$d added to favorites · %2$d were already favorites</string>
     <string name="photos_trash_confirm">Move to trash</string>
     <plurals name="photos_trash_title">

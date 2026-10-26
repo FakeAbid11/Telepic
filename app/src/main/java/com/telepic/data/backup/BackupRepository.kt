@@ -35,6 +35,13 @@ interface BackupRepository {
     suspend fun recoverInterruptedWork()
 
     /**
+     * A different Telegram account is now active. Remote identity from the previous account is not
+     * evidence of backup for the new one, so those rows return to QUEUED (cancelled rows stay
+     * cancelled). Default no-op for fakes; the real repository serializes against an in-flight pass.
+     */
+    suspend fun resetForAccountSwitch() = Unit
+
+    /**
      * Process up to [maxItems] actionable queue rows through prepare → upload → persist, each
      * strictly following the state machine. Returns the aggregate of what happened.
      */

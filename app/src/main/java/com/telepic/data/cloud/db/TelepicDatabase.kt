@@ -38,6 +38,9 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  *   recovered content hash was computed over. Additive only.
  * - `10 → 11` ([MIGRATION_10_11]): adds `backup_queue.pendingWaitAttempts`, the durable
  *   "still sending" wait counter, so the pending-send wait cap survives process death. Additive only.
+ * - `11 → 12` ([MIGRATION_11_12]): adds the nullable `cloud_destination.accountId` so a persisted
+ *   channel can never be reused by a different Telegram account. Existing rows are adopted by the
+ *   first authenticated account; the column is nullable so an upgrade never guesses ownership.
  */
 @Database(
     entities = [
@@ -50,7 +53,7 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         CustomAlbumEntity::class,
         CustomAlbumMediaEntity::class,
     ],
-    version = 11,
+    version = 12,
     // Schema JSON is exported to app/schemas (see the `ksp` block in app/build.gradle.kts) and
     // committed, so Room's migration checker can verify each migration against the real schema
     // instead of trusting the hand-written SQL in this file.
@@ -279,6 +282,19 @@ abstract class TelepicDatabase : RoomDatabase() {
         val MIGRATION_10_11: Migration = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `backup_queue` ADD COLUMN `pendingWaitAttempts` INTEGER")
+            }
+        }
+
+        /**
+         * Account scoping: adds the nullable `cloud_destination.accountId`.
+         *
+         * Nullable on purpose. An upgraded install has no trustworthy record of which Telegram
+         * account created its existing destination, so the first authenticated account adopts the
+         * row. A later mismatch is detected and the cloud state is reset for the new account.
+         */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `cloud_destination` ADD COLUMN `accountId` INTEGER")
             }
         }
     }

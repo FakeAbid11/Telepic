@@ -16,6 +16,12 @@ data class CloudDestinationEntity(
     val validated: Boolean,
     val createdAt: Long,
     val updatedAt: Long,
+    /**
+     * Telegram user id that owned the session when this destination was validated. Null on rows
+     * written before account scoping existed; such a row is adopted by the first authenticated
+     * account. A mismatch means the row belongs to a different account and must not be reused.
+     */
+    val accountId: Long? = null,
 )
 
 /**

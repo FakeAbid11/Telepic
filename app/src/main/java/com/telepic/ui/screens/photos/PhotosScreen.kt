@@ -201,6 +201,7 @@ fun PhotosScreen(
                             horizontal = TelepicTokens.spacing.screenMargin,
                             vertical = TelepicTokens.spacing.sm,
                         ),
+                        onManageAccess = controller.openAppSettings,
                     )
                 }
 

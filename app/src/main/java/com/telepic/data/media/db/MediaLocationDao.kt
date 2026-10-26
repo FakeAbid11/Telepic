@@ -31,6 +31,10 @@ interface MediaLocationDao {
     @Query("DELETE FROM media_location WHERE localMediaId = :localMediaId")
     suspend fun delete(localMediaId: Long)
 
+    /** Removes cached coordinates for confirmed permanent deletions in one statement. */
+    @Query("DELETE FROM media_location WHERE localMediaId IN (:localMediaIds)")
+    suspend fun deleteAll(localMediaIds: List<Long>)
+
     /** Prunes cached locations for ids no longer in the library (kept cheap and bounded). */
     @Query("DELETE FROM media_location")
     suspend fun clear()
@@ -51,6 +55,10 @@ interface MediaLocationDao {
 
     @Query("DELETE FROM media_location_scan WHERE localMediaId = :localMediaId")
     suspend fun deleteScanned(localMediaId: Long)
+
+    /** Drops scan memory for confirmed permanent deletions in one statement. */
+    @Query("DELETE FROM media_location_scan WHERE localMediaId IN (:localMediaIds)")
+    suspend fun deleteScannedAll(localMediaIds: List<Long>)
 
     @Query("DELETE FROM media_location_scan")
     suspend fun clearScanned()

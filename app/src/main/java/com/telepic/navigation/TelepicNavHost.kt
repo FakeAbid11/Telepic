@@ -190,6 +190,7 @@ private fun TelepicNavGraph(
                             organizationRepository = container.mediaOrganizationRepository,
                             localLookup = container.localMediaLookup,
                             deleter = container.mediaDeleter,
+                            cleanup = container.permanentMediaCleanup,
                         )
                     }
                 }
@@ -371,7 +372,11 @@ private fun TelepicNavGraph(
                 }
             }
             val backupViewModel: BackupViewModel = viewModel(factory = backupFactory)
-            BackupCenterScreen(viewModel = backupViewModel, onBack = { navController.popBackStack() })
+            BackupCenterScreen(
+                viewModel = backupViewModel,
+                onBack = { navController.popBackStack() },
+                onConnectTelegram = { navController.navigate(TelegramLoginRoute.ROUTE) },
+            )
         }
         composable(
             route = ViewerRoute.LOCAL,
