@@ -88,6 +88,9 @@ class DefaultBackupRepositoryTest {
         var confirmCalls = 0
         var findRemoteCalls = 0
 
+        /** The most recent upload request, so a test can assert what the engine actually asked for. */
+        var lastRequest: CloudUploadRequest? = null
+
         override suspend fun prepare() = Unit
         override suspend fun refresh() = Unit
         override suspend fun ensureDestination() = destination
@@ -105,6 +108,7 @@ class DefaultBackupRepositoryTest {
             onSent: suspend (chatId: Long, messageId: Long) -> Unit,
         ): CloudUploadResult? {
             uploadCalls++
+            lastRequest = request
             sentIdentity?.let { onSent(it.first, it.second) }
             uploadError?.let { throw it }
             beforeUploadReturn?.invoke()
@@ -134,14 +138,18 @@ class DefaultBackupRepositoryTest {
         java.io.File(System.getProperty("java.io.tmpdir"), "telepic-stage-${System.nanoTime()}")
             .apply { mkdirs() }
 
-    private fun repo(cloud: CloudRepository, auth: MutableStateFlow<TelegramAuthState> = authorized) =
+    private fun repo(
+        cloud: CloudRepository,
+        auth: MutableStateFlow<TelegramAuthState> = authorized,
+        stager: BackupStager = RecordingStager(stagingDir),
+    ) =
         DefaultBackupRepository(
             db = db,
             dao = db.backupQueueDao(),
             cloudRepository = cloud,
             authState = auth,
             dispatcher = Dispatchers.Unconfined,
-            stager = RecordingStager(stagingDir),
+            stager = stager,
         )
 
     private fun media(id: Long) = LocalMedia(
@@ -380,12 +388,61 @@ class DefaultBackupRepositoryTest {
     // --- staging lifecycle (§5/§26: temp files must be cleaned safely on every path) ----------
 
     /** A stager that materializes a real temp file so cleanup can be observed on disk. */
-    private class RecordingStager(private val stagingDir: java.io.File) : BackupStager {
+    private class RecordingStager(
+        private val stagingDir: java.io.File,
+        /** What the staging pass reports it could read about the source item, if anything. */
+        private val width: Int? = null,
+        private val height: Int? = null,
+        private val durationMs: Long? = null,
+    ) : BackupStager {
         override suspend fun stage(localMediaId: String, contentUri: String): StagedFile {
             val file = java.io.File(stagingDir, "staging_$localMediaId.tmp")
             file.writeText("staged bytes")
-            return StagedFile(file)
+            return StagedFile(file, width = width, height = height, durationMs = durationMs)
         }
+    }
+
+    /**
+     * The dimensions the staging pass read must reach the upload request.
+     *
+     * They used to be hard-coded `null` at the request construction, so every video and GIF went to
+     * Telegram with 0×0 and duration 0 — Telegram's metadata was whatever TDLib happened to probe,
+     * and nothing in the app ever said what the media actually was. The queue row cannot supply
+     * these (it stores identity and state, not presentation metadata), so staging is the only place
+     * left that can reach the source row.
+     */
+    @Test
+    fun `the upload request carries the staged item's dimensions`() = runBlocking {
+        val cloud = FakeCloud()
+        val r = repo(
+            cloud,
+            stager = RecordingStager(stagingDir, width = 1080, height = 1920, durationMs = 12_000L),
+        )
+        r.enqueue(media(21L))
+        r.processPendingWork(maxItems = 10)
+
+        val request = requireNotNull(cloud.lastRequest) { "the item was never handed to the cloud" }
+        assertEquals(1080, request.width ?: -1)
+        assertEquals(1920, request.height ?: -1)
+        assertEquals(12_000L, request.durationMs ?: -1L)
+    }
+
+    /**
+     * And when staging could not read them, they stay `null` — "unknown" — rather than becoming a
+     * fabricated `0` that claims the media has no dimensions. The mapper turns `null` into 0 anyway,
+     * but the request is the boundary that has to stay honest.
+     */
+    @Test
+    fun `unknown dimensions stay null rather than becoming zero`() = runBlocking {
+        val cloud = FakeCloud()
+        val r = repo(cloud)
+        r.enqueue(media(22L))
+        r.processPendingWork(maxItems = 10)
+
+        val request = requireNotNull(cloud.lastRequest) { "the item was never handed to the cloud" }
+        assertNull(request.width)
+        assertNull(request.height)
+        assertNull(request.durationMs)
     }
 
     @Test

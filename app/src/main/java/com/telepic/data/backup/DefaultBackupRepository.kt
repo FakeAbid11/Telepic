@@ -321,9 +321,14 @@ class DefaultBackupRepository(
             mimeType = item.mimeType,
             mediaType = mediaTypeOf(item),
             sizeBytes = item.sizeBytes.takeIf { it > 0 },
-            width = null,
-            height = null,
-            durationMs = null,
+            // The queue row carries no dimensions (see `BackupQueueEntity`), so the staging pass is
+            // the only place that can still reach the source row and read them. They used to be
+            // hard-coded `null` here, which made `TdApiCloudMapper` send 0×0 and duration 0 for
+            // every video and GIF — leaving Telegram's metadata to whatever TDLib managed to probe.
+            // Null still means "unknown" and is passed through as such; nothing is fabricated.
+            width = staged?.width,
+            height = staged?.height,
+            durationMs = staged?.durationMs,
             dateEpochSec = item.modifiedTimeSeconds,
             contentHash = item.contentHash,
             contentSizeBytes = item.contentSizeBytes ?: item.sizeBytes.takeIf { it > 0 },

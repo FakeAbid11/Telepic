@@ -3,6 +3,7 @@ package com.telepic.data.backup
 import android.content.ContentResolver
 import android.database.Cursor
 import android.net.Uri
+import android.provider.MediaStore
 import com.telepic.diagnostics.TelepicLog
 import java.io.File
 import kotlin.coroutines.coroutineContext
@@ -37,8 +38,23 @@ interface BackupStager {
     suspend fun sweep() = Unit
 }
 
-/** A staged file handle; [cleanup] must run in a finally block after every upload attempt. */
-class StagedFile(val file: File) {
+/**
+ * A staged file handle; [cleanup] must run in a finally block after every upload attempt.
+ *
+ * [width], [height] and [durationMs] are the source item's own dimensions, read from the same
+ * MediaStore row that was copied. They exist because the queue row deliberately stores no
+ * dimensions (`BackupQueueEntity` carries identity and state, not presentation metadata), so
+ * without them the upload request was built with `null` and TDLib received 0×0 for every video —
+ * leaving Telegram's own metadata to whatever the engine managed to probe. They are **nullable on
+ * purpose**: a provider that cannot answer must degrade to "unknown" (exactly the old behaviour),
+ * never to a fabricated `0` that reads as a real measurement, and never to a failed upload.
+ */
+class StagedFile(
+    val file: File,
+    val width: Int? = null,
+    val height: Int? = null,
+    val durationMs: Long? = null,
+) {
     val path: String = file.absolutePath
     fun cleanup() {
         runCatching { file.delete() }
@@ -76,7 +92,16 @@ class MediaStoreBackupStager(
                     }
                 }
             } ?: return@withContext null
-            StagedFile(target)
+            // Read the dimensions *after* the bytes are staged, so a metadata read that fails
+            // cannot affect whether the copy exists — it only decides how much the upload request
+            // can say about the media.
+            val dimensions = readDimensions(uri)
+            StagedFile(
+                file = target,
+                width = dimensions.width,
+                height = dimensions.height,
+                durationMs = dimensions.durationMs,
+            )
         } catch (cancellation: CancellationException) {
             // Clean up, then let the caller see the cancel rather than a "source unreadable" null.
             target.delete()
@@ -116,7 +141,7 @@ class MediaStoreBackupStager(
     }
 
     private fun queryRowCount(uri: Uri): Boolean = try {
-        val cursor: Cursor? = contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)
+        val cursor: Cursor? = contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
         cursor?.use { it.count > 0 } ?: false
     } catch (cancellation: CancellationException) {
         // Cancellation is control flow, not an unreadable source: rethrow it so a torn-down
@@ -131,10 +156,83 @@ class MediaStoreBackupStager(
         false
     }
 
+    /**
+     * The source item's own dimensions, for the upload request.
+     *
+     * Read defensively on **every** axis, because none of this may be allowed to affect the upload:
+     *
+     *  * The projection is a request, not a guarantee — `duration` is a video/audio column, so an
+     *    images URI on an older provider may reject it outright, and the whole read is caught.
+     *  * Each column is looked up by index, so a provider that silently drops one yields `null`
+     *    instead of an `IllegalArgumentException`.
+     *  * A non-positive value is reported as `null` ("unknown"), never as a measurement — Telegram's
+     *    own 0 means "unknown" too, but a fabricated 0 in *our* request would claim the media has no
+     *    dimensions rather than admitting we did not find out.
+     *
+     * The result is only ever an improvement on the previous behaviour (which always sent nothing):
+     * on any failure the request falls back to exactly what it sent before.
+     */
+    private fun readDimensions(uri: Uri): StagedDimensions = try {
+        val cursor: Cursor? = contentResolver.query(uri, DIMENSION_PROJECTION, null, null, null)
+        cursor?.use { c ->
+            if (!c.moveToFirst()) {
+                StagedDimensions()
+            } else {
+                StagedDimensions(
+                    width = c.positiveInt(MediaStore.MediaColumns.WIDTH),
+                    height = c.positiveInt(MediaStore.MediaColumns.HEIGHT),
+                    durationMs = c.positiveLong(MediaStore.Video.Media.DURATION),
+                )
+            }
+        } ?: StagedDimensions()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (throwable: Throwable) {
+        // Debug, not warn: a provider that will not answer this is an expected per-item outcome on
+        // some devices, and the upload proceeds identically either way.
+        TelepicLog.debug("BackupStager", "could not read the source dimensions; sending none", throwable)
+        StagedDimensions()
+    }
+
+    /** `null` when the column is absent or the value is not a usable positive measurement. */
+    private fun Cursor.positiveInt(column: String): Int? {
+        val index = getColumnIndex(column)
+        if (index < 0 || isNull(index)) return null
+        return getInt(index).takeIf { it > 0 }
+    }
+
+    /** `DURATION` is already milliseconds in MediaStore; `null` when absent or non-positive. */
+    private fun Cursor.positiveLong(column: String): Long? {
+        val index = getColumnIndex(column)
+        if (index < 0 || isNull(index)) return null
+        return getLong(index).takeIf { it > 0 }
+    }
+
     private companion object {
         const val STREAM_BUFFER_BYTES = 64 * 1024
 
         /** How long a staged copy is left alone before the sweep may remove it. */
         const val STALE_STAGING_AGE_MILLIS = 6L * 60 * 60 * 1000
+
+        /**
+         * The columns [readDimensions] asks for. `DURATION` is the one that can be refused by an
+         * images-only provider; [readDimensions] treats that as "unknown" rather than an error.
+         *
+         * Spelled `MediaStore.Video.Media.DURATION` rather than `MediaColumns.DURATION`: the latter
+         * only exists from API 29 and `minSdk` here is 26, so referencing it would be a `NewApi`
+         * lint error — and lint runs with `abortOnError = true`.
+         */
+        val DIMENSION_PROJECTION = arrayOf(
+            MediaStore.MediaColumns.WIDTH,
+            MediaStore.MediaColumns.HEIGHT,
+            MediaStore.Video.Media.DURATION,
+        )
     }
 }
+
+/** The dimensions a staging pass could determine, or all-null when it could not. */
+private data class StagedDimensions(
+    val width: Int? = null,
+    val height: Int? = null,
+    val durationMs: Long? = null,
+)
