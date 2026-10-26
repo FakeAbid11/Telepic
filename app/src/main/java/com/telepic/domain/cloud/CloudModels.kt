@@ -40,6 +40,16 @@ data class TelepicCloudDestination(
  * while [contentSizeBytes] is the byte count the SHA-256 was computed over on this device. Matching
  * on the former would fail for every photo.
  */
+/**
+ * One cloud item plus its immediate neighbours in the manifest's date/message order. It lets the
+ * Viewer resolve a single item without loading the whole cloud library.
+ */
+data class CloudMediaWindow(
+    val item: CloudMedia? = null,
+    val previous: CloudMedia? = null,
+    val next: CloudMedia? = null,
+)
+
 data class CloudMedia(
     val messageId: Long,
     val chatId: Long,

@@ -110,6 +110,15 @@ class RestoreRepositoryTest {
         override suspend fun forget(identity: RestoreIdentity) { map.remove(identity.token()) }
     }
 
+    /** A ledger that cannot write after the file has already been published. */
+    private class ThrowingLedger : RestoreLedger {
+        override suspend fun publishedUri(identity: RestoreIdentity): String? = null
+        override suspend fun record(identity: RestoreIdentity, uri: String) {
+            error("ledger storage is unavailable")
+        }
+        override suspend fun forget(identity: RestoreIdentity) = Unit
+    }
+
     @Test
     fun `successful download and publish yields a restored uri`() = runBlocking {
         val bytes = byteArrayOf(1, 2, 3, 4)
@@ -118,6 +127,24 @@ class RestoreRepositoryTest {
         val result = repository.restore(media(hash = sha(bytes)))
         assertTrue(result is RestoreResult.Restored)
         assertEquals("content://media/99", (result as RestoreResult.Restored).localUri)
+    }
+
+    @Test
+    fun `a failed ledger write does not turn a published restore into a failure`() = runBlocking {
+        val bytes = byteArrayOf(1, 2, 3, 4)
+        val file = fileWithBytes(bytes)
+        val publisher = FakePublisher(PublishResult.Inserted("content://media/99"))
+        val repository = DefaultRestoreRepository(
+            cloudRepository = FakeCloud(file.absolutePath),
+            publisher = publisher,
+            ledger = ThrowingLedger(),
+        )
+
+        val result = repository.restore(media(hash = sha(bytes)))
+
+        assertTrue("the file is in the gallery, so the save is real", result is RestoreResult.Restored)
+        assertEquals("content://media/99", (result as RestoreResult.Restored).localUri)
+        assertEquals(1, publisher.publishCount)
     }
 
     @Test

@@ -74,8 +74,8 @@ class PhotosUiTest {
         override fun stop(owner: Any) = Unit
     }
 
-    private class FakeStatus(private val states: Map<String, MediaBackupVisualState>) : BackupStatusRepository {
-        override val visualStates: Flow<Map<String, MediaBackupVisualState>> = flowOf(states)
+    private class FakeStatus(private val states: Map<Long, MediaBackupVisualState>) : BackupStatusRepository {
+        override val visualStates: Flow<Map<Long, MediaBackupVisualState>> = flowOf(states)
     }
 
     private fun media(
@@ -215,7 +215,7 @@ class PhotosUiTest {
     fun `a backed-up item shows an accessible backup indicator`() {
         val items = listOf(media(5, 1_700_000_000_000L, MediaType.PHOTO))
         val repository = LocalMediaRepositoryImpl(ListMediaLoader(items))
-        val status = FakeStatus(mapOf("5" to MediaBackupVisualState.BACKED_UP))
+        val status = FakeStatus(mapOf(5L to MediaBackupVisualState.BACKED_UP))
         photosScreen(PhotosViewModel(repository, NoopWatcher, status), MediaPermissionState.Granted)
 
         // The badge is described on the tile's merged content description, not as raw text.

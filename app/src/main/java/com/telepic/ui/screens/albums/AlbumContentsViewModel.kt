@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -101,7 +100,6 @@ class AlbumContentsViewModel(
 
     val backupStates: StateFlow<Map<Long, MediaBackupVisualState>> =
         backupStatusRepository.visualStates
-            .map { rows -> buildMap { rows.forEach { (id, s) -> id.toLongOrNull()?.let { put(it, s) } } } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Favorited ids for the tile badge — same batched snapshot as the Photos timeline. */

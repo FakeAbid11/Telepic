@@ -56,7 +56,7 @@ class AlbumContentsViewModelTest {
     }
 
     private class EmptyStatusRepository : BackupStatusRepository {
-        override val visualStates: Flow<Map<String, MediaBackupVisualState>> = flowOf(emptyMap())
+        override val visualStates: Flow<Map<Long, MediaBackupVisualState>> = flowOf(emptyMap())
     }
 
     /** Only membership removal matters here; the rest of a user-created album is inert. */

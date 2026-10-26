@@ -63,10 +63,11 @@ const val BACKUP_PERIODIC_WORK_NAME = "telepic_backup_periodic"
  * 2. A changed preference has to reach work that is already enqueued. `KEEP` would ignore the new
  *    request entirely, so the old constraints would keep applying until the current run drained —
  *    which, because the worker returns `Result.retry()` while rows remain, can be a very long time.
- *    The one-time path therefore uses `REPLACE`, but only when nothing is currently *running*:
- *    replacing a running upload would cancel a TDLib send mid-flight and strand its row in UPLOADING,
- *    which is the exact failure the old `KEEP` existed to avoid. The periodic path can use `UPDATE`,
- *    which applies the new spec without cancelling a running instance at all.
+ *    The one-time path uses `APPEND_OR_REPLACE` while a run is *running*: the request is queued
+ *    behind the live upload instead of cancelling it, and work added after the worker's final batch
+ *    still gets a follow-up run. When nothing is running it uses `REPLACE`, so a changed constraint
+ *    takes effect immediately. The periodic path uses `UPDATE`, which applies the new spec without
+ *    cancelling a running instance.
  */
 class WorkManagerBackupScheduler(
     private val context: Context,
@@ -81,10 +82,15 @@ class WorkManagerBackupScheduler(
             .setConstraints(transportConstraints())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
             .build()
-        // KEEP while a run is in flight — new enqueues are picked up by the running worker's own
-        // loop, and REPLACE would cancel an in-flight upload for no reason. Otherwise REPLACE, so a
-        // just-changed constraint takes effect now instead of after the current work drains.
-        val policy = if (isRunning(BACKUP_WORK_NAME)) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE
+        // APPEND_OR_REPLACE while a run is in flight: the worker may already have taken its final
+        // batch, so KEEP silently dropped work queued after that snapshot (a login completing, a
+        // manual retry). Appending keeps the live upload safe and guarantees a follow-up run.
+        // Otherwise REPLACE so a just-changed constraint takes effect immediately.
+        val policy = if (isRunning(BACKUP_WORK_NAME)) {
+            ExistingWorkPolicy.APPEND_OR_REPLACE
+        } else {
+            ExistingWorkPolicy.REPLACE
+        }
         workManager.enqueueUniqueWork(BACKUP_WORK_NAME, policy, request)
     }
 

@@ -71,11 +71,18 @@ class BackupCenterUiTest {
         createdAt = 1L, updatedAt = 1L, startedAt = null, completedAt = null,
     )
 
-    private fun render(repo: FakeRepo, auth: StateFlow<TelegramAuthState> = authorized): FakeCoordinator {
+    private fun render(
+        repo: FakeRepo,
+        auth: StateFlow<TelegramAuthState> = authorized,
+        onConnectTelegram: (() -> Unit)? = null,
+    ): FakeCoordinator {
         val coordinator = FakeCoordinator(repo)
         composeRule.setContent {
             TelepicTheme(darkTheme = true) {
-                BackupCenterScreen(viewModel = BackupViewModel(coordinator, auth))
+                BackupCenterScreen(
+                    viewModel = BackupViewModel(coordinator, auth),
+                    onConnectTelegram = onConnectTelegram,
+                )
             }
         }
         return coordinator
@@ -106,8 +113,15 @@ class BackupCenterUiTest {
     fun `waiting-for-auth surfaces the Telegram guidance state`() {
         val notAuthorized: StateFlow<TelegramAuthState> =
             MutableStateFlow<TelegramAuthState>(TelegramAuthState.NotConnected).asStateFlow()
-        render(FakeRepo(listOf(item(1, BackupState.WAITING_FOR_AUTH)), BackupQueueStats(queued = 1)), auth = notAuthorized)
+        var connectClicked = false
+        render(
+            FakeRepo(listOf(item(1, BackupState.WAITING_FOR_AUTH)), BackupQueueStats(queued = 1)),
+            auth = notAuthorized,
+            onConnectTelegram = { connectClicked = true },
+        )
         composeRule.onNodeWithText("Waiting for Telegram…").assertIsDisplayed()
+        composeRule.onNodeWithText("Connect Telegram").performClick()
+        assertTrue(connectClicked)
     }
 
     @Test

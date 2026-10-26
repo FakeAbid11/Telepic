@@ -268,6 +268,30 @@ class TelegramCloudRepositoryTest {
     }
 
     @Test
+    fun `mediaAround resolves immediate neighbours without reading the whole manifest`() = runBlocking {
+        db.cloudMediaManifestDao().upsertAll(
+            listOf(manifestRow(1L), manifestRow(2L), manifestRow(3L)),
+        )
+        val r = repo(FakeDataSource())
+
+        val window = r.mediaAround(100L, 2L)
+
+        assertEquals(2L, window.item?.messageId)
+        // The manifest is newest-first by (date, messageId): 3 is newer than 2, 1 is older.
+        assertEquals(3L, window.previous?.messageId)
+        assertEquals(1L, window.next?.messageId)
+    }
+
+    @Test
+    fun `mediaAround reports a missing item instead of fabricating a neighbour`() = runBlocking {
+        val r = repo(FakeDataSource())
+        val window = r.mediaAround(100L, 404L)
+        assertNull(window.item)
+        assertNull(window.previous)
+        assertNull(window.next)
+    }
+
+    @Test
     fun `findRemoteByContent rebuilds an empty manifest from the channel's history before answering`() = runBlocking {
         // The reinstall shape: Room starts empty (destination row and manifest wiped) while the
         // channel holds every earlier upload. The upload path asks this question right before

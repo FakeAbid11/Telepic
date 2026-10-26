@@ -424,11 +424,24 @@ class DefaultBackupRepositoryTest {
         private val height: Int? = null,
         private val durationMs: Long? = null,
     ) : BackupStager {
-        override suspend fun stage(localMediaId: String, contentUri: String): StagedFile {
+        override suspend fun stage(
+            localMediaId: String,
+            contentUri: String,
+            expectedBytes: Long?,
+        ): StagedFile {
             val file = java.io.File(stagingDir, "staging_$localMediaId.tmp")
             file.writeText("staged bytes")
             return StagedFile(file, width = width, height = height, durationMs = durationMs)
         }
+    }
+
+    /** A staging pass that fails for a storage reason; the queue must retry, not call it deleted. */
+    private class ThrowingStager(private val error: Throwable) : BackupStager {
+        override suspend fun stage(
+            localMediaId: String,
+            contentUri: String,
+            expectedBytes: Long?,
+        ): StagedFile? = throw error
     }
 
     /**
@@ -461,6 +474,25 @@ class DefaultBackupRepositoryTest {
      * fabricated `0` that claims the media has no dimensions. The mapper turns `null` into 0 anyway,
      * but the request is the boundary that has to stay honest.
      */
+    @Test
+    fun `a storage staging failure waits for retry instead of permanently failing`() = runBlocking {
+        val dao = db.backupQueueDao()
+        val r = repo(
+            FakeCloud(),
+            stager = ThrowingStager(BackupStagingException("staging cache is full")),
+        )
+        r.enqueue(media(1))
+
+        val summary = r.processPendingWork(maxItems = 10)
+
+        assertEquals(0, summary.failed)
+        assertEquals(1, summary.waiting)
+        val row = dao.findByLocalId("1")!!
+        assertEquals(BackupState.WAITING_FOR_NETWORK.name, row.state)
+        assertEquals(1, row.retryCount)
+        assertNull(row.telegramChatId)
+    }
+
     @Test
     fun `unknown dimensions stay null rather than becoming zero`() = runBlocking {
         val cloud = FakeCloud()
@@ -590,7 +622,7 @@ class DefaultBackupRepositoryTest {
             val cloud = FakeCloud()
             lateinit var r: DefaultBackupRepository
             val stager = object : BackupStager {
-                override suspend fun stage(localMediaId: String, contentUri: String): StagedFile {
+                override suspend fun stage(localMediaId: String, contentUri: String, expectedBytes: Long?): StagedFile {
                     // The cancel lands while the file is being staged — after the row was claimed
                     // for preparation but before the upload begins.
                     r.cancel(db.backupQueueDao().observeAll().first().single().id)

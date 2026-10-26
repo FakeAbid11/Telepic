@@ -111,8 +111,8 @@ class ViewerUiTest {
     }
 
     /** A fixed backup snapshot, so the control's state can be pinned without a queue behind it. */
-    private class Statuses(private val states: Map<String, MediaBackupVisualState>) : BackupStatusRepository {
-        override val visualStates: Flow<Map<String, MediaBackupVisualState>> = flowOf(states)
+    private class Statuses(private val states: Map<Long, MediaBackupVisualState>) : BackupStatusRepository {
+        override val visualStates: Flow<Map<Long, MediaBackupVisualState>> = flowOf(states)
     }
 
     private fun cloudItem(messageId: Long) = CloudMedia(
@@ -154,7 +154,7 @@ class ViewerUiTest {
             initialSource = MediaSource.Local(5),
             localLookup = Lookup(mapOf(5L to localPhoto(5))),
             cloudRepository = NoCloud,
-            backupStatusRepository = Statuses(mapOf("5" to MediaBackupVisualState.BACKED_UP)),
+            backupStatusRepository = Statuses(mapOf(5L to MediaBackupVisualState.BACKED_UP)),
         )
         composeRule.setContent { TelepicTheme { ViewerScreen(vm, onBack = {}) } }
 

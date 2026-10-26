@@ -13,6 +13,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -103,21 +105,29 @@ class DefaultBackupCoordinator(
     private val discoveryMaxItems: Int = 25_000,
 ) : BackupCoordinator {
 
-    override suspend fun backup(media: LocalMedia): BulkBackupSummary {
+    /**
+     * Serializes automatic passes with manual backup requests. The startup pass, the periodic
+     * worker, a MediaStore-change sync and a bulk backup can otherwise recognize/hash the same items
+     * concurrently and overwrite each other's discovery cursor. A single coordinator instance owns
+     * the whole pass, so one mutex is sufficient.
+     */
+    private val passMutex = Mutex()
+
+    override suspend fun backup(media: LocalMedia): BulkBackupSummary = passMutex.withLock {
         ensureManifestFresh()
         val result = recognizeAndMaybeEnqueue(media)
         if (result.queued > 0) scheduler.schedule()
-        return result
+        result
     }
 
-    override suspend fun backupAll(media: List<LocalMedia>): BulkBackupSummary {
+    override suspend fun backupAll(media: List<LocalMedia>): BulkBackupSummary = passMutex.withLock {
         var total = BulkBackupSummary.Empty
         if (media.isNotEmpty()) ensureManifestFresh()
         for (item in media) {
             total += recognizeAndMaybeEnqueue(item)
         }
         if (total.queued > 0) scheduler.schedule()
-        return total
+        total
     }
 
     override suspend fun retry(itemId: Long) {
@@ -127,7 +137,7 @@ class DefaultBackupCoordinator(
 
     override suspend fun cancel(itemId: Long) = repository.cancel(itemId)
 
-    override suspend fun syncFromPreference() {
+    override suspend fun syncFromPreference() = passMutex.withLock {
         try {
             applyPreference()
         } catch (cancellation: CancellationException) {
@@ -272,6 +282,9 @@ class DefaultBackupCoordinator(
                 // cursor stays where it is, so the next pass resumes at the page that failed rather
                 // than skipping past it.
                 TelepicLog.warn("BackupCoordinator", "a discovery page failed to load; resuming from the same offset next pass", throwable)
+                // Persist the failing page's offset, not the pass start: otherwise every pass
+                // re-scans the prefix before the failure and never converges on a large library.
+                persistCursor(cursorKey, offset)
                 return enqueuedAny
             }
             if (page.isEmpty()) {

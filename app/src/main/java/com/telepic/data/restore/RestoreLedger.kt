@@ -95,11 +95,14 @@ class DataStoreRestoreLedger(
     }
 
     private fun encode(map: Map<String, String>): String =
-        map.entries.joinToString(separator = "\n") { (token, uri) -> "$token\t$uri" }
+        FORMAT_HEADER + map.entries.joinToString(separator = "\n") { (token, uri) -> "$token\t$uri" }
 
     private fun decode(raw: String): Map<String, String> {
         if (raw.isEmpty()) return emptyMap()
-        return raw.lineSequence()
+        // v1 is the current shape; headerless values are the pre-versioning format and remain
+        // readable forever so an upgrade never loses duplicate suppression.
+        val body = raw.removePrefix(FORMAT_HEADER)
+        return body.lineSequence()
             .mapNotNull { line ->
                 val tab = line.indexOf('\t')
                 if (tab <= 0) null else line.substring(0, tab) to line.substring(tab + 1)
@@ -108,6 +111,7 @@ class DataStoreRestoreLedger(
     }
 
     private companion object {
+        const val FORMAT_HEADER = "v1\n"
         val KEY_LEDGER = stringPreferencesKey("restore_ledger")
     }
 }

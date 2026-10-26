@@ -246,7 +246,7 @@ class ViewerViewModel(
         backupStatusRepository?.visualStates ?: flowOf(emptyMap()),
         _uiState.map { (it.item as? ViewerItem.Local)?.media?.id },
     ) { states, id ->
-        id?.let { states[it.toString()] } ?: MediaBackupVisualState.NONE
+        id?.let { states[it] } ?: MediaBackupVisualState.NONE
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MediaBackupVisualState.NONE)
 
     /** True while a single-item backup request is in flight, so the control cannot double-fire. */
@@ -438,7 +438,7 @@ class ViewerViewModel(
     private suspend fun backupStateOf(localMediaId: Long): MediaBackupVisualState? {
         val repository = backupStatusRepository ?: return null
         return try {
-            repository.visualStates.first()[localMediaId.toString()]
+            repository.visualStates.first()[localMediaId]
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (throwable: Throwable) {
@@ -705,10 +705,10 @@ class ViewerViewModel(
     }
 
     private suspend fun resolveCloud(s: MediaSource.Cloud): ViewerUiState {
-        val manifest = cloudRepository.media.first()
-        val index = manifest.indexOfFirst { it.chatId == s.chatId && it.messageId == s.messageId }
-        if (index < 0) return ViewerUiState(s, ViewerStatus.MISSING)
-        val media = manifest[index]
+        // Three indexed lookups instead of reading and sorting the entire cloud manifest on every
+        // open/swipe. The default repository method still derives the same window for test fakes.
+        val window = cloudRepository.mediaAround(s.chatId, s.messageId)
+        val media = window.item ?: return ViewerUiState(s, ViewerStatus.MISSING)
         val preview = runCatching { cloudRepository.getPreview(media) }
             .onFailure { if (it is CancellationException) throw it }
             .getOrNull()
@@ -717,8 +717,8 @@ class ViewerViewModel(
             status = ViewerStatus.READY,
             kind = media.mediaType.toViewerKind(),
             item = ViewerItem.Cloud(media, previewPath = preview?.localPath, originalPath = null),
-            previous = manifest.getOrNull(index - 1)?.let { MediaSource.Cloud(it.chatId, it.messageId) },
-            next = manifest.getOrNull(index + 1)?.let { MediaSource.Cloud(it.chatId, it.messageId) },
+            previous = window.previous?.let { MediaSource.Cloud(it.chatId, it.messageId) },
+            next = window.next?.let { MediaSource.Cloud(it.chatId, it.messageId) },
             download = CloudDownload.Idle,
             dateMillis = media.dateEpochSec?.times(1000L),
         )

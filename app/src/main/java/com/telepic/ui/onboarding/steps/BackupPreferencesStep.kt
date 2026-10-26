@@ -121,6 +121,14 @@ fun BackupPreferencesStep(
             )
         }
 
+        // Be explicit that "all" includes videos and that the default transport can use mobile
+        // data. The choice remains in Settings, but the consent screen must not imply otherwise.
+        Text(
+            text = stringResource(R.string.onboarding_backup_network_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
         // Reported, not swallowed: the choice did not stick, so the step must not look as though it
         // had accepted it (the Continue button stays disabled in that case, and this is the only
         // thing that explains why). Continue itself is never blocked by a *scan* failure — the

@@ -36,6 +36,29 @@ interface CloudMediaManifestDao {
     suspend fun get(chatId: Long, messageId: Long): CloudMediaManifestEntity?
 
     /**
+     * The immediately newer manifest row in `(dateEpochSec DESC, messageId DESC)` order.
+     *
+     * Null dates are coalesced to 0 because the manifest has always allowed them; the index on
+     * `dateEpochSec` still bounds the scan and the `messageId` tie-break makes the result exact.
+     */
+    @Query(
+        "SELECT * FROM cloud_media_manifest WHERE chatId = :chatId AND (" +
+            "COALESCE(dateEpochSec, 0) > :date OR " +
+            "(COALESCE(dateEpochSec, 0) = :date AND messageId > :messageId)) " +
+            "ORDER BY COALESCE(dateEpochSec, 0) ASC, messageId ASC LIMIT 1",
+    )
+    suspend fun newerNeighbor(chatId: Long, messageId: Long, date: Long): CloudMediaManifestEntity?
+
+    /** The immediately older manifest row in the same order. */
+    @Query(
+        "SELECT * FROM cloud_media_manifest WHERE chatId = :chatId AND (" +
+            "COALESCE(dateEpochSec, 0) < :date OR " +
+            "(COALESCE(dateEpochSec, 0) = :date AND messageId < :messageId)) " +
+            "ORDER BY COALESCE(dateEpochSec, 0) DESC, messageId DESC LIMIT 1",
+    )
+    suspend fun olderNeighbor(chatId: Long, messageId: Long, date: Long): CloudMediaManifestEntity?
+
+    /**
      * One batch lookup for a page of discovered rows, so preserving trusted local metadata costs one
      * query per page instead of one per row. Backed by the `(chatId, messageId)` primary key.
      */

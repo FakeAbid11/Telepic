@@ -76,7 +76,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -396,6 +398,10 @@ private fun ViewerContent(
     }
     val imageDescription = itemName
         ?: stringResource(R.string.viewer_content_description)
+    // Swipe is the only pointer gesture, so expose the same navigation as explicit accessibility
+    // actions; TalkBack consumes horizontal swipes for its own navigation.
+    val previousActionLabel = stringResource(R.string.viewer_previous)
+    val nextActionLabel = stringResource(R.string.viewer_next)
 
     // The *target* end of the shared-element transition, keyed on the same MediaStore id the tile the
     // user tapped used. Null for a cloud item — it has no tile in a local grid, so there is nothing
@@ -458,6 +464,22 @@ private fun ViewerContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .then(sharedImageModifier)
+                    .semantics {
+                        customActions = listOfNotNull(
+                            currentPrevious?.let { target ->
+                                CustomAccessibilityAction(previousActionLabel) {
+                                    onNavigate(target)
+                                    true
+                                }
+                            },
+                            currentNext?.let { target ->
+                                CustomAccessibilityAction(nextActionLabel) {
+                                    onNavigate(target)
+                                    true
+                                }
+                            },
+                        )
+                    }
                 .pointerInput(state.source) {
                     // One gesture pass: two fingers pinch/pan when zoomed, a single-finger horizontal
                     // drag swipes to the adjacent item (only while unzoomed). Taps stay on their own

@@ -11,6 +11,7 @@ import com.telepic.domain.cloud.ChatCandidate
 import com.telepic.domain.cloud.ChatValidator
 import com.telepic.domain.cloud.CloudMedia
 import com.telepic.domain.cloud.CloudMediaType
+import com.telepic.domain.cloud.CloudMediaWindow
 import com.telepic.domain.cloud.CloudPreview
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.domain.cloud.CloudUploadProgress
@@ -418,6 +419,17 @@ class TelegramCloudRepository(
         }
         return persistDestination(created)
     }
+
+    override suspend fun mediaAround(chatId: Long, messageId: Long): CloudMediaWindow =
+        withContext(dispatcher) {
+            val item = manifestDao.get(chatId, messageId) ?: return@withContext CloudMediaWindow()
+            val date = item.dateEpochSec ?: 0L
+            CloudMediaWindow(
+                item = item.toDomain(),
+                previous = manifestDao.newerNeighbor(chatId, messageId, date)?.toDomain(),
+                next = manifestDao.olderNeighbor(chatId, messageId, date)?.toDomain(),
+            )
+        }
 
     override suspend fun getPreview(media: CloudMedia): CloudPreview? = withContext(dispatcher) {
         try {

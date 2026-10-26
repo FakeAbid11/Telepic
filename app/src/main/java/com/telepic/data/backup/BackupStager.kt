@@ -6,6 +6,8 @@ import android.net.Uri
 import android.provider.MediaStore
 import com.telepic.diagnostics.TelepicLog
 import java.io.File
+import java.io.FileNotFoundException
+import java.io.IOException
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -17,13 +19,21 @@ import kotlinx.coroutines.withContext
  * that copy up afterwards. Abstracted so the backup repository's staging lifecycle (including cleanup
  * on cancellation/failure) is unit-testable without a real ContentResolver.
  */
+/** A staging failure caused by storage/provider state rather than a vanished source; transient. */
+class BackupStagingException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
 interface BackupStager {
     /**
-     * Stage the item at [contentUri]. Returns the staged file, or null when the source is gone or
-     * unreadable (the caller turns that into a permanent failure). Missing media never throws; only
-     * coroutine cancellation propagates, so a stopped worker abandons the copy.
+     * Stage the item at [contentUri]. Returns the staged file, or null when the source is genuinely
+     * gone (the caller turns that into a permanent failure).
+     *
+     * Throws [BackupStagingException] for a storage/provider fault (full cache, refused write,
+     * unreadable provider) so the queue can retry instead of claiming the media was deleted.
+     * Coroutine cancellation propagates unchanged.
+     *
+     * [expectedBytes] is the source size when known, used for a free-space preflight.
      */
-    suspend fun stage(localMediaId: String, contentUri: String): StagedFile?
+    suspend fun stage(localMediaId: String, contentUri: String, expectedBytes: Long? = null): StagedFile?
 
     /**
      * Delete the staged copies that no upload can still be using.
@@ -71,27 +81,51 @@ class MediaStoreBackupStager(
     private val stagingDir: File,
 ) : BackupStager {
 
-    override suspend fun stage(localMediaId: String, contentUri: String): StagedFile? = withContext(Dispatchers.IO) {
-        stagingDir.mkdirs()
+    override suspend fun stage(
+        localMediaId: String,
+        contentUri: String,
+        expectedBytes: Long?,
+    ): StagedFile? = withContext(Dispatchers.IO) {
+        if (!stagingDir.isDirectory && !stagingDir.mkdirs()) {
+            throw BackupStagingException("The staging directory is unavailable")
+        }
         val uri = Uri.parse(contentUri)
-        // Confirm the source still exists and is readable before streaming.
+        // Confirm the source still exists. A provider error is transient, not proof of deletion.
         val exists = queryRowCount(uri)
         if (!exists) return@withContext null
+
+        val required = expectedBytes?.takeIf { it > 0L }?.let { it + SPACE_HEADROOM_BYTES }
+        if (required != null) {
+            val free = runCatching { stagingDir.usableSpace }.getOrNull()
+            if (free != null && free > 0L && free < required) {
+                throw BackupStagingException(
+                    "Not enough free space to stage the item ($free of $required bytes)",
+                )
+            }
+        }
+
         val target = File(stagingDir, "staging_$localMediaId.tmp")
+        // A FileNotFoundException here means the source vanished between the row check and the open.
+        // A failure later (including one from the target stream) is a storage fault and is transient.
+        val input = try {
+            contentResolver.openInputStream(uri) ?: return@withContext null
+        } catch (missing: FileNotFoundException) {
+            return@withContext null
+        }
         try {
-            contentResolver.openInputStream(uri)?.use { input ->
+            input.use { source ->
                 target.outputStream().use { output ->
                     val buffer = ByteArray(STREAM_BUFFER_BYTES)
                     while (true) {
                         // Blocking stream IO is not cancellable by itself: checkpoint per block so a
                         // stopped worker abandons a multi-gigabyte copy instead of finishing it.
                         coroutineContext.ensureActive()
-                        val read = input.read(buffer)
+                        val read = source.read(buffer)
                         if (read < 0) break
                         output.write(buffer, 0, read)
                     }
                 }
-            } ?: return@withContext null
+            }
             // Read the dimensions *after* the bytes are staged, so a metadata read that fails
             // cannot affect whether the copy exists — it only decides how much the upload request
             // can say about the media.
@@ -107,12 +141,11 @@ class MediaStoreBackupStager(
             target.delete()
             throw cancellation
         } catch (throwable: Throwable) {
-            // Source vanished or became unreadable mid-copy. The caller turns this null into a
-            // permanent "local media is no longer available" failure, which is indistinguishable from
-            // a provider fault without this line.
-            TelepicLog.warn("BackupStager", "staging failed; the source could not be copied", throwable)
+            // ENOSPC, a cache eviction mid-copy, or a refused write: the caller must retry rather
+            // than permanently mark the user's still-present media as missing.
+            TelepicLog.warn("BackupStager", "staging failed for mediaId=$localMediaId", throwable)
             target.delete()
-            null
+            throw BackupStagingException("The item could not be staged", throwable)
         }
     }
 
@@ -148,12 +181,10 @@ class MediaStoreBackupStager(
         // staging attempt is not recorded as a permanent "media is gone" failure.
         throw cancellation
     } catch (throwable: Throwable) {
-        // Not silent: `false` here makes `stage` return null, which the queue records as a *permanent*
-        // "local media is no longer available" failure. A provider error (a revoked or limited media
-        // grant, a transient provider fault) looks identical to a deleted file without this line, so a
-        // recoverable condition was being reported as an unrecoverable one with nothing to diagnose.
+        // A provider error (revoked/limited grant, transient provider fault) is not proof that the
+        // file was deleted. Surface it as transient so the queue retries.
         TelepicLog.warn("BackupStager", "could not confirm the source row before staging", throwable)
-        false
+        throw BackupStagingException("The media source could not be read", throwable)
     }
 
     /**
@@ -213,6 +244,9 @@ class MediaStoreBackupStager(
 
         /** How long a staged copy is left alone before the sweep may remove it. */
         const val STALE_STAGING_AGE_MILLIS = 6L * 60 * 60 * 1000
+
+        /** Slack above the item size so the write itself is not what hits the wall. */
+        const val SPACE_HEADROOM_BYTES = 16L * 1024 * 1024
 
         /**
          * The columns [readDimensions] asks for. `DURATION` is the one that can be refused by an

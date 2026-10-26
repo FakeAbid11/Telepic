@@ -64,11 +64,11 @@ class BackupStatusRepositoryTest {
         dao.insertIgnore(row(5, BackupState.CANCELLED)) // shows no indicator
 
         val map = DefaultBackupStatusRepository(dao).visualStates.first()
-        assertEquals(MediaBackupVisualState.BACKED_UP, map["1"])
-        assertEquals(MediaBackupVisualState.UPLOADING, map["2"])
-        assertEquals(MediaBackupVisualState.QUEUED, map["3"])
-        assertEquals(MediaBackupVisualState.FAILED, map["4"])
-        assertEquals(MediaBackupVisualState.NONE, map["5"])
+        assertEquals(MediaBackupVisualState.BACKED_UP, map[1L])
+        assertEquals(MediaBackupVisualState.UPLOADING, map[2L])
+        assertEquals(MediaBackupVisualState.QUEUED, map[3L])
+        assertEquals(MediaBackupVisualState.FAILED, map[4L])
+        assertEquals(MediaBackupVisualState.NONE, map[5L])
     }
 
     @Test
@@ -80,12 +80,12 @@ class BackupStatusRepositoryTest {
         dao.insertIgnore(row(7, BackupState.WAITING_FOR_NETWORK, retryCount = 5))
 
         val map = DefaultBackupStatusRepository(dao).visualStates.first()
-        assertEquals(MediaBackupVisualState.QUEUED, map["6"])
-        assertEquals(MediaBackupVisualState.STALLED, map["7"])
+        assertEquals(MediaBackupVisualState.QUEUED, map[6L])
+        assertEquals(MediaBackupVisualState.STALLED, map[7L])
     }
 
     @Test
     fun `no queue rows produce an empty map`() = runBlocking {
-        assertEquals(emptyMap<String, MediaBackupVisualState>(), DefaultBackupStatusRepository(db.backupQueueDao()).visualStates.first())
+        assertEquals(emptyMap<Long, MediaBackupVisualState>(), DefaultBackupStatusRepository(db.backupQueueDao()).visualStates.first())
     }
 }

@@ -3,9 +3,11 @@ package com.telepic.data.backup
 import com.telepic.data.backup.db.BackupQueueDao
 import com.telepic.domain.backup.BackupState
 import com.telepic.domain.backup.MediaBackupVisualState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 
 /**
  * The boundary Photos consumes to know each local item's backup status. It maps the persistent
@@ -16,7 +18,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  * remote identity), this boundary cannot report false success.
  */
 interface BackupStatusRepository {
-    val visualStates: Flow<Map<String, MediaBackupVisualState>>
+    /** Keyed by the numeric MediaStore id, the same identity the UI uses everywhere else. */
+    val visualStates: Flow<Map<Long, MediaBackupVisualState>>
 }
 
 class DefaultBackupStatusRepository(
@@ -24,13 +27,14 @@ class DefaultBackupStatusRepository(
     private val maxRetries: Int = DefaultBackupRepository.DEFAULT_MAX_RETRIES,
 ) : BackupStatusRepository {
 
-    override val visualStates: Flow<Map<String, MediaBackupVisualState>> =
+    override val visualStates: Flow<Map<Long, MediaBackupVisualState>> =
         dao.observeStatusRows()
             .map { rows ->
                 buildMap(rows.size) {
                     for (row in rows) {
+                        val id = row.localMediaId.toLongOrNull() ?: continue
                         put(
-                            row.localMediaId,
+                            id,
                             MediaBackupVisualState.from(
                                 state = BackupState.fromName(row.state),
                                 retryCount = row.retryCount,
@@ -41,4 +45,7 @@ class DefaultBackupStatusRepository(
                 }
             }
             .distinctUntilChanged()
+            // The queue can be large and every upload write invalidates this flow. Build and compare
+            // the snapshot off the main thread; consumers receive exactly the same StateFlow updates.
+            .flowOn(Dispatchers.Default)
 }
