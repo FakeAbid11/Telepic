@@ -150,6 +150,9 @@
     <!-- Settings — storage, image cache -->
     <string name="settings_storage_image_cache">Clear image cache</string>
     <string name="settings_storage_image_cache_summary">Frees cached thumbnails and decoded images. They reload as you browse.</string>
+    <string name="settings_storage_diagnostics">Share diagnostics</string>
+    <string name="settings_storage_diagnostics_summary">Share the local warning/error log with support. It contains no phone numbers, login codes, tokens, media paths, or GPS data.</string>
+    <string name="settings_diagnostics_chooser">Share diagnostics</string>
 
     <!-- Settings — about, open-source licenses -->
     <string name="settings_about_licenses">Open source licenses</string>

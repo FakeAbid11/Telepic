@@ -1,5 +1,6 @@
 package com.telepic.ui.screens.settings
 
+import android.content.Intent
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telepic.BuildConfig
 import com.telepic.R
+import com.telepic.diagnostics.DiagnosticLogFile
 import com.telepic.domain.cloud.CloudStatus
 import com.telepic.onboarding.BackupPreference
 import com.telepic.permissions.rememberNotificationPermissionState
@@ -396,6 +398,29 @@ fun SettingsScreen(
                         summary = stringResource(R.string.settings_storage_image_cache_summary),
                         enabled = true,
                         onClick = viewModel::clearImageCache,
+                    )
+                    SettingsRow(
+                        title = stringResource(R.string.settings_storage_diagnostics),
+                        summary = stringResource(R.string.settings_storage_diagnostics_summary),
+                        enabled = true,
+                        onClick = {
+                            val uri = DiagnosticLogFile.shareUri(context)
+                            if (uri != null) {
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                runCatching {
+                                    context.startActivity(
+                                        Intent.createChooser(
+                                            send,
+                                            context.getString(R.string.settings_diagnostics_chooser),
+                                        ),
+                                    )
+                                }
+                            }
+                        },
                     )
                 }
 

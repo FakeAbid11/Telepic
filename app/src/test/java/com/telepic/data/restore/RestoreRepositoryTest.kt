@@ -24,12 +24,19 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The restore pipeline (download → verify → publish) against a fake cloud source and a fake
  * publisher. Real Telegram download + the Android MediaStore write are device-gated; these verify the
  * state mapping and the no-false-success guarantees, NOT a live end-to-end restore.
+ *
+ * Robolectric because the ledger-failure path goes through the app's logging seam.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class RestoreRepositoryTest {
 
     private fun fileWithBytes(bytes: ByteArray): File =

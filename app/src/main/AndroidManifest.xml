@@ -108,6 +108,18 @@
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
 
+        <!-- Bounded local diagnostics: the app shares its own log only through an explicit user
+             action in Settings. Not exported; URI permission is granted per share intent. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

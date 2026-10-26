@@ -1,5 +1,6 @@
 package com.telepic.diagnostics
 
+import android.content.Context
 import android.util.Log
 import com.telepic.BuildConfig
 
@@ -20,6 +21,15 @@ import com.telepic.BuildConfig
 object TelepicLog {
 
     private const val TAG_PREFIX = "Telepic/"
+
+    /**
+     * Attach a bounded local file sink. Must be called once from Application.onCreate; without it
+     * warn/error still go to logcat, but there is nothing for a user to share after a device-only
+     * failure.
+     */
+    fun initialize(context: Context) {
+        DiagnosticLogFile.initialize(context)
+    }
 
     fun debug(where: String, message: String) {
         if (BuildConfig.DEBUG) Log.d(tag(where), message)
@@ -46,11 +56,13 @@ object TelepicLog {
      */
     fun warn(where: String, message: String, throwable: Throwable? = null) {
         if (throwable == null) Log.w(tag(where), message) else Log.w(tag(where), message, throwable)
+        DiagnosticLogFile.append("W", where, message, throwable)
     }
 
     /** A failure the user is being asked to act on, or that ends an operation outright. */
     fun error(where: String, message: String, throwable: Throwable? = null) {
         if (throwable == null) Log.e(tag(where), message) else Log.e(tag(where), message, throwable)
+        DiagnosticLogFile.append("E", where, message, throwable)
     }
 
     private fun tag(where: String): String = TAG_PREFIX + where

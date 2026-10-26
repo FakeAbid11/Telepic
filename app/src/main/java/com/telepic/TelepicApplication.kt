@@ -44,6 +44,7 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
 
     override fun onCreate() {
         super.onCreate()
+        TelepicLog.initialize(this)
         installCrashLogger()
         // Configure osmdroid once, before any map exists, so its User-Agent and tile cache are the
         // app's and not the library defaults.
