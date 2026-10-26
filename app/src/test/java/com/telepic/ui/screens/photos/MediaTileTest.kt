@@ -33,7 +33,11 @@ class MediaTileTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun tile(selected: Boolean, selectionActive: Boolean) {
+    private fun tile(
+        selected: Boolean,
+        selectionActive: Boolean,
+        backupState: MediaBackupVisualState = MediaBackupVisualState.NONE,
+    ) {
         composeRule.setContent {
             TelepicTheme(darkTheme = true) {
                 MediaTile(
@@ -52,7 +56,7 @@ class MediaTileTest {
                         bucketName = null,
                         relativePath = null,
                     ),
-                    backupState = MediaBackupVisualState.NONE,
+                    backupState = backupState,
                     onClick = {},
                     selected = selected,
                     selectionActive = selectionActive,
@@ -98,5 +102,27 @@ class MediaTileTest {
         val described = SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription)
         val isButton = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
         composeRule.onNode(described and isButton).assertExists()
+    }
+
+    /**
+     * The badge itself is a picture — `BackupBadge` is private and its `Icon` carries
+     * `contentDescription = null` on purpose — so the *only* thing a screen reader ever learns about
+     * backup state is this label. It is appended by `mediaAccessibilityLabel`, which is easy to lose
+     * when the badge's wiring is edited, hence a test rather than trust.
+     */
+    @Test
+    fun `a backed-up tile says so in its description`() {
+        tile(selected = false, selectionActive = false, backupState = MediaBackupVisualState.BACKED_UP)
+
+        composeRule.onNodeWithContentDescription("Backed up", substring = true).assertExists()
+    }
+
+    @Test
+    fun `a tile with no backup state says nothing about backup`() {
+        tile(selected = false, selectionActive = false, backupState = MediaBackupVisualState.NONE)
+
+        // Not merely "not backed up": an item the queue has never seen must not be described as
+        // anything at all, or every unqueued photo announces a state it does not have.
+        composeRule.onNodeWithContentDescription("Backed up", substring = true).assertDoesNotExist()
     }
 }

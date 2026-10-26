@@ -15,9 +15,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -300,6 +300,14 @@ private fun FavoriteBadge(modifier: Modifier = Modifier) {
  * A visually-quiet backup indicator. Only `QUEUED`, `UPLOADING`, `BACKED_UP` and `FAILED` are shown;
  * `NONE`/`CANCELLED` render nothing so the grid stays clean and media-first. Progress is genuinely
  * indeterminate when unavailable — no fabricated percentages.
+ *
+ * `BACKED_UP` is the one state drawn **filled and tinted**: filled because a 14dp outlined cloud is
+ * ~1px strokes and its tick reads as a smudge, and tinted because white is what `QUEUED` uses — with
+ * both white, "done" and "pending" differed only by a tick inside the same outline. The mint
+ * `mediaSuccessText` is the same tone the Viewer's backup control already uses, so the two screens now
+ * say "backed up" the same way. It measures 5.36:1 on the disc below (white would be 8.59:1), which
+ * clears AA; the fill is what buys back legibility at this size, not the colour. Pinned by
+ * `ContrastTest` and by `MediaTileTest`'s "Backed up" description assertion.
  */
 @Composable
 private fun BackupBadge(state: MediaBackupVisualState, modifier: Modifier = Modifier) {
@@ -324,7 +332,7 @@ private fun BackupBadge(state: MediaBackupVisualState, modifier: Modifier = Modi
             )
             else -> {
                 val (icon, tint) = when (state) {
-                    MediaBackupVisualState.BACKED_UP -> Icons.Outlined.CloudDone to Color.White
+                    MediaBackupVisualState.BACKED_UP -> Icons.Filled.CloudDone to TelepicTokens.colors.mediaSuccessText
                     // On-media tones, not `colorScheme.error`/`tertiary`: this disc is over a photo,
                     // not over a theme surface, and the light scheme's dark red measured ~2.3:1 here.
                     MediaBackupVisualState.FAILED -> Icons.Outlined.CloudOff to TelepicTokens.colors.mediaErrorText

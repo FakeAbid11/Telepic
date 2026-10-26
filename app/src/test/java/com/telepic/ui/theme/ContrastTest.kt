@@ -54,6 +54,19 @@ class ContrastTest {
         assertRatio("mediaSuccessText on black", Color(0xFF7FE0A6), Color.Black, 4.5)
     }
 
+    /**
+     * The grid's backed-up badge draws mint on the 20dp `chromeScrim` disc, not on the Viewer's black
+     * backdrop — and a disc over a *white* photo is the worst case, because that is the lightest
+     * surface the scrim can sit on. Mint measures 5.36:1 there: above the 4.5 text floor, but well
+     * below white's 8.59:1 on the same disc. That gap is deliberate (the colour is what makes
+     * "backed up" distinguishable from "pending"), so it is asserted rather than left to drift.
+     */
+    @Test
+    fun `backed-up mint on chromeScrim over a white photo meets AA`() {
+        val chromeOverWhite = blend(Color.Black, 0xB3 / 255f, Color.White)
+        assertRatio("mediaSuccessText on chromeScrim/white", Color(0xFF7FE0A6), chromeOverWhite, 4.5)
+    }
+
     @Test
     fun `media warning text on black viewer backdrop meets AA`() {
         assertRatio("mediaWarningText on black", Color(0xFFFFB74D), Color.Black, 4.5)
