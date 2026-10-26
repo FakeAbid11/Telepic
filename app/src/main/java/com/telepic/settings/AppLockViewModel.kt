@@ -5,10 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.telepic.diagnostics.TelepicLog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -77,59 +77,69 @@ class AppLockViewModel(
     private var lastPreference: AppLockPreference = AppLockPreference.Unknown
 
     /**
-     * Whether the preference has been resolved even once.
+     * The live preference collector, if one is attached.
      *
-     * The first resolution is the cold start, where a lock that is on must lock immediately. A
-     * *later* resolution is the user arming the lock while the app is running, which must not lock
-     * the user out of the screen they are on.
+     * A read failure ends the collector. [retry] starts a new one after a successful read so a
+     * recovered app keeps seeing Settings toggles; without this the lock was resolved once and then
+     * silently stopped observing.
      */
-    private var firstResolution = true
+    private var preferenceJob: Job? = null
 
     init {
-        // The preference is **observed**, not read once.
-        //
-        // It used to be resolved exactly once, at construction, which meant the switch in Settings
-        // did nothing for the rest of the session: the app never locked, and FLAG_SECURE was never
-        // applied, so the Recents snapshot still showed the library. A security feature that silently
-        // does not arm is worse than one that is absent — the user believes it is on.
-        //
-        // The repository already exposes a Flow for exactly this, and an unreadable preference has
-        // to keep failing *closed* rather than falling back to whatever was read last.
+        // The preference is **observed**, not read once. The first read is bounded so a storage
+        // layer that never answers cannot strand the UI on Loading forever; a failure enters
+        // RecoveryRequired and only an explicit retry re-subscribes.
         viewModelScope.launch {
-            settingsRepository.appLockPreference
-                .catch { throwable ->
-                    TelepicLog.warn("AppLockViewModel", "the app-lock preference could not be observed", throwable)
-                    emit(AppLockPreference.Unknown)
-                }
-                .collect { preference -> apply(preference) }
+            val initial = loadPreference()
+            apply(initial)
+            if (initial !is AppLockPreference.Unknown) observePreference()
         }
     }
 
-    /** Re-reads the persisted preference after a read failure. Re-enters [AppLockState.Loading]. */
+    /**
+     * Re-reads the persisted preference after a read failure and resumes observation.
+     *
+     * No-op unless the gate is actually in [AppLockState.RecoveryRequired]; rapid taps while the
+     * read is in flight must not start competing collectors.
+     */
     fun retry() {
+        if (_state.value != AppLockState.RecoveryRequired) return
         _state.value = AppLockState.Loading
-        resolve()
+        viewModelScope.launch {
+            val preference = loadPreference()
+            apply(preference)
+            if (preference !is AppLockPreference.Unknown) observePreference()
+        }
     }
 
     /**
      * One bounded read of the persisted preference.
      *
-     * A storage layer that never answers must not strand the UI on Loading forever — a timeout is
-     * treated as "unknown", which requires recovery. Only used by [retry]; the steady state is the
-     * observed flow above.
+     * A timeout is treated as "unknown", which requires recovery. Cancellation of the ViewModel
+     * scope is rethrown; every other failure is reported and mapped to Unknown.
      */
-    private fun resolve() {
-        viewModelScope.launch {
-            val preference = try {
-                withTimeoutOrNull(READ_TIMEOUT_MILLIS) { settingsRepository.appLockPreference.first() }
-                    ?: AppLockPreference.Unknown
+    private suspend fun loadPreference(): AppLockPreference = try {
+        withTimeoutOrNull(READ_TIMEOUT_MILLIS) { settingsRepository.appLockPreference.first() }
+            ?: AppLockPreference.Unknown
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (throwable: Throwable) {
+        TelepicLog.warn("AppLockViewModel", "app-lock state could not be read", throwable)
+        AppLockPreference.Unknown
+    }
+
+    /** Attach a fresh collector; a previous one is cancelled so only one preference read wins. */
+    private fun observePreference() {
+        preferenceJob?.cancel()
+        preferenceJob = viewModelScope.launch {
+            try {
+                settingsRepository.appLockPreference.collect { preference -> apply(preference) }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (throwable: Throwable) {
-                TelepicLog.warn("AppLockViewModel", "app-lock state could not be read", throwable)
-                AppLockPreference.Unknown
+                TelepicLog.warn("AppLockViewModel", "the app-lock preference could not be observed", throwable)
+                apply(AppLockPreference.Unknown)
             }
-            apply(preference)
         }
     }
 
@@ -147,14 +157,13 @@ class AppLockViewModel(
                 _state.value = when {
                     // The lock is off, or the device cannot enforce it: the content is visible.
                     !enforceable -> AppLockState.Unlocked
-                    // Already locked, or this is the very first resolution: a cold start with the
-                    // lock on must lock immediately.
-                    previous == AppLockState.Locked || firstResolution -> AppLockState.Locked
-                    // The lock was armed *while the app was in the foreground*, so it does not fire
-                    // until the next foregrounding — which is exactly what the Settings row
-                    // promises ("the lock does not fire when you enable it — it fires on the next
-                    // foregrounding"). Locking the user out mid-Settings would be a surprise.
-                    else -> AppLockState.Unlocked
+                    // An already-unlocked screen stays unlocked. This is either the user who just
+                    // passed the credential prompt, or the user arming the lock from Settings,
+                    // which by contract fires on the next foregrounding rather than mid-screen.
+                    previous == AppLockState.Unlocked -> AppLockState.Unlocked
+                    // Loading (cold start or retry), RecoveryRequired, and Locked all require the
+                    // credential. Resolving the preference is not authentication.
+                    else -> AppLockState.Locked
                 }
                 // The lock was switched off: forget any background trip, so the grace timer cannot
                 // re-lock an app the user just unlocked by turning the feature off.
@@ -167,7 +176,6 @@ class AppLockViewModel(
                 _state.value = AppLockState.RecoveryRequired
             }
         }
-        firstResolution = false
     }
 
     /**

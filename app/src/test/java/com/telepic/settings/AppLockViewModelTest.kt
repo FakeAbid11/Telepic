@@ -32,7 +32,7 @@ class AppLockViewModelTest {
 
     private class FakeSettings(
         initial: AppLockPreference = AppLockPreference.Known(false),
-        private val throwOnRead: Boolean = false,
+        var throwOnRead: Boolean = false,
     ) : SettingsRepository {
         val lock = MutableStateFlow(initial)
 
@@ -114,6 +114,71 @@ class AppLockViewModelTest {
         settings.lock.value = AppLockPreference.Known(false)
         vm.retry()
 
+        assertEquals(AppLockState.Unlocked, vm.state.value)
+    }
+
+    @Test
+    fun `retry with the lock enabled requires authentication and does not fail open`() = runTest {
+        val settings = FakeSettings(AppLockPreference.Unknown, throwOnRead = true)
+        val vm = viewModel(settings, deviceSecure = true)
+        assertEquals(AppLockState.RecoveryRequired, vm.state.value)
+        assertTrue(vm.secureWindow.value)
+
+        // The read recovers, but resolving the preference is not authentication: the gate must
+        // remain Locked until the credential prompt reports success.
+        settings.throwOnRead = false
+        settings.lock.value = AppLockPreference.Known(true)
+        vm.retry()
+
+        assertEquals(AppLockState.Locked, vm.state.value)
+        assertTrue(vm.secureWindow.value)
+
+        vm.unlock()
+        assertEquals(AppLockState.Unlocked, vm.state.value)
+    }
+
+    @Test
+    fun `repeated read failures from recovery stay in recovery`() = runTest {
+        val settings = FakeSettings(AppLockPreference.Unknown, throwOnRead = true)
+        val vm = viewModel(settings, deviceSecure = true)
+        assertEquals(AppLockState.RecoveryRequired, vm.state.value)
+
+        vm.retry()
+        assertEquals(AppLockState.RecoveryRequired, vm.state.value)
+        assertTrue(vm.secureWindow.value)
+
+        vm.retry()
+        assertEquals(AppLockState.RecoveryRequired, vm.state.value)
+    }
+
+    @Test
+    fun `retry resumes observing preference changes after recovery`() = runTest {
+        val settings = FakeSettings(AppLockPreference.Unknown, throwOnRead = true)
+        val vm = viewModel(settings, deviceSecure = true)
+        assertEquals(AppLockState.RecoveryRequired, vm.state.value)
+
+        settings.throwOnRead = false
+        settings.lock.value = AppLockPreference.Known(true)
+        vm.retry()
+        assertEquals(AppLockState.Locked, vm.state.value)
+
+        // The lock is disabled in Settings while the app is running: the recovered collector must
+        // see it rather than leaving the user on the lock screen until a restart.
+        settings.lock.value = AppLockPreference.Known(false)
+        assertEquals(AppLockState.Unlocked, vm.state.value)
+        assertFalse(vm.secureWindow.value)
+    }
+
+    @Test
+    fun `cold start with the lock enabled stays locked until authentication`() = runTest {
+        val vm = viewModel(FakeSettings(AppLockPreference.Known(true)), deviceSecure = true)
+        assertEquals(AppLockState.Locked, vm.state.value)
+
+        // A preference emission is not a credential result.
+        vm.onForegrounded()
+        assertEquals(AppLockState.Locked, vm.state.value)
+
+        vm.unlock()
         assertEquals(AppLockState.Unlocked, vm.state.value)
     }
 
