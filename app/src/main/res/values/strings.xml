@@ -155,7 +155,7 @@
     <string name="settings_about_licenses">Open source licenses</string>
     <string name="settings_about_licenses_summary">The libraries Telepic is built on.</string>
     <string name="settings_licenses_intro">Telepic is built with these open-source components:</string>
-    <string name="settings_licenses_map_data">Map tiles and data © OpenStreetMap contributors, available under the Open Database License (ODbL).</string>
+    <string name="settings_licenses_map_data">Map data © OpenStreetMap contributors, available under the Open Database License (ODbL). Map tiles rendered by CARTO.</string>
 
     <!-- App lock -->
     <string name="app_lock_title">Telepic is locked</string>
@@ -594,7 +594,7 @@
         <item quantity="one">Map with %1$d photo location</item>
         <item quantity="other">Map with %1$d photo locations</item>
     </plurals>
-    <string name="map_attribution">© OpenStreetMap contributors</string>
+    <string name="map_attribution">© OpenStreetMap contributors © CARTO</string>
     <string name="map_selected_open">Open photo</string>
     <string name="map_recenter">Show all photo locations</string>
     <string name="map_selected_title">Photo at this location</string>

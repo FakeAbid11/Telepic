@@ -82,10 +82,13 @@ class MapPinBadgeTest {
         )
     }
 
+    /**
+     * The marker is carried by a different half of itself on each basemap: the **fill** on the light
+     * one, the **ring** on the dark one. That is why neither colour is theme-derived — a theme-derived
+     * tone would be chosen for a surface the marker is not drawn on.
+     */
     @Test
-    fun `the brand blue is readable on the light map tiles`() {
-        // The tiles are a fixed light style, so the markers cannot follow the app theme. The brand
-        // blue on a typical land tile measures about 4.7:1.
+    fun `the brand blue is readable on the light basemap`() {
         val land = 0xFFF2EFE9.toInt()
         assertTrue(
             "the brand blue must read against a light land tile",
@@ -94,13 +97,25 @@ class MapPinBadgeTest {
     }
 
     @Test
-    fun `the dark theme's primary would have vanished on those tiles`() {
+    fun `the white ring is what carries a marker on the dark basemap`() {
+        // A mid-blue on dark land is the classic low-contrast pairing, so on the dark basemap the
+        // ring — not the fill — is what defines the marker's edge. `0xFF383838` is deliberately a
+        // *light* dark land: the worst case for a white ring.
+        val land = 0xFF383838.toInt()
+        assertTrue(
+            "the white ring must read against a dark land tile",
+            contrast(MapPinBadge.PinRing.toArgb(), land) >= 3.0,
+        )
+    }
+
+    @Test
+    fun `the dark theme's primary would have vanished on the light basemap`() {
         // The reason the fill is fixed: the dark scheme's `primary` is a light blue that measures
-        // about 1.9:1 against a land tile.
+        // about 1.9:1 against a light land tile.
         val land = 0xFFF2EFE9.toInt()
         val darkSchemePrimary = 0xFF7FA9FF.toInt()
         assertTrue(
-            "the dark theme's primary is unusable on the light tiles, which is why the fill is fixed",
+            "the dark theme's primary is unusable on light tiles, which is why the fill is fixed",
             contrast(darkSchemePrimary, land) < 3.0,
         )
     }

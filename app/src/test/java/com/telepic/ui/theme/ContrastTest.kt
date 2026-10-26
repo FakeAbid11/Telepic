@@ -104,6 +104,38 @@ class ContrastTest {
         assertRatio("light onSurfaceVariant/bg", Color(0xFF43474E), Color.White, 4.5)
     }
 
+    // ---- Inverse pair (Undo bar, date-rail bubble, and the map's floating controls) ----
+
+    @Test
+    fun `dark scheme inverseOnSurface on inverseSurface meets AA`() {
+        assertRatio("dark inverseOnSurface/inverseSurface", Color(0xFF0B0D10), Color(0xFFE7EAF0), 4.5)
+    }
+
+    @Test
+    fun `light scheme inverseOnSurface on inverseSurface meets AA`() {
+        assertRatio("light inverseOnSurface/inverseSurface", Color(0xFFF7F9FC), Color(0xFF14181E), 4.5)
+    }
+
+    /**
+     * The map's FAB and scanning chip are `inverseSurface` discs sitting on **tiles**, not on a theme
+     * surface — so the figure that matters is against a land tone, and it has to hold for both
+     * basemaps. The tones below are the worst case for each chip: a light-ish dark land under the dark
+     * theme's near-white chip, and pale land under the light theme's near-black one.
+     *
+     * This is the defect the old hardcoded `Color.White` FAB worked around: `primaryContainer`
+     * measured 1.09:1 against a light land tile. The inverse pair is what makes the control legible on
+     * either basemap instead of on only the one its colour was picked for.
+     */
+    @Test
+    fun `dark scheme map chrome reads on a dark land tile`() {
+        assertRatio("dark inverseSurface on dark land", Color(0xFFE7EAF0), Color(0xFF383838), 4.5)
+    }
+
+    @Test
+    fun `light scheme map chrome reads on a light land tile`() {
+        assertRatio("light inverseSurface on light land", Color(0xFF14181E), Color(0xFFF2EFE9), 4.5)
+    }
+
     // ---- helpers ----
 
     private fun assertRatio(label: String, fg: Color, bg: Color, min: Double) {

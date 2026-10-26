@@ -24,18 +24,21 @@ object MapPinBadge {
     /**
      * The fill every marker is drawn with.
      *
-     * Fixed, not theme-derived, because the map tiles are OSM Mapnik — a **light** style that does
-     * not follow the app theme. In the dark scheme `primary` is a light blue (#7FA9FF) that measures
-     * about 1.9:1 against a typical land tile, so the clusters all but disappeared. The brand blue
-     * reads on the tiles in either theme.
+     * Fixed, not theme-derived — but not because the basemap is fixed. The map now follows the theme
+     * (a light or dark CARTO style), so a marker has to read on *both*: a theme-derived tone would be
+     * chosen for a surface the marker is not drawn on, and the dark scheme's light blue (#7FA9FF)
+     * measures about 1.9:1 against a light land tile. This brand blue clears the 3:1 graphics floor on
+     * either basemap (≈4.1:1 on light land, ≈3.7:1 on dark), and the ring below is what carries the
+     * edge in the worst case.
      */
     val PinFill = Color(0xFF2F6BF0)
 
     /**
      * The ring drawn around every marker.
      *
-     * White, so a marker keeps its edge over water, parks and dense streets alike — the same
-     * reason the map's own floating controls are near-white with a dark glyph.
+     * White, so a marker keeps its edge over water, parks and dense streets alike on the light
+     * basemap, and separates cleanly from a dark one. It is the reason the fill does not have to be
+     * re-tuned per theme.
      */
     val PinRing = Color.White
 

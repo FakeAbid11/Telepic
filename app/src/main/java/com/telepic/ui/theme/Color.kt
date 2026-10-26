@@ -73,6 +73,13 @@ val TelepicDarkColorScheme = darkColorScheme(
     // is a *light* surface, so its action tone has to be dark to read on it; the light scheme is the
     // mirror. Both measure >4.5:1 against their inverse surface.
     inversePrimary = Color(0xFF1B4FD8),
+    // `inverseSurface` / `inverseOnSurface` are the "contrasts with its surroundings" pair, and three
+    // shipped surfaces already draw on them: the Undo bar, the date-rail drag bubble, and (now) the
+    // map's floating controls. Neither scheme set them, so all three were rendering on Material's M2
+    // baseline (#E6E1E5 / #313033) — the same purple-grey leak this file already documents for
+    // `inversePrimary`. Set explicitly to the app's own tones; the pair measures ~15:1.
+    inverseSurface = Color(0xFFE7EAF0),
+    inverseOnSurface = Color(0xFF0B0D10),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF3B0907),
 )
@@ -102,6 +109,9 @@ val TelepicLightColorScheme = lightColorScheme(
     // Mirror of the dark scheme's choice: this scheme's inverseSurface is *dark*, so the
     // TransientMessageBar's action label has to be a light tone. See the note above.
     inversePrimary = TelepicBrand.BlueLight,
+    // The mirror of the dark scheme's pair — near-black on a light map, near-white on a dark one.
+    inverseSurface = Color(0xFF14181E),
+    inverseOnSurface = Color(0xFFF7F9FC),
     error = Color(0xFFBA1A1A),
     onError = TelepicBrand.White,
 )

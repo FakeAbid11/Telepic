@@ -114,6 +114,20 @@ val LocalTelepicColors = staticCompositionLocalOf { DarkExtended }
  */
 val LocalReduceMotion = staticCompositionLocalOf { false }
 
+/**
+ * Whether the app is drawing its dark theme — the *app's* decision, not the device's.
+ *
+ * Needed by surfaces that are not Compose-drawn and therefore cannot read [MaterialTheme]: the
+ * osmdroid map picks a dark or light basemap from this, and `isSystemInDarkTheme()` would be wrong
+ * for exactly the user who overrode the theme (Dark forced on a Light device, or the reverse). The
+ * theme decision is made once in `TelepicRoot` via `ThemeMode.isDarkTheme(...)`; this publishes its
+ * result.
+ *
+ * Defaults to `true` to match [TelepicTheme]'s own default and [LocalTelepicColors]' `DarkExtended`,
+ * which is the product's default theme.
+ */
+val LocalDarkTheme = staticCompositionLocalOf { true }
+
 /** The spec a decorative animation should use: none at all when the user asked for less motion. */
 @Composable
 fun <T : Any> telepicMotionSpec(): AnimationSpec<T> =
@@ -176,6 +190,7 @@ fun TelepicTheme(
         LocalSpacing provides DefaultSpacing,
         LocalTelepicColors provides extended,
         LocalReduceMotion provides reduceMotion,
+        LocalDarkTheme provides darkTheme,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

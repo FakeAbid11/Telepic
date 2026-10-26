@@ -40,7 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -68,6 +68,7 @@ import com.telepic.data.media.MapZoomPrecision
 import com.telepic.data.media.SavedCamera
 import com.telepic.domain.media.GeoLocation
 import com.telepic.domain.media.GeotaggedMedia
+import com.telepic.map.TelepicTileSources
 import com.telepic.navigation.MapFocus
 import com.telepic.navigation.MapFocusRequest
 import com.telepic.permissions.MediaPermissionState
@@ -82,11 +83,12 @@ import com.telepic.ui.components.ScreenHeader
 import com.telepic.ui.components.SettingsAction
 import com.telepic.ui.components.StateAction
 import com.telepic.ui.screens.viewer.formatCoordinate
+import com.telepic.ui.theme.LocalDarkTheme
 import com.telepic.ui.theme.TelepicTokens
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
@@ -130,6 +132,9 @@ fun MapScreen(
     val spacing = TelepicTokens.spacing
     // The attribution is a link, so it needs a way to open one.
     val uriHandler = LocalUriHandler.current
+    // The app's own theme decision, not the device's: the basemap has to agree with the rest of the
+    // UI even when the user forced Dark on a Light device (or the reverse).
+    val darkTiles = LocalDarkTheme.current
 
     LaunchedEffect(permissionState.hasAccess) { if (permissionState.hasAccess) viewModel.refresh() }
 
@@ -211,6 +216,7 @@ fun MapScreen(
                         savedCamera = savedCamera,
                         focus = focus,
                         scanning = isScanning,
+                        darkTiles = darkTiles,
                         onFocusConsumed = focusRequest::consume,
                         onCameraChanged = viewModel::rememberCamera,
                         modifier = Modifier.weight(1f),
@@ -218,11 +224,12 @@ fun MapScreen(
                     Text(
                         text = stringResource(R.string.map_attribution),
                         style = MaterialTheme.typography.labelSmall,
-                        // A link, in the link colour: the OpenStreetMap tile usage policy asks for the
-                        // attribution to point at their copyright page, and plain text cannot.
+                        // A link, in the link colour: the basemap is CARTO's rendering of
+                        // OpenStreetMap data, and both have to be credited — with a way to reach the
+                        // page that lists them, which plain text cannot offer.
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
-                            .clickable { uriHandler.openUri(OSM_COPYRIGHT_URL) }
+                            .clickable { uriHandler.openUri(MAP_ATTRIBUTION_URL) }
                             .padding(horizontal = spacing.md, vertical = spacing.xs),
                     )
                 }
@@ -238,6 +245,7 @@ private fun OsmMap(
     savedCamera: SavedCamera?,
     focus: MapFocus?,
     scanning: Boolean,
+    darkTiles: Boolean,
     onFocusConsumed: () -> Unit,
     onCameraChanged: (SavedCamera) -> Unit,
     modifier: Modifier = Modifier,
@@ -309,10 +317,30 @@ private fun OsmMap(
             }
         }
     }
-    // The markers carry their own colours (see `MapPinBadge`) rather than the theme's: the map tiles
-    // are a fixed LIGHT style, so the dark scheme's light-blue `primary` measured about 1.9:1 against
-    // a typical land tile and the clusters all but disappeared. The brand blue with a white ring
-    // reads on the tiles in either theme.
+    // The markers keep their own fixed colours (see `MapPinBadge`) rather than following the theme.
+    // A marker has to read on *both* basemaps, and a theme-derived tone would be chosen for a surface
+    // the marker is not drawn on — the dark scheme's `primary` measures ~1.9:1 on light land. The pair
+    // works by division of labour: the blue fill carries the marker on the light basemap, the white
+    // ring carries it on the dark one, so neither has to be re-tuned per theme.
+    //
+    // The basemap itself does follow the theme, and is applied here rather than only in the factory
+    // below: the factory runs once, so a theme flipped while the map is on screen would otherwise keep
+    // the old style until the screen was recreated. `appliedTiles` is the guard that keeps this from
+    // re-setting the source (and reloading every tile) on unrelated recompositions.
+    val appliedTiles = remember { AppliedTileSource() }
+    // The gap between tiles, and the flash while they load, used to be osmdroid's default white —
+    // which on a dark basemap is a white strobe on every pan. The surface behind the map is already
+    // `mediaBackdrop`, so the map's own background matches it.
+    val backdropArgb = TelepicTokens.colors.mediaBackdrop.toArgb()
+    LaunchedEffect(mapViewRef, darkTiles) {
+        val mapView = mapViewRef ?: return@LaunchedEffect
+        val target = TelepicTileSources.forDarkTheme(darkTiles)
+        if (appliedTiles.source !== target) {
+            mapView.setTileSource(target)
+            mapView.mapOverlay.setLoadingBackgroundColor(backdropArgb)
+            appliedTiles.source = target
+        }
+    }
 
     // The two camera moves, applied from an effect rather than from `AndroidView`'s `update` block.
     //
@@ -374,7 +402,12 @@ private fun OsmMap(
                 // Calling Configuration.load() here would reset the User-Agent to the bare package
                 // name on every map, which is what left the UA non-descriptive and the map blank.
                 MapView(context).apply {
-                    setTileSource(TileSourceFactory.MAPNIK)
+                    // The theme's basemap, set here so the first frame already draws the right style —
+                    // the effect above only re-applies it when the theme changes while the map lives.
+                    val initialTiles = TelepicTileSources.forDarkTheme(darkTiles)
+                    setTileSource(initialTiles)
+                    mapOverlay.setLoadingBackgroundColor(backdropArgb)
+                    appliedTiles.source = initialTiles
                     setMultiTouchControls(true)
                     // This screen exists to show online tiles; be explicit rather than relying on the
                     // configuration default.
@@ -481,10 +514,12 @@ private fun OsmMap(
         // scan settles, and is the reason the screen no longer waits on a long first sweep at all.
         if (scanning) {
             Surface(
-                // A near-white chip with a dark label, for the same reason as the FAB below: the map
-                // is a fixed light tile style, and the theme's `surfaceVariant` measured 1.03:1
-                // against it — the chip degenerated into floating text.
-                color = Color.White,
+                // `inverseSurface`, not a themed surface: this floats over *tiles*, not over a theme
+                // surface, and a matching surface would be invisible on a map of the same brightness.
+                // The inverse pair flips with the theme, so the chip is near-white on the dark basemap
+                // and near-black on the light one — the contrast the old hardcoded white only ever
+                // achieved on one of the two.
+                color = MaterialTheme.colorScheme.inverseSurface,
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -502,12 +537,12 @@ private fun OsmMap(
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(16.dp),
                         // The indicator's colour has to match the chip it sits on.
-                        color = Color(0xFF1B2430),
+                        color = MaterialTheme.colorScheme.inverseOnSurface,
                     )
                     Text(
                         text = stringResource(R.string.map_scanning),
                         style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFF1B2430),
+                        color = MaterialTheme.colorScheme.inverseOnSurface,
                         // A changing status, so it is announced rather than only seen.
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
@@ -521,13 +556,12 @@ private fun OsmMap(
         // target, under the 48dp accessibility floor, on this screen's only way out of a stray pan.
         FloatingActionButton(
             onClick = { pendingCamera = MapCameraResolver.recenter(plan) },
-            // The map is a **light** OSM tile style that does not follow the app theme, so the
-            // scheme's `primaryContainer` was invisible on it: in the light scheme the FAB measured
-            // 1.09:1 against a typical land tile and 1.28:1 against water — only its dark glyph was
-            // discernible. The container is therefore an explicit near-white with a dark glyph, which
-            // reads on the map in either theme.
-            containerColor = Color.White,
-            contentColor = Color(0xFF1B2430),
+            // The inverse pair, for the reason given on the scanning chip: a FAB sits on tiles, and
+            // `primaryContainer` measured 1.09:1 against a light land tile — only its glyph was
+            // discernible. Following the theme this way also means the contrast holds on the dark
+            // basemap, which a fixed near-white container could not do.
+            containerColor = MaterialTheme.colorScheme.inverseSurface,
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(TelepicTokens.spacing.lg),
@@ -747,8 +781,14 @@ private fun formatPlace(latitude: Double, longitude: Double): String {
 
 private const val MAX_ZOOM = 19.0
 
-/** Where the OpenStreetMap attribution links to — the tile usage policy asks for a link. */
-private const val OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright"
+/**
+ * Where the map attribution links to.
+ *
+ * The basemap is CARTO's rendering of OpenStreetMap data, so both have to be credited — and CARTO's
+ * attribution page is the one that lists both, which is why the link points there rather than at
+ * `openstreetmap.org/copyright` (the correct target when we fetched OSM tiles directly).
+ */
+private const val MAP_ATTRIBUTION_URL = "https://carto.com/attributions"
 
 /**
  * Remembers which pin list the map's overlays currently represent.
@@ -759,4 +799,15 @@ private const val OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright"
  */
 private class RenderedPins {
     var pins: List<MapClusterer.MapPin>? = null
+}
+
+/**
+ * Remembers which basemap the live `MapView` is currently showing.
+ *
+ * Same reasoning as [RenderedPins], plus one of its own: `setTileSource` throws away the in-memory
+ * tile list and reloads, so re-applying the same source on every recomposition would re-fetch tiles
+ * continuously. Comparing the instance is enough because the two sources are singletons.
+ */
+private class AppliedTileSource {
+    var source: OnlineTileSourceBase? = null
 }
