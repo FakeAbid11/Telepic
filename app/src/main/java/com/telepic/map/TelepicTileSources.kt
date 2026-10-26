@@ -39,6 +39,11 @@ object TelepicTileSources {
     /**
      * The light basemap, for the light theme.
      *
+     * Note the argument order: `XYTileSource` takes the **copyright notice before** the base URLs
+     * (`name, minZoom, maxZoom, tileSize, copyright, baseUrls[]`) — the reverse of what the parameter
+     * names read like, and a swap compiles or not depending on arity, so [TelepicTileSourcesTest]
+     * asserts the resulting tile URL rather than trusting the call.
+     *
      * The name is **load-bearing**, not cosmetic: osmdroid keys its tile cache directory by
      * tile-source name, so two distinct names give the two styles separate on-disk caches. Sharing a
      * name would let a cached light tile be served into a dark map (and the reverse) — a corruption
@@ -49,8 +54,8 @@ object TelepicTileSources {
         MIN_ZOOM,
         MAX_ZOOM,
         TILE_SIZE_PX,
-        "${BASE_URL}light_all/",
         COPYRIGHT,
+        arrayOf("${BASE_URL}light_all/"),
     )
 
     /** The dark basemap, for the dark theme. See [Light] for why the name must differ. */
@@ -59,8 +64,8 @@ object TelepicTileSources {
         MIN_ZOOM,
         MAX_ZOOM,
         TILE_SIZE_PX,
-        "${BASE_URL}dark_all/",
         COPYRIGHT,
+        arrayOf("${BASE_URL}dark_all/"),
     )
 
     /**
