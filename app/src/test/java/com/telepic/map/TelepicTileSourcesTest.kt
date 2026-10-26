@@ -36,9 +36,10 @@ class TelepicTileSourcesTest {
      */
     @Test
     fun `the two basemaps have distinct names so they get separate tile caches`() {
-        assertNotEquals(TelepicTileSources.Light.name, TelepicTileSources.Dark.name)
-        assertTrue(TelepicTileSources.Light.name.isNotBlank())
-        assertTrue(TelepicTileSources.Dark.name.isNotBlank())
+        // `name()` is a plain method on `ITileSource`, not a `getName()` getter, so it stays a call.
+        assertNotEquals(TelepicTileSources.Light.name(), TelepicTileSources.Dark.name())
+        assertTrue(TelepicTileSources.Light.name().isNotBlank())
+        assertTrue(TelepicTileSources.Dark.name().isNotBlank())
     }
 
     @Test
