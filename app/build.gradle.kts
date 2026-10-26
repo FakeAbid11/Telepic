@@ -86,15 +86,15 @@ android {
 
     signingConfigs {
         if (releaseKeystoreB64.isNotBlank()) {
-            val storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD").orEmpty()
-            val keyAlias = System.getenv("RELEASE_KEY_ALIAS").orEmpty()
-            val keyPassword = System.getenv("RELEASE_KEY_PASSWORD").orEmpty()
+            val storePasswordValue = System.getenv("RELEASE_KEYSTORE_PASSWORD").orEmpty()
+            val keyAliasValue = System.getenv("RELEASE_KEY_ALIAS").orEmpty()
+            val keyPasswordValue = System.getenv("RELEASE_KEY_PASSWORD").orEmpty()
             // A half-configured signing config used to produce an empty password/alias and an
             // opaque signing failure. Fail at configuration time with the missing names instead.
             val missing = listOf(
-                "RELEASE_KEYSTORE_PASSWORD" to storePassword,
-                "RELEASE_KEY_ALIAS" to keyAlias,
-                "RELEASE_KEY_PASSWORD" to keyPassword,
+                "RELEASE_KEYSTORE_PASSWORD" to storePasswordValue,
+                "RELEASE_KEY_ALIAS" to keyAliasValue,
+                "RELEASE_KEY_PASSWORD" to keyPasswordValue,
             ).filter { it.second.isBlank() }.map { it.first }
             require(missing.isEmpty()) {
                 "Release signing is incomplete; missing: ${missing.joinToString()}"
@@ -105,9 +105,9 @@ android {
             keystoreFile.writeBytes(Base64.getDecoder().decode(releaseKeystoreB64))
             create("release") {
                 storeFile = keystoreFile
-                storePassword = storePassword
-                keyAlias = keyAlias
-                keyPassword = keyPassword
+                storePassword = storePasswordValue
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
             }
         }
     }

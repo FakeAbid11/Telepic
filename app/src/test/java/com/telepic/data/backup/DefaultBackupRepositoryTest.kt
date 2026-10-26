@@ -470,9 +470,8 @@ class DefaultBackupRepositoryTest {
     }
 
     /**
-     * And when staging could not read them, they stay `null` — "unknown" — rather than becoming a
-     * fabricated `0` that claims the media has no dimensions. The mapper turns `null` into 0 anyway,
-     * but the request is the boundary that has to stay honest.
+     * A storage failure is not proof that the source vanished. It must park the row for a bounded
+     * retry instead of recording the misleading permanent "local media is no longer available".
      */
     @Test
     fun `a storage staging failure waits for retry instead of permanently failing`() = runBlocking {
@@ -493,6 +492,11 @@ class DefaultBackupRepositoryTest {
         assertNull(row.telegramChatId)
     }
 
+    /**
+     * And when staging could not read them, they stay `null` — "unknown" — rather than becoming a
+     * fabricated `0` that claims the media has no dimensions. The mapper turns `null` into 0 anyway,
+     * but the request is the boundary that has to stay honest.
+     */
     @Test
     fun `unknown dimensions stay null rather than becoming zero`() = runBlocking {
         val cloud = FakeCloud()
