@@ -10,6 +10,10 @@ on:
         description: "Build and verify a signed release AAB (requires all release secrets)"
         type: boolean
         default: false
+      build_login_apk:
+        description: "Build a login-capable debug APK, encrypted before artifact upload"
+        type: boolean
+        default: false
 
 # Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
@@ -119,6 +123,68 @@ jobs:
           name: telepic-room-schemas
           path: app/schemas/
           if-no-files-found: warn
+
+  # A login-capable debug build for the repository owner. It is manual-only and the raw APK is never
+  # uploaded: the artifact is AES-encrypted with a dedicated repository secret, because this
+  # repository is public and a plain artifact would expose the Telegram api_hash to everyone.
+  debug-login-apk:
+    name: Debug APK with Telegram login (encrypted artifact)
+    if: github.event_name == 'workflow_dispatch' && inputs.build_login_apk
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      APK_ARTIFACT_PASSWORD: ${{ secrets.APK_ARTIFACT_PASSWORD }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Verify login-build secrets
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in TELEGRAM_API_ID TELEGRAM_API_HASH APK_ARTIFACT_PASSWORD; do
+            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Login-capable APK is not configured; missing:$missing"
+            exit 1
+          fi
+
+      - name: Assemble debug APK with real credentials
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Encrypt APK before uploading it to public artifact storage
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/debug/*.apk)
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in "$APK" \
+            -out telepic-debug-login.apk.enc \
+            -pass env:APK_ARTIFACT_PASSWORD
+          sha256sum telepic-debug-login.apk.enc > telepic-debug-login.apk.enc.sha256
+          echo "::notice::Encrypted login APK ready. Decrypt it with the APK_ARTIFACT_PASSWORD secret."
+
+      - name: Upload encrypted login APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: telepic-debug-login-encrypted
+          path: |
+            telepic-debug-login.apk.enc
+            telepic-debug-login.apk.enc.sha256
+          if-no-files-found: error
 
   # R8 (minify + resource shrinking) only ever runs on a release build. This job exercises that
   # configuration without claiming the result is shippable: it deliberately has no Telegram

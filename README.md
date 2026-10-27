@@ -123,9 +123,30 @@ Every push to `main` produces a debug APK as a CI artifact.
 ### 🔨 Build it yourself through CI
 
 1. **Fork** the repository (or clone it and push to your own remote).
-2. *(Optional)* Add the release credentials/signing secrets if you intend to build a signed release; they are not used for the debug APK — see [Configuration](#configuration).
+2. *(Optional)* Add the release credentials/signing secrets if you intend to build a signed release; they are not used for the normal debug APK — see [Configuration](#configuration).
 3. Trigger a build by pushing a commit, opening a pull request, or using **Actions → Android CI → Run workflow** (`workflow_dispatch`).
-4. Download the **`telepic-debug-apk`** artifact from the finished run. For Telegram login, build locally with credentials.
+4. Download the **`telepic-debug-apk`** artifact from the finished run. For Telegram login, use the encrypted login build below or build locally with credentials.
+
+### 🔐 Login-capable APK from the public repository (encrypted artifact)
+
+The normal CI debug APK deliberately carries no Telegram credentials, so a public
+downloadable artifact cannot leak the `api_hash`. To test login from CI, run the manual job:
+
+1. Open **Actions → Android CI → Run workflow**.
+2. Enable **`build_login_apk`** and run it on `main`.
+3. Download the **`telepic-debug-login-encrypted`** artifact.
+4. Decrypt it locally with the `APK_ARTIFACT_PASSWORD` repository secret (the password is not in
+   this repository):
+   ```bash
+   openssl enc -d -aes-256-cbc -pbkdf2 \
+     -in telepic-debug-login.apk.enc \
+     -out telepic-debug-login.apk \
+     -pass pass:'<APK_ARTIFACT_PASSWORD>'
+   ```
+5. Install `telepic-debug-login.apk`.
+
+The raw login APK is never uploaded; only the AES-encrypted file and its checksum are published.
+Rotate the `APK_ARTIFACT_PASSWORD` secret if it is ever exposed outside your control.
 
 ### ✅ Verify Telegram login on a device
 
