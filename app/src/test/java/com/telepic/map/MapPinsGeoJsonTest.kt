@@ -22,7 +22,9 @@ import org.maplibre.geojson.Point
 class MapPinsGeoJsonTest {
 
     private fun features(pins: List<MapClusterer.MapPin>): List<Feature> =
-        MapPinsGeoJson.featureCollection(pins).features()
+        // `features()` is a platform type that MapLibre declares nullable, so `orEmpty()` rather
+        // than a `!!` — an empty collection and a missing one mean the same thing to a test.
+        MapPinsGeoJson.featureCollection(pins).features().orEmpty()
 
     @Test
     fun `every pin becomes exactly one feature`() {
