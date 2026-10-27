@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://fakeabid11.github.io/Telepic/sitemap.xml
