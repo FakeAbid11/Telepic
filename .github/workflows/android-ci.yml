@@ -24,8 +24,13 @@ jobs:
   build:
     name: Build, test & package
     runs-on: ubuntu-latest
-    # Deliberately no Telegram credentials: the downloaded debug APK must never carry a real
-    # api_hash, and BuildConfig's id-0 placeholder keeps local/CI UI work usable without login.
+    # The repository owner explicitly wants the normal debug artifact to be login-capable. Main
+    # pushes and manual runs receive the Telegram credentials; pull-request builds stay
+    # credential-free so a PR run cannot publish them. This repository is public, so the api_hash
+    # inside a main debug APK is extractable by anyone who downloads it.
+    env:
+      TELEGRAM_API_ID: ${{ (github.event_name != 'pull_request') && secrets.TELEGRAM_API_ID || '' }}
+      TELEGRAM_API_HASH: ${{ (github.event_name != 'pull_request') && secrets.TELEGRAM_API_HASH || '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
