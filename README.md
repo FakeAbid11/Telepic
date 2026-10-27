@@ -2,7 +2,7 @@
 
 **A local-first Android photo & video library with Telegram-powered cloud backup.**
 
-[![Android CI](https://github.com/FakeAbid11/Telepic/actions/workflows/android-ci.yml/badge.svg)](https://github.com/FakeAbid11/Telepic/actions/workflows/android-ci.yml)
+[![Debug](https://github.com/FakeAbid11/Telepic/actions/workflows/android-ci.yml/badge.svg)](https://github.com/FakeAbid11/Telepic/actions/workflows/android-ci.yml)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![minSdk](https://img.shields.io/badge/minSdk-API%2026-3DDC84.svg)](#quick-start)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-7F5EBF.svg)](#configuration)
@@ -125,7 +125,7 @@ Every push to `main` produces a debug APK as a CI artifact.
 
 1. **Fork** the repository (or clone it and push to your own remote).
 2. Add the Telegram credentials if you want the normal debug APK to be login-capable; add the signing secrets too if you intend to build a signed release — see [Configuration](#configuration).
-3. Trigger a build by pushing a commit, opening a pull request, or using **Actions → Android CI → Run workflow** (`workflow_dispatch`).
+3. Trigger a build by pushing a commit, opening a pull request, or using **Actions → Debug → Run workflow** (`workflow_dispatch`).
 4. Download the **`telepic-debug-apk`** artifact from the finished run. On `main`/manual runs it is login-capable; PR artifacts are credential-free.
 
 ### 🔐 Optional encrypted login artifact
@@ -133,7 +133,7 @@ Every push to `main` produces a debug APK as a CI artifact.
 The normal `telepic-debug-apk` on `main` is login-capable. If you would rather keep the raw APK out
 of public artifact storage, use this optional encrypted path instead:
 
-1. Open **Actions → Android CI → Run workflow**.
+1. Open **Actions → Debug → Run workflow**.
 2. Enable **`build_login_apk`** and run it on `main`.
 3. Download the **`telepic-debug-login-encrypted`** artifact.
 4. Decrypt it locally with the `APK_ARTIFACT_PASSWORD` repository secret (the password is not in
@@ -568,7 +568,7 @@ an ordinary push.
    base64 -w0 release.jks    # Linux; on macOS use `base64 -i release.jks`
    ```
 3. Configure all six actions secrets from the table above.
-4. Run **Actions → Android CI → Run workflow** with **sign_release** enabled, or reproduce locally:
+4. Run **Actions → Debug → Run workflow** with **sign_release** enabled, or reproduce locally:
    ```bash
    export TELEGRAM_API_ID=...
    export TELEGRAM_API_HASH=...
