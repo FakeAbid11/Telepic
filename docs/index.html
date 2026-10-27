@@ -53,40 +53,37 @@
   <main id="main">
     <section class="hero wrap" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow">Android · local-first · Telegram backup</p>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Android · local-first · Telegram backup</p>
         <h1 id="hero-title">Your photos.<br>Your Telegram.<br><span>Your backup.</span></h1>
         <p class="lead">Telepic is a fast, private Android gallery for photos and videos. Your library stays on your device; a private Telegram channel you own becomes the backup layer — no proprietary cloud, no ads, no analytics.</p>
         <div class="actions">
           <a class="button primary" href="https://github.com/FakeAbid11/Telepic">View on GitHub</a>
-          <a class="button secondary" href="#how">How it works</a>
+          <a class="button secondary" href="#how">See how it works</a>
         </div>
-        <p class="meta">Apache-2.0 · Android 8.0+ · ARM-only · debug milestone</p>
+        <ul class="hero-points" aria-label="Key properties">
+          <li>No Telepic account</li>
+          <li>Content-based dedup</li>
+          <li>Android 8.0+</li>
+        </ul>
       </div>
 
-      <div class="device-wrap" aria-hidden="true">
-        <div class="glow"></div>
-        <div class="phone">
-          <div class="phone-top">
-            <span class="speaker"></span>
-          </div>
-          <div class="app-bar">
-            <div>
-              <span class="app-kicker">Library</span>
-              <strong>Photos</strong>
-            </div>
-            <span class="sync-pill"><i></i>Backed up</span>
-          </div>
-          <div class="tile-grid">
-            <span class="tile t1"></span><span class="tile t2"></span><span class="tile t3"></span>
-            <span class="tile t4"></span><span class="tile t5"></span><span class="tile t6"></span>
-            <span class="tile t7"></span><span class="tile t8"></span><span class="tile t9"></span>
-            <span class="tile t10"></span><span class="tile t11"></span><span class="tile t12"></span>
-          </div>
-          <div class="phone-nav">
-            <span class="active"></span><span></span><span></span><span></span>
-          </div>
+      <aside class="fact-card" aria-labelledby="facts-title">
+        <div class="fact-head">
+          <span class="pulse" aria-hidden="true"></span>
+          <h2 id="facts-title">At a glance</h2>
         </div>
-      </div>
+        <dl class="facts">
+          <div><dt>Library</dt><dd>On your device</dd></div>
+          <div><dt>Backup</dt><dd>Private Telegram channel</dd></div>
+          <div><dt>Dedup</dt><dd>Streaming SHA-256</dd></div>
+          <div><dt>Telemetry</dt><dd>None</dd></div>
+        </dl>
+        <div class="fact-foot">
+          <span>Apache-2.0</span>
+          <span>ARM-only</span>
+          <span>Debug milestone</span>
+        </div>
+      </aside>
     </section>
 
     <section id="features" class="section wrap" aria-labelledby="features-title">
