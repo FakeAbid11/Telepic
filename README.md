@@ -105,7 +105,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 **To build or contribute**
 - **No local toolchain is required.** The canonical build runs in **GitHub Actions** — you do not need Android Studio, Gradle, or the Android SDK installed to produce an APK.
 - A GitHub account, to run the workflow.
-- Telegram API credentials, only if you want a login-capable local build (see [Configuration](#configuration)). The CI debug APK deliberately does not include them.
+- Telegram API credentials for a login-capable build (see [Configuration](#configuration)). Main/manual CI debug builds use them; pull-request builds stay credential-free.
 
 ### 💾 Install the prebuilt debug APK (recommended)
 
@@ -116,21 +116,22 @@ Every push to `main` produces a debug APK as a CI artifact.
 3. Scroll to **Artifacts** and download **`telepic-debug-apk`**.
 4. Unzip it and install the APK on your device. You may need to allow *Install unknown apps* for your file manager or browser.
 
-> The APK is a **debug** build and is not signed for distribution. The CI artifact is built without
-> Telegram credentials on purpose (so no real `api_hash` is published in a downloadable APK);
-> Telegram login therefore requires a **local** build with the environment variables below.
+> The APK is a **debug** build and is not signed for distribution. Main/manual CI builds include the
+> repository's Telegram credentials so login works out of the box. **This repository is public**, so
+> anyone who downloads that artifact can extract the `api_hash`; rotate the Telegram API credentials
+> if that becomes a problem. Pull-request artifacts are built without credentials.
 
 ### 🔨 Build it yourself through CI
 
 1. **Fork** the repository (or clone it and push to your own remote).
-2. *(Optional)* Add the release credentials/signing secrets if you intend to build a signed release; they are not used for the normal debug APK — see [Configuration](#configuration).
+2. Add the Telegram credentials if you want the normal debug APK to be login-capable; add the signing secrets too if you intend to build a signed release — see [Configuration](#configuration).
 3. Trigger a build by pushing a commit, opening a pull request, or using **Actions → Android CI → Run workflow** (`workflow_dispatch`).
-4. Download the **`telepic-debug-apk`** artifact from the finished run. For Telegram login, use the encrypted login build below or build locally with credentials.
+4. Download the **`telepic-debug-apk`** artifact from the finished run. On `main`/manual runs it is login-capable; PR artifacts are credential-free.
 
-### 🔐 Login-capable APK from the public repository (encrypted artifact)
+### 🔐 Optional encrypted login artifact
 
-The normal CI debug APK deliberately carries no Telegram credentials, so a public
-downloadable artifact cannot leak the `api_hash`. To test login from CI, run the manual job:
+The normal `telepic-debug-apk` on `main` is login-capable. If you would rather keep the raw APK out
+of public artifact storage, use this optional encrypted path instead:
 
 1. Open **Actions → Android CI → Run workflow**.
 2. Enable **`build_login_apk`** and run it on `main`.
@@ -203,9 +204,9 @@ Tap the **gear in the top-right corner** — available on every tab — for acco
 ### GitHub Actions secrets
 
 Configure these under **Settings → Secrets and variables → Actions**. They are used only by the
-manual **signed release** job. The debug CI artifact is built without Telegram credentials on
-purpose, so it can never publish the real `api_hash`; local login builds read the two Telegram
-variables from the environment.
+manual **signed release** job. Main/manual debug CI builds read the two Telegram variables so the
+normal APK is login-capable; pull-request builds deliberately do not receive them. This repository
+is public, so the `api_hash` in a downloaded main debug APK is extractable.
 
 | Secret | Required | Purpose |
 |---|---|---|
