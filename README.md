@@ -61,7 +61,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - Permanent delete goes through the Android-sanctioned system consent dialog: `MediaStore.createDeleteRequest` on API 30+, and the platform's own recoverable-consent prompt on Android 10, so the feature works on every supported release.
 
 ### 🗺 Map
-- Interactive OpenStreetMap view (osmdroid, no API key) with marker clustering.
+- Interactive OpenStreetMap view (osmdroid + CARTO light/dark basemaps, keyed through the `CARTO_API_KEY` secret) with marker clustering.
 - Photo positions come only from embedded EXIF GPS. **No device-location permission is requested, and no coordinates or EXIF are ever uploaded.**
 
 ### 💾 Backup
@@ -191,17 +191,36 @@ This repository is public, so the `api_hash` in a downloaded main debug APK is e
 |---|---|---|
 | `TELEGRAM_API_ID` | For login | Numeric API id from your [Telegram developer account](https://my.telegram.org). Injected into `BuildConfig`. |
 | `TELEGRAM_API_HASH` | For login | API hash string. Injected into `BuildConfig`. |
+| `CARTO_API_KEY` | For map tiles | Free key from [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey/) (email, no account). Injected into `BuildConfig`; an unkeyed build shows watermark tiles. |
 
-**Secrets are never committed, hardcoded, or logged.** A non-numeric `TELEGRAM_API_ID` fails fast
-rather than silently becoming `0`.
+**Secrets are never committed or hardcoded.** Telegram credentials are never logged. The CARTO key is
+embedded in builds that use it and can appear in debug osmdroid tile URLs, so don't share that log.
+A non-numeric `TELEGRAM_API_ID` fails fast rather than silently becoming `0`.
 
 ### Local credentials and build
 
 ```bash
 export TELEGRAM_API_ID=123456
 export TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef
+export CARTO_API_KEY=your_carto_basemap_key
 ./gradlew assembleDebug
 ```
+
+### Map tiles and the CARTO key
+
+CARTO stopped serving unkeyed raster tiles on 2026-09-25; without a key every tile is stamped
+**“API KEY REQUIRED”**.
+
+1. Request a free key at https://carto.com/basemaps/apikey/ — it arrives by email, no account.
+2. Add it as a repository secret: `gh secret set CARTO_API_KEY --repo FakeAbid11/Telepic`, then paste
+   the key at the prompt (avoid `--body`, which would write it to shell history).
+3. Re-run the **Debug** workflow, install `telepic-debug-apk`, and open the Map tab.
+
+Without the key the app still builds, but the map shows watermarks (pull-request APKs are keyless by
+design). The key is embedded in any APK built with it, including the public debug artifact; it grants
+tile quota only (1M commercial / 5M non-commercial requests per month), never account access. Rotate
+it with the same `gh secret set` command if it is abused. Attribution
+(`© OpenStreetMap contributors © CARTO`) is required by CARTO's terms and is displayed under the map.
 
 ### Build configuration
 
@@ -265,7 +284,7 @@ flowchart TD
 | Settings storage | Jetpack DataStore (Preferences) |
 | Image loading | Coil — thumbnail-first, video-frame decoding, animated GIFs |
 | Video playback | Media3 ExoPlayer |
-| Map | osmdroid + OpenStreetMap tiles (Apache-2.0, no API key) |
+| Map | osmdroid + CARTO raster basemaps over OpenStreetMap data (free key via `CARTO_API_KEY`, attribution required) |
 | EXIF / GPS | `androidx.exifinterface` |
 | Recognition / dedup | Streaming SHA-256 via `MessageDigest` (no third-party hashing library) |
 | Cloud backend | Telegram via Java TDLib (`org.drinkless.tdlib`), ARM-only |
@@ -583,7 +602,7 @@ Telepic stands on the shoulders of these projects:
 
 - [TDLib](https://github.com/tdlib/td) — the Telegram client library (via the
   `io.github.tdlib-android:core` packaging).
-- [osmdroid](https://github.com/osmdroid/osmdroid) and [OpenStreetMap](https://www.openstreetmap.org/) contributors — map tiles and rendering.
+- [osmdroid](https://github.com/osmdroid/osmdroid), [OpenStreetMap](https://www.openstreetmap.org/) contributors, and [CARTO](https://carto.com/) — map data, rendering and tiles.
 - [Jetpack Compose](https://developer.android.com/jetpack/compose), [Media3](https://developer.android.com/media/media3), [Room](https://developer.android.com/training/data-storage/room), [Paging](https://developer.android.com/topic/libraries/architecture/paging/v3-paged-data), [WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager), and [DataStore](https://developer.android.com/topic/libraries/architecture/datastore) — AndroidX.
 - [Coil](https://coil-kt.github.io/coil/) — image loading.
 - [Kotlin](https://kotlinlang.org/) and [Kotlin Coroutines](https://github.com/Kotlin/kotlinx.coroutines).

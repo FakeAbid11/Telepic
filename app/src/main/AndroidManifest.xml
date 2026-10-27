@@ -51,7 +51,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
-      Phase 10 map: tiles are fetched from an OpenStreetMap-compatible provider over the network.
+      Phase 10 map: basemap tiles are fetched from CARTO's CDN over the network (OpenStreetMap data,
+      rendered by CARTO) with the app's CARTO key as a query parameter.
       Telepic does NOT request any *device* location permission — the map has no notion of where the
       phone is. Photo locations come only from the GPS data already embedded in the media files,
       which is read on-device (the ACCESS_MEDIA_LOCATION declaration above exists precisely so that

@@ -22,6 +22,10 @@ jobs:
     env:
       TELEGRAM_API_ID: ${{ (github.event_name != 'pull_request') && secrets.TELEGRAM_API_ID || '' }}
       TELEGRAM_API_HASH: ${{ (github.event_name != 'pull_request') && secrets.TELEGRAM_API_HASH || '' }}
+      # Free CARTO basemap key, needed for unwatermarked map tiles. Empty on pull requests: the APK
+      # still builds and every test uses a fake key, but its map shows CARTO's watermark until the
+      # CARTO_API_KEY secret is configured (README, Configuration → Map tiles).
+      CARTO_API_KEY: ${{ (github.event_name != 'pull_request') && secrets.CARTO_API_KEY || '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -39,6 +43,17 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x gradlew
+
+      # Never print the key: this only reports whether the secret reached the build. A keyless main
+      # run still succeeds, but its map tiles carry CARTO's watermark.
+      - name: Check the CARTO key is configured
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ -z "${CARTO_API_KEY:-}" ]; then
+            echo "::warning::CARTO_API_KEY is not set — this APK will render CARTO's API-KEY-REQUIRED watermark tiles"
+          else
+            echo "::notice::CARTO_API_KEY is configured"
+          fi
 
       - name: Cache Robolectric android-all jars
         uses: actions/cache@v4

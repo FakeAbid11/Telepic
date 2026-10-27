@@ -49,6 +49,13 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
         // Configure osmdroid once, before any map exists, so its User-Agent and tile cache are the
         // app's and not the library defaults.
         OsmdroidConfiguration.initialize(this)
+        // The CARTO key migration renamed the tile sources (V2), orphaning the old cache. Reclaim it
+        // without touching the main thread; the directories stop existing after the first run.
+        appScope.launch(Dispatchers.IO) {
+            OsmdroidConfiguration.deleteRetiredTileCaches(
+                OsmdroidConfiguration.tileCacheRoot(filesDir),
+            )
+        }
         container = DefaultAppContainer(this)
         // Initialize the Telegram session at startup to restore a persisted login. This opens
         // TDLib on a background scope and never blocks or crashes local startup (Photos works

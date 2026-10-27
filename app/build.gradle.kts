@@ -21,6 +21,13 @@ val telegramApiHash = System.getenv("TELEGRAM_API_HASH").orEmpty()
 // but an unexpected character must not break (or inject into) the generated BuildConfig.
 val telegramApiHashLiteral = telegramApiHash.replace("\\", "\\\\").replace("\"", "\\\"")
 
+// Free CARTO basemap key (https://carto.com/basemaps/apikey/). Optional at build time so PR/local
+// builds still compile, but CARTO watermarks every tile without it. Never committed: CI supplies it
+// from the CARTO_API_KEY secret. trim() because a secret pasted with a trailing newline would
+// otherwise become part of the query string.
+val cartoApiKey = System.getenv("CARTO_API_KEY").orEmpty().trim()
+val cartoApiKeyLiteral = cartoApiKey.replace("\\", "\\\\").replace("\"", "\\\"")
+
 // Release signing comes from CI secrets (base64 keystore). A signed release is the default; the
 // explicitly named unsigned smoke path exists only to keep R8/resource shrinking exercised in CI.
 val releaseKeystoreB64 = System.getenv("RELEASE_KEYSTORE_BASE64").orEmpty()
@@ -39,8 +46,8 @@ gradle.taskGraph.whenReady {
         it.name.contains("release", ignoreCase = true) && !it.name.contains("debug", ignoreCase = true)
     }
     if (releaseRequested && !allowUnsignedRelease) {
-        require(telegramApiId != 0 && telegramApiHash.isNotBlank()) {
-            "TELEGRAM_API_ID and TELEGRAM_API_HASH must be provided for release builds"
+        require(telegramApiId != 0 && telegramApiHash.isNotBlank() && cartoApiKey.isNotBlank()) {
+            "TELEGRAM_API_ID, TELEGRAM_API_HASH and CARTO_API_KEY must be provided for release builds"
         }
     }
     // Only packaging consumes the signing config. lint/test release variants do not need a key.
@@ -82,6 +89,9 @@ android {
 
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId.toString())
         buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHashLiteral\"")
+        // Embedded in every APK built with it, including the public CI debug artifact. That is
+        // inherent to a client-side tile key; it grants tile quota only, never account access.
+        buildConfigField("String", "CARTO_API_KEY", "\"$cartoApiKeyLiteral\"")
     }
 
     signingConfigs {

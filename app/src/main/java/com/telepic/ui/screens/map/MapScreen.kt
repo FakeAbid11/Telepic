@@ -103,8 +103,8 @@ import org.osmdroid.views.overlay.Marker
  * osmdroid, grouped by the pure [MapClusterer] at a grid precision that follows the current zoom
  * ([MapZoomPrecision]) — zoom in, clusters split. Clusters render a drawn count badge; tapping a
  * single pin centres the map on it and opens a preview sheet offering the full Viewer. Tiles come
- * from a public OSM provider — coordinates and EXIF are NEVER uploaded, and no location is shown for
- * media that lacks GPS.
+ * from CARTO's keyed basemaps over OpenStreetMap data — coordinates and EXIF are NEVER uploaded, and
+ * no location is shown for media that lacks GPS.
  *
  * The osmdroid surface is device-bound: pan/zoom, tile loading and marker rendering are validated on
  * a real device and are NOT exercised by Robolectric. The map *logic* (GPS parsing, clustering,

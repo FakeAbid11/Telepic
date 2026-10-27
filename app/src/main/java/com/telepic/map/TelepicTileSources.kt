@@ -1,7 +1,15 @@
 package com.telepic.map
 
+import com.telepic.BuildConfig
+import com.telepic.diagnostics.TelepicLog
+import java.net.URLEncoder
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.XYTileSource
+
+private const val MIN_ZOOM = 0
+private const val MAX_ZOOM = 19
+private const val TILE_SIZE_PX = 256
+private const val TILE_EXTENSION = ".png"
 
 /**
  * The two raster basemaps the map can draw, and the choice between them.
@@ -18,63 +26,48 @@ import org.osmdroid.tileprovider.tilesource.XYTileSource
  * The alternative — CARTO dark beside OSM Mapnik light — would give the two modes different label
  * styles, different colour keys and different feature density, which reads as two unrelated maps.
  *
- * Attribution: CARTO's basemaps are free to use with credit, and they require OpenStreetMap (the data)
- * *and* CARTO (the rendering) to be credited. That is what [COPYRIGHT] carries; the visible string and
- * its link live in `MapScreen` and `strings.xml`.
+ * ## CARTO's API key (since 2026-09-25)
+ *
+ * CARTO stopped serving raster tiles without a key; an unkeyed request is answered with an
+ * "API KEY REQUIRED" watermark. The key is free (https://carto.com/basemaps/apikey/) and arrives by
+ * email. CI injects it as [BuildConfig.CARTO_API_KEY] from the `CARTO_API_KEY` secret; it is never
+ * committed. A blank key still builds, but every tile is watermarked and one warning is logged. The
+ * release gate in `app/build.gradle.kts` refuses a release without a key.
+ *
+ * ## Attribution
+ *
+ * CARTO's terms require OpenStreetMap (the data) *and* CARTO (the rendering) to be credited. That is
+ * what [COPYRIGHT] carries; the visible string and its link live in `MapScreen` and `strings.xml`.
+ *
+ * ## Cache names are load-bearing
+ *
+ * osmdroid keys its tile cache directory by tile-source name. The names below include `V2` (the
+ * keyed URL contract) and `NoKey` (a build without the key), so a keyed build never serves tiles that
+ * an earlier keyless build cached — including the watermarked tiles cached before this fix. Sharing a
+ * name between light and dark would likewise let one style's tiles leak into the other. Any future
+ * change to the tile URL contract must bump `V2`.
  */
 object TelepicTileSources {
 
-    /** Matches `MapScreen`'s `MAX_ZOOM`; CARTO publishes `*_all` up to z20, but 19 is what the UI allows. */
-    private const val MIN_ZOOM = 0
-    private const val MAX_ZOOM = 19
-
-    /** CARTO serves 256px raster tiles. */
-    private const val TILE_SIZE_PX = 256
-
-    /** The extension osmdroid appends to a tile URL; CARTO's `*_all` endpoints are PNG. */
-    private const val TILE_EXTENSION = ".png"
-
-    private const val BASE_URL = "https://basemaps.cartocdn.com/"
+    /** CARTO's keyed raster endpoints. The trailing slash is part of the base: osmdroid appends z/x/y. */
+    private const val LIGHT_BASE_URL = "https://basemaps.cartocdn.com/rastertiles/light_all/"
+    private const val DARK_BASE_URL = "https://basemaps.cartocdn.com/rastertiles/dark_all/"
 
     /** Required by both providers: the data is OpenStreetMap's, the tiles are CARTO's. */
     const val COPYRIGHT = "© OpenStreetMap contributors © CARTO"
 
-    /**
-     * The light basemap, for the light theme.
-     *
-     * Note the argument order, which is not the obvious one:
-     * `XYTileSource(name, minZoom, maxZoom, tileSizePx, imageFilenameEnding, baseUrls[], copyrightNotice)`.
-     * The copyright is the **last** argument, after the URL array, and the 6-arg overload silently
-     * leaves it `null` (verified from the 6.1.20 bytecode: it delegates with `aconst_null` in that
-     * slot). Passing the notice fifth compiles and produces a source whose `copyrightNotice` is null
-     * and whose tile URL ends with the notice instead of `.png` — which is why
-     * [TelepicTileSourcesTest] asserts the resolved URL and the notice rather than trusting the call.
-     *
-     * The name is **load-bearing**, not cosmetic: osmdroid keys its tile cache directory by
-     * tile-source name, so two distinct names give the two styles separate on-disk caches. Sharing a
-     * name would let a cached light tile be served into a dark map (and the reverse) — a corruption
-     * that survives restarts, because the cache does.
-     */
-    val Light: OnlineTileSourceBase = XYTileSource(
-        "TelepicLight",
-        MIN_ZOOM,
-        MAX_ZOOM,
-        TILE_SIZE_PX,
-        TILE_EXTENSION,
-        arrayOf("${BASE_URL}light_all/"),
-        COPYRIGHT,
-    )
+    init {
+        if (BuildConfig.CARTO_API_KEY.isBlank()) {
+            TelepicLog.warn(
+                "MapTiles",
+                "CARTO_API_KEY is blank: CARTO will watermark every tile. Set the CARTO_API_KEY " +
+                    "secret (README, Configuration) and rebuild.",
+            )
+        }
+    }
 
-    /** The dark basemap, for the dark theme. See [Light] for why the name must differ. */
-    val Dark: OnlineTileSourceBase = XYTileSource(
-        "TelepicDark",
-        MIN_ZOOM,
-        MAX_ZOOM,
-        TILE_SIZE_PX,
-        TILE_EXTENSION,
-        arrayOf("${BASE_URL}dark_all/"),
-        COPYRIGHT,
-    )
+    val Light: OnlineTileSourceBase = carto(style = "Light", baseUrl = LIGHT_BASE_URL)
+    val Dark: OnlineTileSourceBase = carto(style = "Dark", baseUrl = DARK_BASE_URL)
 
     /**
      * The basemap matching the app's current theme.
@@ -84,4 +77,53 @@ object TelepicTileSources {
      * rather than with the device.
      */
     fun forDarkTheme(dark: Boolean): OnlineTileSourceBase = if (dark) Dark else Light
+
+    /** Internal seams so tests can pin keyed and keyless URLs without depending on the build's key. */
+    internal fun lightFor(apiKey: String): OnlineTileSourceBase =
+        carto(style = "Light", baseUrl = LIGHT_BASE_URL, apiKey = apiKey)
+
+    internal fun darkFor(apiKey: String): OnlineTileSourceBase =
+        carto(style = "Dark", baseUrl = DARK_BASE_URL, apiKey = apiKey)
+
+    private fun carto(
+        style: String,
+        baseUrl: String,
+        apiKey: String = BuildConfig.CARTO_API_KEY,
+    ): OnlineTileSourceBase = CartoTileSource(
+        // The keyed and keyless builds get distinct cache directories: the first keyed build must not
+        // reuse a watermarked tile an earlier keyless build cached under the same V2 schema.
+        name = cacheName(style, apiKey),
+        baseUrl = baseUrl,
+        apiKey = apiKey,
+    )
+
+    private fun cacheName(style: String, apiKey: String): String =
+        "Telepic${style}V2".let { if (apiKey.isBlank()) "${it}NoKey" else it }
+
+    /**
+     * `XYTileSource` renders `base + z/x/y + .png` and exposes no hook for a query string, so this
+     * override is the mechanism. Encoding happens once in the constructor because the method runs per
+     * tile on osmdroid's loader threads.
+     */
+    private class CartoTileSource(
+        name: String,
+        baseUrl: String,
+        apiKey: String,
+    ) : XYTileSource(
+        name,
+        MIN_ZOOM,
+        MAX_ZOOM,
+        TILE_SIZE_PX,
+        TILE_EXTENSION,
+        arrayOf(baseUrl),
+        COPYRIGHT,
+    ) {
+        private val keyQuery: String = apiKey.trim()
+            .takeIf { it.isNotEmpty() }
+            ?.let { "?key=" + URLEncoder.encode(it, "UTF-8") }
+            .orEmpty()
+
+        override fun getTileURLString(pMapTileIndex: Long): String =
+            super.getTileURLString(pMapTileIndex) + keyQuery
+    }
 }
