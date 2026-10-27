@@ -3,6 +3,7 @@
 **A local-first Android photo & video library with Telegram-powered cloud backup.**
 
 [![Debug](https://github.com/FakeAbid11/Telepic/actions/workflows/android-ci.yml/badge.svg)](https://github.com/FakeAbid11/Telepic/actions/workflows/android-ci.yml)
+[![Website](https://img.shields.io/badge/website-Telepic-2F6BF0.svg)](https://fakeabid11.github.io/Telepic/)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![minSdk](https://img.shields.io/badge/minSdk-API%2026-3DDC84.svg)](#quick-start)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-7F5EBF.svg)](#configuration)

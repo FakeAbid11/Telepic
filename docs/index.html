@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telepic — local-first Android gallery with Telegram backup</title>
+  <meta name="description" content="Telepic is a local-first Android photo and video gallery that backs up to a private Telegram channel you own, with content-based deduplication and no proprietary cloud backend.">
+  <meta name="theme-color" content="#0B0D10">
+  <link rel="canonical" href="https://fakeabid11.github.io/Telepic/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Telepic">
+  <meta property="og:title" content="Telepic — your photos, your Telegram, your backup">
+  <meta property="og:description" content="A local-first Android gallery that backs up photos and videos to a private Telegram channel you own.">
+  <meta property="og:url" content="https://fakeabid11.github.io/Telepic/">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Telepic — local-first Android gallery">
+  <meta name="twitter:description" content="Local-first photos and videos, backed up to your own private Telegram channel.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Telepic",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "Android 8.0+",
+    "description": "A local-first Android photo and video gallery that backs up to a private Telegram channel you own, with content-based deduplication.",
+    "url": "https://fakeabid11.github.io/Telepic/",
+    "codeRepository": "https://github.com/FakeAbid11/Telepic",
+    "license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap nav">
+      <a class="brand" href="./" aria-label="Telepic home">
+        <img src="favicon.svg" alt="" width="30" height="30">
+        <span>Telepic</span>
+      </a>
+      <nav aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#status">Status</a>
+        <a class="ghost" href="https://github.com/FakeAbid11/Telepic">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">Android · local-first · Telegram backup</p>
+        <h1 id="hero-title">Your photos.<br>Your Telegram.<br><span>Your backup.</span></h1>
+        <p class="lead">Telepic is a fast, private Android gallery for photos and videos. Your library stays on your device; a private Telegram channel you own becomes the backup layer — no proprietary cloud, no ads, no analytics.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/FakeAbid11/Telepic">View on GitHub</a>
+          <a class="button secondary" href="#how">How it works</a>
+        </div>
+        <p class="meta">Apache-2.0 · Android 8.0+ · ARM-only · debug milestone</p>
+      </div>
+
+      <div class="device-wrap" aria-hidden="true">
+        <div class="glow"></div>
+        <div class="phone">
+          <div class="phone-top">
+            <span class="speaker"></span>
+          </div>
+          <div class="app-bar">
+            <div>
+              <span class="app-kicker">Library</span>
+              <strong>Photos</strong>
+            </div>
+            <span class="sync-pill"><i></i>Backed up</span>
+          </div>
+          <div class="tile-grid">
+            <span class="tile t1"></span><span class="tile t2"></span><span class="tile t3"></span>
+            <span class="tile t4"></span><span class="tile t5"></span><span class="tile t6"></span>
+            <span class="tile t7"></span><span class="tile t8"></span><span class="tile t9"></span>
+            <span class="tile t10"></span><span class="tile t11"></span><span class="tile t12"></span>
+          </div>
+          <div class="phone-nav">
+            <span class="active"></span><span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="section wrap" aria-labelledby="features-title">
+      <div class="section-head">
+        <p class="eyebrow">Why Telepic</p>
+        <h2 id="features-title">A gallery that stays yours.</h2>
+        <p>Everything you expect from a modern photo app, with the cloud replaced by a channel you control.</p>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <span class="card-num">01</span>
+          <h3>Local-first library</h3>
+          <p>Reads photos, videos and GIFs directly from MediaStore as one paged, newest-first timeline. Thumbnails load first; originals stay on the device unless you ask for a cloud copy.</p>
+        </article>
+        <article class="card">
+          <span class="card-num">02</span>
+          <h3>Telegram as backup</h3>
+          <p>Backups go to a private channel you own, through TDLib. WorkManager runs uploads under a real network constraint and a foreground notification.</p>
+        </article>
+        <article class="card">
+          <span class="card-num">03</span>
+          <h3>Content, not filenames</h3>
+          <p>Streaming SHA-256 identity means the same bytes are never uploaded twice, even if they reach the library through different files or names.</p>
+        </article>
+        <article class="card">
+          <span class="card-num">04</span>
+          <h3>Private by design</h3>
+          <p>No ads, analytics or account with Telepic. Photo GPS is read on-device for the map and is not uploaded. Optional app lock and screenshot protection are built in.</p>
+        </article>
+        <article class="card">
+          <span class="card-num">05</span>
+          <h3>Made for browsing</h3>
+          <p>Day-grouped timeline, albums, a full-screen viewer, EXIF details, a map of geotagged media, and an explicit “Save to device” restore flow.</p>
+        </article>
+        <article class="card">
+          <span class="card-num">06</span>
+          <h3>Open source</h3>
+          <p>Kotlin and Jetpack Compose, with the backup state machine and cloud mapping covered by a JVM test suite. Apache-2.0 licensed.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="how" class="section wrap" aria-labelledby="how-title">
+      <div class="section-head">
+        <p class="eyebrow">The flow</p>
+        <h2 id="how-title">Three steps, one private channel.</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <span>1</span>
+          <div><h3>Connect Telegram</h3><p>Sign in to your own account. Telepic discovers or creates a private backup channel and verifies your posting rights.</p></div>
+        </li>
+        <li>
+          <span>2</span>
+          <div><h3>Choose what to back up</h3><p>Back up the whole library or only selected folders. Hiding videos or GIFs in the grid never silently changes what gets backed up.</p></div>
+        </li>
+        <li>
+          <span>3</span>
+          <div><h3>Let it run</h3><p>The queue survives restarts, retries transient failures, and confirms every upload against Telegram before marking it backed up. Restore originals on demand.</p></div>
+        </li>
+      </ol>
+    </section>
+
+    <section class="section wrap stack" aria-labelledby="stack-title">
+      <div class="section-head">
+        <p class="eyebrow">Under the hood</p>
+        <h2 id="stack-title">Small, focused, Android-native.</h2>
+      </div>
+      <ul class="chips" aria-label="Technology stack">
+        <li>Kotlin</li><li>Jetpack Compose</li><li>Material 3</li><li>Coroutines</li><li>Room</li><li>DataStore</li><li>Paging 3</li><li>WorkManager</li><li>Media3</li><li>Coil</li><li>osmdroid</li><li>TDLib</li>
+      </ul>
+    </section>
+
+    <section id="status" class="section wrap">
+      <div class="status-card">
+        <div>
+          <p class="eyebrow">Project status</p>
+          <h2>Debug milestone, honest about validation.</h2>
+          <p>The app is code-complete and CI-tested, but live Telegram, MediaStore write/delete, video playback, map rendering and the device-credential prompt still need real-device validation. The README lists the exact gaps.</p>
+        </div>
+        <a class="button secondary" href="https://github.com/FakeAbid11/Telepic#limitations">Read the limitations</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <p><strong>Telepic</strong> — local-first photos and videos, backed up to your own Telegram channel.</p>
+      <p class="footer-links">
+        <a href="https://github.com/FakeAbid11/Telepic">GitHub</a>
+        <a href="https://github.com/FakeAbid11/Telepic#readme">README</a>
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache-2.0</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
