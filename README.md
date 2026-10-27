@@ -124,30 +124,9 @@ Every push to `main` produces a debug APK as a CI artifact.
 ### 🔨 Build it yourself through CI
 
 1. **Fork** the repository (or clone it and push to your own remote).
-2. Add the Telegram credentials if you want the normal debug APK to be login-capable; add the signing secrets too if you intend to build a signed release — see [Configuration](#configuration).
+2. Add the Telegram credentials if you want the normal debug APK to be login-capable — see [Configuration](#configuration).
 3. Trigger a build by pushing a commit, opening a pull request, or using **Actions → Debug → Run workflow** (`workflow_dispatch`).
 4. Download the **`telepic-debug-apk`** artifact from the finished run. On `main`/manual runs it is login-capable; PR artifacts are credential-free.
-
-### 🔐 Optional encrypted login artifact
-
-The normal `telepic-debug-apk` on `main` is login-capable. If you would rather keep the raw APK out
-of public artifact storage, use this optional encrypted path instead:
-
-1. Open **Actions → Debug → Run workflow**.
-2. Enable **`build_login_apk`** and run it on `main`.
-3. Download the **`telepic-debug-login-encrypted`** artifact.
-4. Decrypt it locally with the `APK_ARTIFACT_PASSWORD` repository secret (the password is not in
-   this repository):
-   ```bash
-   openssl enc -d -aes-256-cbc -pbkdf2 \
-     -in telepic-debug-login.apk.enc \
-     -out telepic-debug-login.apk \
-     -pass pass:'<APK_ARTIFACT_PASSWORD>'
-   ```
-5. Install `telepic-debug-login.apk`.
-
-The raw login APK is never uploaded; only the AES-encrypted file and its checksum are published.
-Rotate the `APK_ARTIFACT_PASSWORD` secret if it is ever exposed outside your control.
 
 ### ✅ Verify Telegram login on a device
 
@@ -203,25 +182,17 @@ Tap the **gear in the top-right corner** — available on every tab — for acco
 
 ### GitHub Actions secrets
 
-Configure these under **Settings → Secrets and variables → Actions**. They are used only by the
-manual **signed release** job. Main/manual debug CI builds read the two Telegram variables so the
-normal APK is login-capable; pull-request builds deliberately do not receive them. This repository
-is public, so the `api_hash` in a downloaded main debug APK is extractable.
+Configure these under **Settings → Secrets and variables → Actions**. Main/manual debug CI builds
+read them so the normal APK is login-capable; pull-request builds deliberately do not receive them.
+This repository is public, so the `api_hash` in a downloaded main debug APK is extractable.
 
 | Secret | Required | Purpose |
 |---|---|---|
-| `TELEGRAM_API_ID` | Signed release / local login | Numeric API id from your [Telegram developer account](https://my.telegram.org). Injected into `BuildConfig`. |
-| `TELEGRAM_API_HASH` | Signed release / local login | API hash string. Injected into `BuildConfig`. |
-| `RELEASE_KEYSTORE_BASE64` | Signed release | Base64-encoded keystore. |
-| `RELEASE_KEYSTORE_PASSWORD` | Signed release | Keystore password. |
-| `RELEASE_KEY_ALIAS` | Signed release | Signing key alias. |
-| `RELEASE_KEY_PASSWORD` | Signed release | Signing key password. |
+| `TELEGRAM_API_ID` | For login | Numeric API id from your [Telegram developer account](https://my.telegram.org). Injected into `BuildConfig`. |
+| `TELEGRAM_API_HASH` | For login | API hash string. Injected into `BuildConfig`. |
 
-**Secrets are never committed, hardcoded, or logged.** A **signed release** (and every local
-`assembleRelease`/`bundleRelease`) fails before packaging unless real Telegram credentials and all
-four signing variables are present. A non-numeric `TELEGRAM_API_ID` fails fast rather than silently
-becoming `0`. The only exception is the explicitly named unsigned smoke build, which requires
-`-Ptelepic.allowUnsignedRelease=true` and is not distributable.
+**Secrets are never committed, hardcoded, or logged.** A non-numeric `TELEGRAM_API_ID` fails fast
+rather than silently becoming `0`.
 
 ### Local credentials and build
 
@@ -230,9 +201,6 @@ export TELEGRAM_API_ID=123456
 export TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef
 ./gradlew assembleDebug
 ```
-
-The same environment variables are required for a local release, together with the four signing
-variables. See [Producing a release](#producing-a-release).
 
 ### Build configuration
 
@@ -523,7 +491,7 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 - **An unreadable app-lock preference fails closed.** If the persisted lock setting cannot be read, Telepic hides the library behind a recovery screen with a retry instead of assuming the lock is off and opening the content it protects. The window is also protected (`FLAG_SECURE`) whenever the state is unknown.
 - **The open-source licence list is hand-maintained** (`OpenSourceLicenses.kt`), so it has to be updated whenever a runtime dependency changes. It mirrors `gradle/libs.versions.toml` rather than being generated.
 - **ARM-only**, `minSdk 26`.
-- **No shipping release has been produced yet.** Every push to `main` runs an explicitly **unsigned** R8/AAB smoke job (no Telegram credentials, no signing key, not distributable). A separate manual **signed release** job exists; it refuses to build unless the Telegram credentials and all four signing variables are present, verifies the AAB signature, and uploads it as an inspection artifact. Nothing is published to Play.
+- **No release artifact is produced by CI.** The **Debug** workflow builds and tests the debug app only. It uploads the debug APK, test/lint reports and Room schemas; it does not build, sign or publish a release AAB.
 
 ---
 
@@ -546,44 +514,8 @@ The suite is **932 tests across 127 files** — all JVM-based, all run in CI; no
 These are exactly the commands the [CI workflow](.github/workflows/android-ci.yml) runs on every push.
 If you build locally, you will need JDK 17 and the Android SDK; if you don't, CI will run them for you.
 
-The R8 configuration is exercised on every push by an explicitly unsigned smoke build:
-
-```bash
-# Compile-only: no credentials, no signing key, NOT distributable
-./gradlew assembleRelease bundleRelease -Ptelepic.allowUnsignedRelease=true
-```
-
-That is `release-unsigned-smoke`. It has no Telegram credentials and asserts that its AAB is
-unsigned, so a green run can never be mistaken for a shippable artifact.
-
-<a id="producing-a-release"></a>
-### Producing a signed release
-
-The signed path is manual and fails before packaging if any secret is missing. It is not triggered by
-an ordinary push.
-
-1. Bump `versionCode`/`versionName` (or export `VERSION_CODE`/`VERSION_NAME`).
-2. Encode the upload keystore:
-   ```bash
-   base64 -w0 release.jks    # Linux; on macOS use `base64 -i release.jks`
-   ```
-3. Configure all six actions secrets from the table above.
-4. Run **Actions → Debug → Run workflow** with **sign_release** enabled, or reproduce locally:
-   ```bash
-   export TELEGRAM_API_ID=...
-   export TELEGRAM_API_HASH=...
-   export RELEASE_KEYSTORE_BASE64="$(base64 -w0 release.jks)"
-   export RELEASE_KEYSTORE_PASSWORD=...
-   export RELEASE_KEY_ALIAS=...
-   export RELEASE_KEY_PASSWORD=...
-   ./gradlew assembleRelease bundleRelease
-   jarsigner -verify app/build/outputs/bundle/release/*.aab
-   ```
-5. The signed job verifies the AAB signature and uploads `telepic-release-aab`. It does not publish to
-   Play; upload it yourself through the Play Console.
-
-A local release without a keystore fails intentionally. Use the named unsigned-smoke property only
-for compile validation.
+The Debug workflow does not build a release artifact. It runs the unit tests, lint, debug APK build,
+and Room schema export only.
 
 What the suite covers: the backup state machine (including the durable pending-wait cap that keeps
 its retry budget across a restart), the Room migration chain through v12, partial/permission-gated
@@ -609,7 +541,7 @@ contribute.
 
 1. Fork the repository and create a branch for your change.
 2. Make your change, following the conventions below.
-3. Push (or open a pull request). **CI must be green** — it runs `testDebugUnitTest`, `lintDebug`, and `assembleDebug`, plus the `release-smoke` R8/AAB build on pushes to `main`.
+3. Push (or open a pull request). **CI must be green** — it runs `testDebugUnitTest`, `lintDebug`, and `assembleDebug`.
 4. Open a pull request describing what changed and why.
 
 **Conventions to follow**
