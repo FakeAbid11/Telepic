@@ -29,7 +29,7 @@ class MapCameraPlanTest {
         assertNotNull(plan)
         near(48.85, plan!!.centerLat)
         near(2.35, plan.centerLon)
-        assertEquals(plan.zoom, 15.0, 1e-6)
+        assertEquals(14.0, plan.zoom, 1e-6)
     }
 
     @Test
@@ -38,7 +38,7 @@ class MapCameraPlanTest {
         assertNotNull(plan)
         near(10.0, plan!!.centerLat)
         near(20.0, plan.centerLon)
-        assertEquals(15.0, plan.zoom, 1e-6)
+        assertEquals(14.0, plan.zoom, 1e-6)
     }
 
     @Test
@@ -51,10 +51,10 @@ class MapCameraPlanTest {
 
     @Test
     fun `zoom stays within the configured bounds for any spread`() {
-        val wide = MapCameraPlan.forPoints(listOf(-80.0 to -170.0, 80.0 to 170.0), minZoom = 3.0, maxZoom = 15.0)!!
-        assertTrue(wide.zoom >= 3.0 && wide.zoom <= 15.0)
-        val tight = MapCameraPlan.forPoints(listOf(0.0 to 0.0, 0.0001 to 0.0001), minZoom = 3.0, maxZoom = 15.0)!!
-        assertTrue(tight.zoom >= 3.0 && tight.zoom <= 15.0)
+        val wide = MapCameraPlan.forPoints(listOf(-80.0 to -170.0, 80.0 to 170.0), minZoom = 2.0, maxZoom = 14.0)!!
+        assertTrue(wide.zoom >= 2.0 && wide.zoom <= 14.0)
+        val tight = MapCameraPlan.forPoints(listOf(0.0 to 0.0, 0.0001 to 0.0001), minZoom = 2.0, maxZoom = 14.0)!!
+        assertTrue(tight.zoom >= 2.0 && tight.zoom <= 14.0)
     }
 
     @Test

@@ -13,7 +13,6 @@ import com.telepic.data.backup.work.TelepicWorkerFactory
 import com.telepic.di.AppContainer
 import com.telepic.di.DefaultAppContainer
 import com.telepic.diagnostics.TelepicLog
-import com.telepic.map.OsmdroidConfiguration
 import com.telepic.telegram.TelegramAuthState
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -46,9 +45,11 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
         super.onCreate()
         TelepicLog.initialize(this)
         installCrashLogger()
-        // Configure osmdroid once, before any map exists, so its User-Agent and tile cache are the
-        // app's and not the library defaults.
-        OsmdroidConfiguration.initialize(this)
+        // The map SDK is deliberately NOT initialised here. Every Robolectric test boots this
+        // Application, and building a MapView loads MapLibre's native library, which cannot exist in
+        // a JVM test process — doing it at startup would take the whole suite down. The map screen's
+        // AndroidView factory calls MapLibreConfiguration.ensureInitialized instead, which is the
+        // only place a MapView is ever constructed.
         container = DefaultAppContainer(this)
         // Initialize the Telegram session at startup to restore a persisted login. This opens
         // TDLib on a background scope and never blocks or crashes local startup (Photos works

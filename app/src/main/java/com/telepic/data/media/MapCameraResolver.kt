@@ -11,16 +11,23 @@ data class SavedCamera(val centerLat: Double, val centerLon: Double, val zoom: D
  * The priority order is deliberate: an explicit focus (another screen asked to show one photo) beats
  * the remembered position, which beats framing all the user's photos. Nothing is invented — when no
  * input is usable the caller keeps its own neutral default rather than a fabricated center. Kept free
- * of osmdroid so it is testable without a device.
+ * of any map engine so it is testable without a device.
  */
 object MapCameraResolver {
 
     /** Zoom used when jumping to a single photo — close enough to see its surroundings. */
-    const val FOCUS_ZOOM = 15.0
+    const val FOCUS_ZOOM = 14.0
 
-    /** osmdroid's own limits; a remembered zoom outside this range is clamped, never trusted blindly. */
-    private const val MIN_ZOOM = 1.0
-    private const val MAX_ZOOM = 21.0
+    /**
+     * The zoom range a remembered position is clamped to.
+     *
+     * MapLibre's own floor is 0, and the upper bound matches `BasemapStyles.MAX_ZOOM` (which the map
+     * also enforces with `setMaxZoomPreference`), so a value saved by an older build cannot ask for a
+     * zoom the surface will refuse. Both numbers are one lower than the raster engine's were, because
+     * MapLibre's zoom is defined on a 512 px world grid rather than 256.
+     */
+    private const val MIN_ZOOM = 0.0
+    private const val MAX_ZOOM = 19.0
 
     sealed interface Decision {
         data class Apply(val centerLat: Double, val centerLon: Double, val zoom: Double) : Decision

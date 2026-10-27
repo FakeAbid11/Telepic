@@ -118,10 +118,10 @@ val LocalReduceMotion = staticCompositionLocalOf { false }
  * Whether the app is drawing its dark theme — the *app's* decision, not the device's.
  *
  * Needed by surfaces that are not Compose-drawn and therefore cannot read [MaterialTheme]: the
- * osmdroid map picks a dark or light basemap from this, and `isSystemInDarkTheme()` would be wrong
- * for exactly the user who overrode the theme (Dark forced on a Light device, or the reverse). The
- * theme decision is made once in `TelepicRoot` via `ThemeMode.isDarkTheme(...)`; this publishes its
- * result.
+ * MapLibre map picks a dark or light basemap style from this, and `isSystemInDarkTheme()` would be
+ * wrong for exactly the user who overrode the theme (Dark forced on a Light device, or the reverse).
+ * The theme decision is made once in `TelepicRoot` via `ThemeMode.isDarkTheme(...)`; this publishes
+ * its result.
  *
  * Defaults to `true` to match [TelepicTheme]'s own default and [LocalTelepicColors]' `DarkExtended`,
  * which is the product's default theme.

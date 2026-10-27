@@ -27,7 +27,12 @@ paging = "3.3.2"
 coil = "2.7.0"
 media3 = "1.4.1"
 tdlib = "0.1.1"
-osmdroid = "6.1.20"
+# MapLibre Native, OpenGL ES flavour. Since 13.0.0 the plain `org.maplibre.gl:android-sdk` artifact
+# is Vulkan-only — its AAR manifest declares `android.hardware.vulkan.version required="true"`, which
+# would drop every device without Vulkan. `android-sdk-opengl` is the same release built on GLES and
+# is the one that runs everywhere minSdk 26 reaches. Do not "upgrade" the artifact name.
+# 13.7.1 is the last normal-semver release; `2026.10.19-globe` is the globe-renderer variant.
+maplibre = "13.7.1"
 exifinterface = "1.4.2"
 # Must match the KSP that AGP 9.4.1 brings in (2.2.10-2.0.2); a different version would be resolved
 # to one of the two and could disagree with the Kotlin AGP compiles with.
@@ -65,7 +70,7 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
-osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
+maplibre-android = { group = "org.maplibre.gl", name = "android-sdk-opengl", version.ref = "maplibre" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 androidx-work-testing = { group = "androidx.work", name = "work-testing", version.ref = "work" }
 

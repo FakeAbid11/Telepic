@@ -216,7 +216,7 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.exifinterface)
-    implementation(libs.osmdroid.android)
+    implementation(libs.maplibre.android)
     implementation(libs.androidx.work.runtime.ktx)
     ksp(libs.androidx.room.compiler)
     // Compile Room in the test sources too, so the Phase 6 migration test can build a real

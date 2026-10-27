@@ -16,11 +16,11 @@ import kotlin.math.abs
 /**
  * The map's markers, drawn rather than themed.
  *
- * They are worth a test because nothing else guards them: a single photo used to fall back to
- * osmdroid's *stock* teardrop marker while a cluster wore the app's own circle, so the same map
- * carried two visual languages. And the fill is deliberately **not** the theme's `primary`: the tiles
- * are OSM Mapnik, a fixed light style, and the dark scheme's light blue measured about 1.9:1 against
- * a typical land tile — the clusters all but disappeared.
+ * They are worth a test because nothing else guards them: a single photo used to fall back to the
+ * engine's *stock* teardrop marker while a cluster wore the app's own circle, so the same map carried
+ * two visual languages. And the fill is deliberately **not** the theme's `primary`: the map has a
+ * light and a dark basemap, and the dark scheme's light blue measures about 1.9:1 against a typical
+ * light land area — the clusters all but disappeared.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

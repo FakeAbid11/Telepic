@@ -1,5 +1,6 @@
 package com.telepic.ui.screens.map
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -71,9 +72,13 @@ import com.telepic.data.media.MapCameraResolver
 import com.telepic.data.media.MapClusterer
 import com.telepic.data.media.MapZoomPrecision
 import com.telepic.data.media.SavedCamera
+import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.GeoLocation
 import com.telepic.domain.media.GeotaggedMedia
-import com.telepic.map.TelepicTileSources
+import com.telepic.map.BasemapStyles
+import com.telepic.map.MapLibreConfiguration
+import com.telepic.map.MapPinIcons
+import com.telepic.map.MapPinsGeoJson
 import com.telepic.navigation.MapFocus
 import com.telepic.navigation.MapFocusRequest
 import com.telepic.permissions.MediaPermissionState
@@ -90,25 +95,34 @@ import com.telepic.ui.components.StateAction
 import com.telepic.ui.screens.viewer.formatCoordinate
 import com.telepic.ui.theme.LocalDarkTheme
 import com.telepic.ui.theme.TelepicTokens
-import org.osmdroid.events.MapListener
-import org.osmdroid.events.ScrollEvent
-import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Point
 
 /**
- * The interactive OpenStreetMap photo map (Phase 10). Renders geotagged local media as markers via
- * osmdroid, grouped by the pure [MapClusterer] at a grid precision that follows the current zoom
+ * The interactive photo map (Phase 10). Renders geotagged local media as markers on a MapLibre
+ * surface, grouped by the pure [MapClusterer] at a grid precision that follows the current zoom
  * ([MapZoomPrecision]) — zoom in, clusters split. Clusters render a drawn count badge; tapping a
- * single pin centres the map on it and opens a preview sheet offering the full Viewer. Tiles come
- * from a public OSM provider — coordinates and EXIF are NEVER uploaded, and no location is shown for
- * media that lacks GPS.
+ * single pin centres the map on it and opens a preview sheet offering the full Viewer.
  *
- * The osmdroid surface is device-bound: pan/zoom, tile loading and marker rendering are validated on
- * a real device and are NOT exercised by Robolectric. The map *logic* (GPS parsing, clustering,
- * zoom→precision, selection→identity, camera policy) lives behind pure, unit-tested seams.
+ * Basemap: OpenFreeMap vector styles ([BasemapStyles]), one light and one dark, following the app's
+ * own theme. Free, unlimited, and **keyless** — which is the whole reason for both the provider and
+ * the engine: osmdroid can only draw raster tiles, and no raster provider offers light + dark without
+ * a key. Coordinates and EXIF are NEVER uploaded, and no location is shown for media that lacks GPS.
+ *
+ * The surface is device-bound: pan/zoom, style loading and marker rendering are validated on a real
+ * device and are NOT exercised by Robolectric. The map *logic* (GPS parsing, clustering,
+ * zoom→precision, selection→identity, camera policy) lives behind pure, unit-tested seams — and the
+ * GeoJSON mapping is pure too ([MapPinsGeoJson]).
  */
 @Composable
 fun MapScreen(
@@ -141,7 +155,7 @@ fun MapScreen(
     val uriHandler = LocalUriHandler.current
     // The app's own theme decision, not the device's: the basemap has to agree with the rest of the
     // UI even when the user forced Dark on a Light device (or the reverse).
-    val darkTiles = LocalDarkTheme.current
+    val darkBasemap = LocalDarkTheme.current
 
     LaunchedEffect(permissionState.hasAccess) { if (permissionState.hasAccess) viewModel.refresh() }
 
@@ -221,26 +235,27 @@ fun MapScreen(
                     modifier = Modifier.weight(1f),
                 )
                 else -> {
-                    OsmMap(
+                    PhotoMap(
                         locations = locations,
                         onOpenMedia = onOpenMedia,
                         savedCamera = savedCamera,
                         focus = focus,
                         scanning = isScanning,
-                        darkTiles = darkTiles,
+                        darkBasemap = darkBasemap,
                         onFocusConsumed = focusRequest::consume,
                         onCameraChanged = viewModel::rememberCamera,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = stringResource(R.string.map_attribution),
+                        text = BasemapStyles.ATTRIBUTION,
                         style = MaterialTheme.typography.labelSmall,
-                        // A link, in the link colour: the basemap is CARTO's rendering of
-                        // OpenStreetMap data, and both have to be credited — with a way to reach the
-                        // page that lists them, which plain text cannot offer.
+                        // A link, in the link colour: OpenFreeMap serves the tiles, OpenMapTiles
+                        // defines the schema and OpenStreetMap supplies the data, so all three have
+                        // to be credited — with a way to reach the page that lists them, which
+                        // plain text cannot offer.
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
-                            .clickable { uriHandler.openUri(MAP_ATTRIBUTION_URL) }
+                            .clickable { uriHandler.openUri(BasemapStyles.ATTRIBUTION_URL) }
                             .padding(horizontal = spacing.md, vertical = spacing.xs),
                     )
                 }
@@ -299,19 +314,22 @@ private fun PhotoLocationListDialog(
 }
 
 @Composable
-private fun OsmMap(
+private fun PhotoMap(
     locations: List<GeotaggedMedia>,
     onOpenMedia: (Long) -> Unit,
     savedCamera: SavedCamera?,
     focus: MapFocus?,
     scanning: Boolean,
-    darkTiles: Boolean,
+    darkBasemap: Boolean,
     onFocusConsumed: () -> Unit,
     onCameraChanged: (SavedCamera) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Zoom-adaptive grouping: the osmdroid zoom listener only updates this band; clusters recompute
+    // Zoom-adaptive grouping: the camera-idle listener only updates this band; clusters recompute
     // when the band changes, not on every pixel of pinch — cheap for the pure clusterer either way.
+    // MapLibre separates continuous camera moves from settled ones, and the idle callback is the
+    // faithful equivalent of the previous engine's zoom listener: it fires when the gesture ends,
+    // not on every frame of it.
     var precision by remember { mutableIntStateOf(MapZoomPrecision.DEFAULT) }
     val pins = remember(locations, precision) { MapClusterer.cluster(locations, precision) }
     // The number of *photos* the map is showing, which is what the screen's header reports and what
@@ -348,13 +366,21 @@ private fun OsmMap(
     // clears it, so a plain recomposition can never re-animate the map and fight the user's panning.
     var pendingCamera by remember { mutableStateOf<MapCameraResolver.Decision?>(null) }
     var selected by remember { mutableStateOf<MapClusterer.MapPin.Single?>(null) }
+    // Two references, because they become available at different moments: the view exists as soon as
+    // the factory returns, the map only inside `getMapAsync`. The camera effects key on the map, so
+    // they run once it is genuinely ready instead of racing it.
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
-    // The marker set only changes when `pins` does, but `AndroidView`'s `update` block runs on *every*
-    // recomposition — and this screen recomposes on each pin tap and each zoom-band change. Rebuilding
-    // every `Marker` and re-allocating a `Bitmap` per cluster (`MapPinBadge.clusterDrawable`) on every
-    // one of those was the map's dominant cost. Identity comparison suffices: `pins` is `remember`ed
-    // over the clustering inputs, so a different list instance means genuinely different pins.
-    val renderedPins = remember { RenderedPins() }
+    var mapRef by remember { mutableStateOf<MapLibreMap?>(null) }
+    // Owns the style/pins ordering — see [MapSurface].
+    val surface = remember { MapSurface() }
+    // The marker set only changes when `pins` does, and this screen recomposes on each pin tap and
+    // each zoom-band change. MapLibre re-renders a source from a `FeatureCollection` rather than from
+    // per-marker objects, so the cost moved: what is guarded now is rebuilding that collection and
+    // re-registering the cluster bitmaps. [MapSurface] compares the list instance, which suffices
+    // because `pins` is `remember`ed over the clustering inputs.
+    val styleLoadedListener = remember {
+        MapView.OnDidFinishLoadingStyleListener { surface.onStyleLoaded() }
+    }
     // Claimed and applied here rather than inside the AndroidView factory: a factory block runs once,
     // when the view is created, and is never re-run when `focus` changes. A request that arrived while
     // the map was already on screen was therefore neither applied nor cleared, so it replayed onto a
@@ -364,16 +390,57 @@ private fun OsmMap(
         pendingCamera = MapCameraResolver.focus(requested.latitude, requested.longitude)
         onFocusConsumed()
     }
-    // Created once per surface and detached with the surface: osmdroid keeps every listener added to a
-    // MapView, and the anonymous one the factory used to add survived the screen — still writing
-    // Compose state from a map that had already left the composition.
-    val zoomListener = remember {
-        object : MapListener {
-            override fun onScroll(event: ScrollEvent): Boolean = false
-            override fun onZoom(event: ZoomEvent): Boolean {
-                val next = MapZoomPrecision.forZoom(event.zoomLevel)
-                if (next != precision) precision = next
-                return false
+    // Created once per surface and detached with the surface: MapLibre keeps every listener added to a
+    // map, and an anonymous one created in the factory survived the screen — still writing Compose
+    // state from a map that had already left the composition.
+    val cameraIdleListener = remember {
+        MapLibreMap.OnCameraIdleListener {
+            val zoom = mapRef?.cameraPosition?.zoom ?: return@OnCameraIdleListener
+            val next = MapZoomPrecision.forZoom(zoom)
+            if (next != precision) precision = next
+        }
+    }
+    // Hit-testing. MapLibre has no per-feature click callback on the map object, so a tap is resolved
+    // by projecting the tapped coordinate to a screen point and asking the style which rendered
+    // feature sits under it — restricted to the two pin layers, so a tap on a road hits nothing.
+    val clickListener = remember {
+        MapLibreMap.OnMapClickListener { latLng ->
+            val map = mapRef ?: return@OnMapClickListener false
+            val point = map.projection.toScreenLocation(latLng)
+            val feature = map
+                .queryRenderedFeatures(point, SINGLE_LAYER_ID, CLUSTER_LAYER_ID)
+                .firstOrNull()
+                ?: return@OnMapClickListener false
+            val geometry = feature.geometry() as? Point ?: return@OnMapClickListener false
+            when (feature.getStringProperty(MapPinsGeoJson.PROP_KIND)) {
+                MapPinsGeoJson.KIND_SINGLE -> {
+                    val mediaId = feature
+                        .getStringProperty(MapPinsGeoJson.PROP_MEDIA_ID)
+                        ?.toLongOrNull()
+                        ?: return@OnMapClickListener false
+                    // Centre and offer a preview rather than throwing the user straight into the
+                    // Viewer — the map keeps its context behind the sheet.
+                    pendingCamera = MapCameraResolver.focus(geometry.latitude(), geometry.longitude())
+                    selected = MapClusterer.MapPin.Single(
+                        latitude = geometry.latitude(),
+                        longitude = geometry.longitude(),
+                        mediaId = mediaId,
+                    )
+                    true
+                }
+                MapPinsGeoJson.KIND_CLUSTER -> {
+                    // Centre on the cluster, then zoom in — the recluster follows via the camera-idle
+                    // listener; no zoom level is invented here.
+                    map.animateCamera(
+                        CameraUpdateFactory.newLatLngZoom(
+                            LatLng(geometry.latitude(), geometry.longitude()),
+                            (map.cameraPosition.zoom + CLUSTER_ZOOM_STEP)
+                                .coerceAtMost(BasemapStyles.MAX_ZOOM),
+                        ),
+                    )
+                    true
+                }
+                else -> false
             }
         }
     }
@@ -383,70 +450,79 @@ private fun OsmMap(
     // works by division of labour: the blue fill carries the marker on the light basemap, the white
     // ring carries it on the dark one, so neither has to be re-tuned per theme.
     //
-    // The basemap itself does follow the theme, and is applied here rather than only in the factory
-    // below: the factory runs once, so a theme flipped while the map is on screen would otherwise keep
-    // the old style until the screen was recreated. `appliedTiles` is the guard that keeps this from
-    // re-setting the source (and reloading every tile) on unrelated recompositions.
-    val appliedTiles = remember { AppliedTileSource() }
-    // The gap between tiles, and the flash while they load, used to be osmdroid's default white —
-    // which on a dark basemap is a white strobe on every pan. The surface behind the map is already
-    // `mediaBackdrop`, so the map's own background matches it.
+    // The basemap itself follows the theme, and is applied from an effect rather than only in the
+    // factory: the factory runs once, so a theme flipped while the map is on screen would otherwise
+    // keep the old style until the screen was recreated. `MapSurface.requestStyle` is the guard that
+    // stops an unchanged theme from reloading the style — and every tile with it — on an unrelated
+    // recomposition.
+    //
+    // The gap colour matters more here than it did on raster: MapLibre paints its own background
+    // while a style loads and the default is light grey, which is a white flash on the dark basemap.
+    // The surface behind the map is already `mediaBackdrop`, so the map's own background matches it.
     val backdropArgb = TelepicTokens.colors.mediaBackdrop.toArgb()
-    LaunchedEffect(mapViewRef, darkTiles) {
-        val mapView = mapViewRef ?: return@LaunchedEffect
-        val target = TelepicTileSources.forDarkTheme(darkTiles)
-        if (appliedTiles.source !== target) {
-            mapView.setTileSource(target)
-            mapView.mapOverlay.setLoadingBackgroundColor(backdropArgb)
-            appliedTiles.source = target
-        }
+    LaunchedEffect(mapRef, darkBasemap) {
+        val map = mapRef ?: return@LaunchedEffect
+        surface.requestStyle(map, BasemapStyles.forDarkTheme(darkBasemap))
     }
+    // Pins, independently of the style: `MapSurface` holds them until a style is ready, so it does not
+    // matter whether the scan finishes before or after the basemap loads.
+    LaunchedEffect(pins) { surface.updatePins(pins) }
 
     // The two camera moves, applied from an effect rather than from `AndroidView`'s `update` block.
     //
     // `update` runs during Compose's *apply* phase, so writing snapshot state there — which is what
     // clearing the pending decision used to do — is the documented misuse: every camera move
-    // scheduled an extra recomposition and an extra apply pass. The view is reached through
-    // [mapViewRef], which the factory fills in when the view is created.
-    LaunchedEffect(mapViewRef, initialCamera) {
-        val mapView = mapViewRef ?: return@LaunchedEffect
+    // scheduled an extra recomposition and an extra apply pass. The map is reached through
+    // [mapRef], which `getMapAsync` fills in once the surface is actually ready.
+    LaunchedEffect(mapRef, initialCamera) {
+        val map = mapRef ?: return@LaunchedEffect
         if (initialApplied) return@LaunchedEffect
         val decision = initialCamera as? MapCameraResolver.Decision.Apply ?: return@LaunchedEffect
-        mapView.controller.setCenter(GeoPoint(decision.centerLat, decision.centerLon))
-        mapView.controller.setZoom(decision.zoom)
+        map.moveCamera(decision.toCameraUpdate())
+        // Set the band from the target zoom rather than waiting for the idle callback: the first
+        // framing must cluster at the right precision on the frame it lands, not one callback later.
+        precision = MapZoomPrecision.forZoom(decision.zoom)
         initialApplied = true
     }
-    LaunchedEffect(mapViewRef, pendingCamera) {
-        val mapView = mapViewRef ?: return@LaunchedEffect
+    LaunchedEffect(mapRef, pendingCamera) {
+        val map = mapRef ?: return@LaunchedEffect
         val decision = pendingCamera ?: return@LaunchedEffect
         if (decision is MapCameraResolver.Decision.Apply) {
-            mapView.controller.setCenter(GeoPoint(decision.centerLat, decision.centerLon))
-            mapView.controller.setZoom(decision.zoom)
+            map.moveCamera(decision.toCameraUpdate())
+            precision = MapZoomPrecision.forZoom(decision.zoom)
         }
         pendingCamera = null
     }
 
     // Persist where the map was left. Written on pause *and* on teardown: leaving the map for another
-    // tab disposes it without a pause, and that final position is the one worth remembering. Takes the
-    // view rather than reading `mapViewRef`, because `onRelease` clears that reference — a capture that
-    // raced it used to be a silent no-op, losing exactly the position this exists to save.
-    val captureCamera: (MapView) -> Unit = { view ->
-        view.mapCenter?.let { center ->
-            onCameraChanged(SavedCamera(center.latitude, center.longitude, view.zoomLevelDouble))
+    // tab disposes it without a pause, and that final position is the one worth remembering.
+    //
+    // Reads the map, not the view, and treats a null `target` as "nothing to save": MapLibre reports
+    // no camera target before the first framing rather than a fabricated (0, 0), so a capture that
+    // early saves nothing instead of saving Null Island.
+    val captureCamera: () -> Unit = {
+        mapRef?.let { map ->
+            val position = map.cameraPosition
+            position.target?.let { target ->
+                onCameraChanged(SavedCamera(target.latitude, target.longitude, position.zoom))
+            }
         }
     }
 
-    // osmdroid tiles/network only make sense while the surface is foregrounded; without this the
-    // MapView keeps fetching tiles with the app backgrounded.
+    // MapLibre needs the same foreground signal the previous engine did, but it splits it further:
+    // `onStart` is what activates the tile FileSource and the connectivity receiver, so without it no
+    // tile is ever fetched. `onDestroy` in `onRelease` is the replacement for osmdroid's `onDetach`.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
+                Lifecycle.Event.ON_START -> mapViewRef?.onStart()
                 Lifecycle.Event.ON_RESUME -> mapViewRef?.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapViewRef?.let { view ->
-                    captureCamera(view)
-                    view.onPause()
+                Lifecycle.Event.ON_PAUSE -> {
+                    captureCamera()
+                    mapViewRef?.onPause()
                 }
+                Lifecycle.Event.ON_STOP -> mapViewRef?.onStop()
                 else -> Unit
             }
         }
@@ -458,114 +534,100 @@ private fun OsmMap(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
-                // osmdroid is configured once in TelepicApplication (User-Agent + tile cache).
-                // Calling Configuration.load() here would reset the User-Agent to the bare package
-                // name on every map, which is what left the UA non-descriptive and the map blank.
-                MapView(context).apply {
-                    // The theme's basemap, set here so the first frame already draws the right style —
-                    // the effect above only re-applies it when the theme changes while the map lives.
-                    val initialTiles = TelepicTileSources.forDarkTheme(darkTiles)
-                    setTileSource(initialTiles)
-                    mapOverlay.setLoadingBackgroundColor(backdropArgb)
-                    appliedTiles.source = initialTiles
-                    setMultiTouchControls(true)
-                    // This screen exists to show online tiles; be explicit rather than relying on the
-                    // configuration default.
-                    setUseDataConnection(true)
-                    controller.setZoom(2.0)
-                    setExpectedCenter(GeoPoint(20.0, 0.0))
-                    addMapListener(zoomListener)
-                    mapViewRef = this
-                    // A freshly created MapView carries no overlays, so whatever the previous one had
-                    // must not be treated as already rendered.
-                    renderedPins.pins = null
-                }
-            },
-            update = { mapView ->
-                // Only rebuild the overlay list when the pins actually changed. `mapView.invalidate()`
-                // below still runs every time, so camera moves and the content description stay live.
-                if (renderedPins.pins !== pins) {
-                    mapView.overlays.clear()
-                    pins.forEach { pin ->
-                        val marker = Marker(mapView)
-                        marker.setPosition(GeoPoint(pin.latitude, pin.longitude))
-                        when (pin) {
-                            is MapClusterer.MapPin.Single -> {
-                                // The app's own pin, not osmdroid's stock teardrop: the stock marker
-                                // is a different colour and a different weight from the cluster
-                                // bubbles, so the same map showed two unrelated visual languages.
-                                marker.setIcon(MapPinBadge.singlePinDrawable(mapView.context))
-                                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                                // The marker's own label. osmdroid markers are canvas overlays with no
-                                // accessibility node, so this is the only per-marker text osmdroid has
-                                // — and the click listener below returns `true`, which suppresses
-                                // osmdroid's info window, so the title is *not* what a screen reader
-                                // reads either. The map view itself announces the photo count; the
-                                // individual pins are reachable by touch and by the preview sheet.
-                                marker.title = mapView.context.getString(
-                                    R.string.map_marker_description,
-                                    formatCoordinate(pin.latitude, pin.longitude),
-                                )
-                                marker.setOnMarkerClickListener { _, _ ->
-                                    // Centre and offer a preview rather than throwing the user straight
-                                    // into the Viewer — the map keeps its context behind the sheet.
-                                    pendingCamera = MapCameraResolver.focus(pin.latitude, pin.longitude)
-                                    selected = pin
-                                    true
-                                }
-                            }
-                            is MapClusterer.MapPin.Cluster -> {
-                                // A count bubble in the same colour and with the same white ring as
-                                // the single pin, so the two read as one system on the same map.
-                                marker.setIcon(
-                                    MapPinBadge.clusterDrawable(
-                                        mapView.context,
-                                        pin.size,
-                                    ),
-                                )
-                                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                marker.title =
-                                    mapView.context.resources.getQuantityString(R.plurals.map_cluster_description, pin.size, pin.size)
-                                marker.setOnMarkerClickListener { _, _ ->
-                                    // Center on the cluster, then zoom in — the recluster follows via the
-                                    // zoom listener; no zoom level is invented here.
-                                    mapView.controller.setCenter(GeoPoint(pin.latitude, pin.longitude))
-                                    mapView.controller.setZoom((mapView.zoomLevelDouble + 2.0).coerceAtMost(MAX_ZOOM))
-                                    true
-                                }
-                            }
-                        }
-                        mapView.overlays.add(marker)
+                // MapLibre must be initialised before the first MapView, and this is the only place a
+                // MapView is ever constructed. Deliberately not in the Application: every Robolectric
+                // test boots that, and a MapView loads a native library a JVM test cannot have.
+                MapLibreConfiguration.ensureInitialized(context)
+                val options = MapLibreMapOptions.createFromAttributes(context)
+                    // The replacement for the previous engine's loading background: MapLibre paints
+                    // its own grey while a style loads, which is a white flash on the dark basemap.
+                    .foregroundLoadColor(backdropArgb)
+                MapView(context, options).apply {
+                    onCreate(null)
+                    addOnDidFinishLoadingStyleListener(styleLoadedListener)
+                    addOnDidFailLoadingMapListener { message ->
+                        TelepicLog.warn("Map", "the map failed to load: $message")
                     }
-                    renderedPins.pins = pins
+                    // This destination is already resumed when the view is created, so the observer
+                    // above never sees START/RESUME for it. MapView guards both calls, and `onStart`
+                    // is what activates tile loading — without this replay the first map is blank.
+                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                        onStart()
+                    }
+                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        onResume()
+                    }
+                    getMapAsync { map ->
+                        // Gesture parity with the previous engine: MapLibre rotates and tilts by
+                        // default, which osmdroid never did, and a map that spins under a two-finger
+                        // pan is a different map. The compass exists to undo rotation, so it goes
+                        // with it — this screen's design never had one.
+                        map.uiSettings.setRotateGesturesEnabled(false)
+                        map.uiSettings.setTiltGesturesEnabled(false)
+                        map.uiSettings.setCompassEnabled(false)
+                        // The screen draws its own attribution below the surface, because that credit
+                        // has to be a link; MapLibre's overlay is a second, unlinked copy of it.
+                        map.uiSettings.setAttributionEnabled(false)
+                        map.uiSettings.setLogoEnabled(false)
+                        map.setMinZoomPreference(BasemapStyles.MIN_ZOOM)
+                        map.setMaxZoomPreference(BasemapStyles.MAX_ZOOM)
+                        // A neutral default that the first framing replaces — never a fabricated
+                        // location, and the same world view the previous engine was given.
+                        map.moveCamera(
+                            CameraUpdateFactory.newLatLngZoom(
+                                LatLng(NEUTRAL_LAT, NEUTRAL_LON),
+                                NEUTRAL_ZOOM,
+                            ),
+                        )
+                        map.addOnMapClickListener(clickListener)
+                        map.addOnCameraIdleListener(cameraIdleListener)
+                        surface.onMapReady(map, context)
+                        mapRef = map
+                    }
+                    // A freshly created view has no style and no layers, so whatever the previous one
+                    // had must not be treated as already rendered. The pins themselves are kept.
+                    surface.reset()
+                    mapViewRef = this
                 }
-                // TalkBack reads the map as one focusable surface: announce how many photo locations it
-                // holds. The **photo** count, not the marker count: `pins` is the clustered list, so a
-                // dozen photos in three clusters announced "3 photo locations" while the header said
-                // "12" — two numbers for the same thing, one of them wrong.
-                mapView.contentDescription =
-                    mapView.context.resources.getQuantityString(
-                        R.plurals.map_view_description,
-                        locationCount,
-                        locationCount,
-                    )
-                // The opening framing is applied exactly once — later recompositions (a new overlay, a
-                // changed badge colour) must never move the camera out from under the user. Only a
-                // real decision latches: `KeepDefault` (nothing to frame yet) leaves the flag clear so
-                // the next recomposition, with the pins that finally arrived, can still apply it.
-                //
-                // Both camera moves are applied from the effect above rather than from `update`:
-                // `update` runs during Compose's *apply* phase, and writing snapshot state there is
-                // the documented misuse — it schedules an extra recomposition for every camera move.
-                mapView.invalidate()
             },
-            onRelease = { mapView ->
-                // The last real chance to save where the user left the map — and the only place the view
-                // is guaranteed still to be in hand, which is why this does not read `mapViewRef`.
-                captureCamera(mapView)
-                mapView.removeMapListener(zoomListener)
-                mapView.onPause()
-                mapView.onDetach()
+            update = { view ->
+                // The pins are pushed by the `LaunchedEffect(pins)` above and drawn by
+                // `MapSurface` once a style exists, so `update` has nothing to rebuild — which is the
+                // point. It carries the one thing that must track composition: the description.
+                //
+                // TalkBack reads the map as one focusable surface: announce how many photo locations
+                // it holds. The **photo** count, not the marker count: `pins` is the clustered list,
+                // so a dozen photos in three clusters announced "3 photo locations" while the header
+                // said "12" — two numbers for the same thing, one of them wrong.
+                view.contentDescription = view.resources.getQuantityString(
+                    R.plurals.map_view_description,
+                    locationCount,
+                    locationCount,
+                )
+                // No `invalidate()`: MapLibre redraws itself, and the opening framing is applied
+                // exactly once from the effect above — a later recomposition (a new pin, a changed
+                // badge colour) must never move the camera out from under the user.
+            },
+            onRelease = { view ->
+                // The last real chance to save where the user left the map — and the only place the
+                // view is guaranteed still to be in hand, which is why this does not read
+                // `mapViewRef`.
+                captureCamera()
+                view.removeOnDidFinishLoadingStyleListener(styleLoadedListener)
+                mapRef?.let { map ->
+                    map.removeOnMapClickListener(clickListener)
+                    map.removeOnCameraIdleListener(cameraIdleListener)
+                }
+                // `onDestroy` is the replacement for the previous engine's `onDetach`: leaving the Map
+                // tab disposes the surface while the activity stays alive, so the renderer has to be
+                // torn down here or the next open leaks it.
+                if (!view.isDestroyed()) {
+                    view.onPause()
+                    view.onStop()
+                    view.onDestroy()
+                }
+                surface.reset()
+                mapRef = null
                 mapViewRef = null
             },
         )
@@ -839,35 +901,167 @@ private fun formatPlace(latitude: Double, longitude: Double): String {
     )
 }
 
-private const val MAX_ZOOM = 19.0
+/** How far a tap on a cluster zooms in. Two levels, as it was before the engine changed. */
+private const val CLUSTER_ZOOM_STEP = 2.0
 
 /**
- * Where the map attribution links to.
+ * The camera before anything has framed the photos.
  *
- * The basemap is CARTO's rendering of OpenStreetMap data, so both have to be credited — and CARTO's
- * attribution page is the one that lists both, which is why the link points there rather than at
- * `openstreetmap.org/copyright` (the correct target when we fetched OSM tiles directly).
+ * The same neutral world view the previous engine was given, one zoom lower: MapLibre's camera zoom
+ * is defined on a 512 px world grid where raster's was 256, so `raster 2` is `MapLibre 1`.
  */
-private const val MAP_ATTRIBUTION_URL = "https://carto.com/attributions"
+private const val NEUTRAL_LAT = 20.0
+private const val NEUTRAL_LON = 0.0
+private const val NEUTRAL_ZOOM = 1.0
+
+private const val PINS_SOURCE_ID = "telepic-pins"
+private const val SINGLE_LAYER_ID = "telepic-pins-single"
+private const val CLUSTER_LAYER_ID = "telepic-pins-cluster"
+
+/** The camera update for a resolved framing decision. */
+private fun MapCameraResolver.Decision.Apply.toCameraUpdate() =
+    CameraUpdateFactory.newLatLngZoom(LatLng(centerLat, centerLon), zoom)
 
 /**
- * Remembers which pin list the map's overlays currently represent.
+ * The single-photo layer.
  *
- * A plain holder rather than `mutableStateOf`: it is only ever read and written inside
- * `AndroidView`'s `update` block, so making it observable would schedule a recomposition for a value
- * composition never reads.
+ * The icon id comes from the feature, so one image draws every single pin. The two overlap flags are
+ * load-bearing: MapLibre resolves symbol collisions by default and would silently hide any pin that
+ * sits near another — the opposite of what a photo map is for. The previous engine drew every marker
+ * unconditionally, so this restores that.
  */
-private class RenderedPins {
-    var pins: List<MapClusterer.MapPin>? = null
-}
+private fun singlePinLayer(): SymbolLayer = SymbolLayer(SINGLE_LAYER_ID, PINS_SOURCE_ID)
+    .withFilter(Expression.eq(Expression.get(MapPinsGeoJson.PROP_KIND), MapPinsGeoJson.KIND_SINGLE))
+    .withProperties(
+        PropertyFactory.iconImage(Expression.get(MapPinsGeoJson.PROP_ICON)),
+        // The pin's tip sits on the coordinate, as the marker anchor did.
+        PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+        PropertyFactory.iconAllowOverlap(true),
+        PropertyFactory.iconIgnorePlacement(true),
+    )
+
+/** The cluster layer. A bubble is centred on its location rather than pointing at it. */
+private fun clusterPinLayer(): SymbolLayer = SymbolLayer(CLUSTER_LAYER_ID, PINS_SOURCE_ID)
+    .withFilter(Expression.eq(Expression.get(MapPinsGeoJson.PROP_KIND), MapPinsGeoJson.KIND_CLUSTER))
+    .withProperties(
+        PropertyFactory.iconImage(Expression.get(MapPinsGeoJson.PROP_ICON)),
+        PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
+        PropertyFactory.iconAllowOverlap(true),
+        PropertyFactory.iconIgnorePlacement(true),
+    )
 
 /**
- * Remembers which basemap the live `MapView` is currently showing.
+ * Owns everything that has to wait for a style: the images, the pin source, the two layers, and the
+ * ordering between "the pins arrived" and "the style loaded".
  *
- * Same reasoning as [RenderedPins], plus one of its own: `setTileSource` throws away the in-memory
- * tile list and reloads, so re-applying the same source on every recomposition would re-fetch tiles
- * continuously. Comparing the instance is enough because the two sources are singletons.
+ * A plain holder rather than Compose state: it is written from MapLibre callbacks and read from
+ * effects, so making it observable would recompose the screen for values composition never reads.
+ *
+ * Two ordering cases it exists to absorb, because they race every time the map opens:
+ * - **Pins before style.** `updatePins` stores the list; `renderPins` returns early because there is
+ *   no style yet; the style callback renders the stored list.
+ * - **Style before pins.** The source and layers are created empty, and the later `updatePins` pushes
+ *   the features into the existing source.
+ *
+ * `pins` survives [reset] deliberately. The surface is destroyed and rebuilt whenever the user leaves
+ * the Map tab and returns, and a rebuilt view must draw the current pins on its first style load —
+ * otherwise the map comes back blank until the next scan.
  */
-private class AppliedTileSource {
-    var source: OnlineTileSourceBase? = null
+private class MapSurface {
+    private var map: MapLibreMap? = null
+    private var context: Context? = null
+    private var style: Style? = null
+    private var requestedUrl: String? = null
+    private var pins: List<MapClusterer.MapPin> = emptyList()
+    private var rendered: List<MapClusterer.MapPin>? = null
+    private val imageIds = mutableSetOf<String>()
+
+    fun onMapReady(map: MapLibreMap, context: Context) {
+        this.map = map
+        this.context = context
+    }
+
+    fun reset() {
+        map = null
+        context = null
+        style = null
+        requestedUrl = null
+        rendered = null
+        imageIds.clear()
+    }
+
+    fun updatePins(pins: List<MapClusterer.MapPin>) {
+        this.pins = pins
+        renderPins()
+    }
+
+    fun requestStyle(map: MapLibreMap, url: String) {
+        // The guard that keeps an unrelated recomposition from reloading the style and every tile.
+        if (url == requestedUrl) return
+        requestedUrl = url
+        // Everything style-scoped is about to be thrown away by MapLibre.
+        style = null
+        rendered = null
+        imageIds.clear()
+        map.setStyle(Style.Builder().fromUri(url))
+    }
+
+    fun onStyleLoaded() {
+        val live = map ?: return
+        // The guard that makes this safe: `getStyle()` returns null unless a style is *fully* loaded,
+        // and every Style mutator throws while a newer style is still loading. A stale "loaded" event
+        // from a superseded style is therefore a no-op.
+        val loaded = live.getStyle() ?: return
+        if (loaded !== style) {
+            style = loaded
+            rendered = null
+            imageIds.clear()
+        }
+        renderPins()
+    }
+
+    private fun renderPins() {
+        // Named apart from the `style` field on purpose: `val style = style ?: return` compiles but
+        // shadows, and every line below would then read as if it were touching the field.
+        val live = style ?: return
+        val context = context ?: return
+        if (rendered === pins) return
+
+        // One image per distinct cluster size in this pass, plus the single pin.
+        val counts = pins.filterIsInstance<MapClusterer.MapPin.Cluster>().map { it.size }.distinct()
+        val wanted = buildSet {
+            add(MapPinIcons.SINGLE)
+            counts.forEach { add(MapPinIcons.cluster(it)) }
+        }
+        if (MapPinIcons.SINGLE !in imageIds) {
+            live.addImage(MapPinIcons.SINGLE, MapPinBadge.singlePinBitmap(context))
+            imageIds += MapPinIcons.SINGLE
+        }
+        counts.forEach { count ->
+            val id = MapPinIcons.cluster(count)
+            if (id !in imageIds) {
+                live.addImage(id, MapPinBadge.clusterBitmap(context, count))
+                imageIds += id
+            }
+        }
+
+        val collection = MapPinsGeoJson.featureCollection(pins)
+        val source = live.getSource(PINS_SOURCE_ID) as? GeoJsonSource
+        if (source == null) {
+            live.addSource(GeoJsonSource(PINS_SOURCE_ID, collection))
+        } else {
+            source.setGeoJson(collection)
+        }
+        if (live.getLayer(SINGLE_LAYER_ID) == null) live.addLayer(singlePinLayer())
+        if (live.getLayer(CLUSTER_LAYER_ID) == null) live.addLayer(clusterPinLayer())
+
+        // A cluster size that no longer occurs would otherwise leave its bitmap registered forever,
+        // one per size ever seen.
+        val stale = imageIds - wanted
+        stale.forEach { id ->
+            live.removeImage(id)
+            imageIds -= id
+        }
+        rendered = pins
+    }
 }

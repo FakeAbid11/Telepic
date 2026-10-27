@@ -9,7 +9,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * `LocalDarkTheme` is the only way a non-Compose surface — the osmdroid map — can learn whether the
+ * `LocalDarkTheme` is the only way a non-Compose surface — the MapLibre map — can learn whether the
  * app is dark, so the contract worth pinning is simply that it reports the caller's choice and not
  * the device's.
  *

@@ -15,19 +15,28 @@ import androidx.compose.ui.graphics.toArgb
  * cluster. Both are drawn here — pure `android.graphics`, no icon pack, no layout inflation — so a
  * marker is generated once per clustering pass and costs nothing to move.
  *
- * They are drawn as **one system**. A single photo used to fall back to osmdroid's stock teardrop
- * marker while a cluster wore the app's own circle, so the same map showed a stock green teardrop
- * beside an app-blue bubble: two shapes, two colours, two weights, for one kind of thing.
+ * They are drawn as **one system**. A single photo used to fall back to the engine's *stock*
+ * teardrop marker while a cluster wore the app's own circle, so the same map showed a stock green
+ * teardrop beside an app-blue bubble: two shapes, two colours, two weights, for one kind of thing.
+ *
+ * The [Bitmap] functions are the ones the map actually uses: MapLibre registers images by bitmap
+ * (`Style.addImage`) rather than by `Drawable`. The drawable wrappers remain for callers that want
+ * one, and they keep this object's existing tests intact.
+ *
+ * **Density is load-bearing.** MapLibre derives an image's `pixelRatio` from
+ * `bitmap.density / 160f`, then draws it at `width / pixelRatio`. A bitmap left at the default
+ * density would render at the wrong physical size, so every bitmap produced here sets its density
+ * from the display metrics explicitly.
  */
 object MapPinBadge {
 
     /**
      * The fill every marker is drawn with.
      *
-     * Fixed, not theme-derived — but not because the basemap is fixed. The map now follows the theme
-     * (a light or dark CARTO style), so a marker has to read on *both*: a theme-derived tone would be
+     * Fixed, not theme-derived — but not because the basemap is fixed. The map follows the theme
+     * (a light or dark vector style), so a marker has to read on *both*: a theme-derived tone would be
      * chosen for a surface the marker is not drawn on, and the dark scheme's light blue (#7FA9FF)
-     * measures about 1.9:1 against a light land tile. This brand blue clears the 3:1 graphics floor on
+     * measures about 1.9:1 against a light land area. This brand blue clears the 3:1 graphics floor on
      * either basemap (≈4.1:1 on light land, ≈3.7:1 on dark), and the ring below is what carries the
      * edge in the worst case.
      */
@@ -56,11 +65,11 @@ object MapPinBadge {
      * and slightly larger, and the blue on top of it, so the ring is an outline with no dependence
      * on how the two shapes wind or on an arc's direction.
      */
-    fun singlePinDrawable(
+    fun singlePinBitmap(
         context: Context,
         fillColor: Int = PinFill.toArgb(),
         ringColor: Int = PinRing.toArgb(),
-    ): Drawable {
+    ): Bitmap {
         val density = context.resources.displayMetrics.density
         val radius = 8f * density
         val ring = 2f * density
@@ -89,8 +98,19 @@ object MapPinBadge {
         canvas.drawCircle(cx, headCy, radius, fillPaint)
         canvas.drawPath(tailPath(cx, tailBase, radius * 0.30f, tipY), fillPaint)
 
-        return BitmapDrawable(context.resources, bitmap)
+        bitmap.density = context.resources.displayMetrics.densityDpi
+        return bitmap
     }
+
+    /** [singlePinBitmap] as a drawable, for callers that want one. */
+    fun singlePinDrawable(
+        context: Context,
+        fillColor: Int = PinFill.toArgb(),
+        ringColor: Int = PinRing.toArgb(),
+    ): Drawable = BitmapDrawable(
+        context.resources,
+        singlePinBitmap(context, fillColor, ringColor),
+    )
 
     /** The tail of the pin: a triangle from the head's lower flanks down to the tip. */
     private fun tailPath(cx: Float, baseY: Float, halfWidth: Float, tipY: Float): Path = Path().apply {
@@ -107,13 +127,13 @@ object MapPinBadge {
      * [textColor] is required rather than defaulted: the fill is a mid-blue, and a white count on it
      * measures 4.68:1 — the same figure the single pin's ring is measured against.
      */
-    fun clusterDrawable(
+    fun clusterBitmap(
         context: Context,
         count: Int,
         fillColor: Int = PinFill.toArgb(),
         textColor: Int = PinCount.toArgb(),
         ringColor: Int = PinRing.toArgb(),
-    ): Drawable {
+    ): Bitmap {
         val density = context.resources.displayMetrics.density
         // `fontScale` as well as `density`: this is a number the user has to read, so it follows their
         // font-size setting like every other number in the app. Scaling on density alone left the
@@ -152,6 +172,19 @@ object MapPinBadge {
         canvas.drawCircle(centre, centre, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = fillColor })
         val baseline = centre - (textPaint.descent() + textPaint.ascent()) / 2f
         canvas.drawText(count.toString(), centre, baseline, textPaint)
-        return BitmapDrawable(context.resources, bitmap)
+        bitmap.density = context.resources.displayMetrics.densityDpi
+        return bitmap
     }
+
+    /** [clusterBitmap] as a drawable, for callers that want one. */
+    fun clusterDrawable(
+        context: Context,
+        count: Int,
+        fillColor: Int = PinFill.toArgb(),
+        textColor: Int = PinCount.toArgb(),
+        ringColor: Int = PinRing.toArgb(),
+    ): Drawable = BitmapDrawable(
+        context.resources,
+        clusterBitmap(context, count, fillColor, textColor, ringColor),
+    )
 }

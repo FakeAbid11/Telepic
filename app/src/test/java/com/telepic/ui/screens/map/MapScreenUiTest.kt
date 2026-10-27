@@ -29,10 +29,11 @@ import org.robolectric.annotation.Config
 
 /**
  * Robolectric coverage of the photo map's *state machine*: permission, "still scanning" vs
- * "genuinely empty", and the honest locations count. The osmdroid surface itself is device-bound
- * (its factory builds a real `MapView` and starts tile requests), so these assertions deliberately
- * stay on the branches that render before the surface exists — which is exactly the part that can
- * regress silently, because the map logic it guards lives behind the surface.
+ * "genuinely empty", and the honest locations count. The MapLibre surface itself is device-bound —
+ * its factory builds a real `MapView`, which loads a native library a JVM test process cannot have —
+ * so these assertions deliberately stay on the branches that render before the surface exists. That
+ * is exactly the part that can regress silently, because the map logic it guards lives behind the
+ * surface.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], qualifiers = "w411dp-h891dp")
@@ -84,10 +85,11 @@ class MapScreenUiTest {
     private fun settle() = repeat(4) { shadowOf(android.os.Looper.getMainLooper()).idle() }
 
     /**
-     * These tests deliberately stay on the branches that render *before* the osmdroid surface exists,
-     * so the scan grace is pinned far beyond anything a test can advance. The loading branch is what is
-     * under test here; letting the window lapse would build a real `MapView`, which is device-bound.
-     * The lapse itself is covered at the ViewModel level in `MapViewModelTest`.
+     * These tests deliberately stay on the branches that render *before* the map surface exists, so
+     * the scan grace is pinned far beyond anything a test can advance. The loading branch is what is
+     * under test here; letting the window lapse would build a real `MapView` and load MapLibre's
+     * native library, which cannot happen in a JVM test. The lapse itself is covered at the ViewModel
+     * level in `MapViewModelTest`.
      */
     private fun showMap(
         repo: FakeMapRepo,

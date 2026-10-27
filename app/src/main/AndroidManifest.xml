@@ -51,7 +51,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
-      Phase 10 map: tiles are fetched from an OpenStreetMap-compatible provider over the network.
+      Phase 10 map: vector tiles and styles are fetched from OpenFreeMap over the network.
       Telepic does NOT request any *device* location permission — the map has no notion of where the
       phone is. Photo locations come only from the GPS data already embedded in the media files,
       which is read on-device (the ACCESS_MEDIA_LOCATION declaration above exists precisely so that
@@ -59,6 +59,19 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!--
+      MapLibre's AAR declares fine/coarse location for its optional LocationComponent, which Telepic
+      never activates — the map draws the user's photos, not the user. Without these removals the
+      merged manifest would request device location and contradict both the comment above and the
+      Play data-safety declaration. `tools:node="remove"` is the only way to drop a permission an
+      AAR contributes; a plain declaration would just lose the merge to the library's.
+    -->
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_COARSE_LOCATION"
+        tools:node="remove" />
 
     <!--
       allowBackup=false: Telepic holds a live Telegram session (TDLib database + keystore-wrapped

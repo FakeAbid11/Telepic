@@ -61,7 +61,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - Permanent delete goes through the Android-sanctioned system consent dialog: `MediaStore.createDeleteRequest` on API 30+, and the platform's own recoverable-consent prompt on Android 10, so the feature works on every supported release.
 
 ### 🗺 Map
-- Interactive OpenStreetMap view (osmdroid, no API key) with marker clustering.
+- Interactive map on MapLibre GL Native, drawing OpenFreeMap vector styles (free, unlimited, no API key — one light and one dark style that follow the app theme) with marker clustering.
 - Photo positions come only from embedded EXIF GPS. **No device-location permission is requested, and no coordinates or EXIF are ever uploaded.**
 
 ### 💾 Backup
@@ -265,7 +265,7 @@ flowchart TD
 | Settings storage | Jetpack DataStore (Preferences) |
 | Image loading | Coil — thumbnail-first, video-frame decoding, animated GIFs |
 | Video playback | Media3 ExoPlayer |
-| Map | osmdroid + OpenStreetMap tiles (Apache-2.0, no API key) |
+| Map | MapLibre GL Native + OpenFreeMap vector tiles (BSD-2-Clause, no API key) |
 | EXIF / GPS | `androidx.exifinterface` |
 | Recognition / dedup | Streaming SHA-256 via `MessageDigest` (no third-party hashing library) |
 | Cloud backend | Telegram via Java TDLib (`org.drinkless.tdlib`), ARM-only |
@@ -464,7 +464,7 @@ never run against the real thing.
 | Cloud browse / preview / original download | Needs a populated channel and a live session |
 | Backup upload (`SendMessage` + `InputFile`) | The upload path is implemented (`TdLibCloudDataSource.upload` sends the staged file and polls the sent message's sending state); a live send against a real session is what remains unverified. An item stays `QUEUED`/`WAITING` on a transient failure and is never marked `BACKED_UP` without a confirmed remote identity |
 | MediaStore write (restore) and delete consent | Provider behaviour and the system consent dialog are device-only |
-| ExoPlayer playback, osmdroid rendering, Coil GIF decode | Rendering is device-only |
+| ExoPlayer playback, MapLibre rendering, Coil GIF decode | Rendering is device-only |
 | App lock (`KeyguardManager` device-credential prompt) | The credential prompt and the activity `ON_STOP`/`ON_START` round trip are device-only |
 
 ### Roadmap
@@ -478,7 +478,7 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 <a id="limitations"></a>
 ## ⚠️ Limitations
 
-- **Device validation is outstanding.** The entire live Telegram path (auth, cloud browse/preview, upload, download), MediaStore write/delete consent, all rendering (ExoPlayer, osmdroid, GIF decode), and the app lock's credential prompt are unverified on a device. See [Device validation status](#device-validation-status).
+- **Device validation is outstanding.** The entire live Telegram path (auth, cloud browse/preview, upload, download), MediaStore write/delete consent, all rendering (ExoPlayer, MapLibre, GIF decode), and the app lock's credential prompt are unverified on a device. See [Device validation status](#device-validation-status).
 - **App lock re-locks on a grace window, not instantly.** Returning to the foreground within 30 seconds does not re-prompt, because launching a system activity (the photo picker, the delete-consent dialog, the Telegram link) stops this activity and an instant re-lock would interrupt the user's own flow. It locks on cold start and after longer background trips; see `AppLockTimer` for the exact rule.
 - **Reinstall recognition cannot cover media backed up by a build without the caption marker.** Those manifest rows carry no hash, so only the kinds Telegram gives a filename to (videos, GIFs, documents) can be recovered by name and size; photos backed up by such a build are re-uploaded once and then carry the marker themselves.
 - **Hiding videos or GIFs does not change what gets backed up.** The Media preferences filter the library *views* only; backup eligibility stays governed by the backup preference. The folder picker therefore lists folders by what a backup would take, not by what the timeline happens to show.
@@ -499,7 +499,7 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 <a id="testing"></a>
 ## 🧪 Testing
 
-The suite is **932 tests across 127 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
+The suite is **941 tests across 128 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
 
 ```bash
 # Unit tests (JUnit 4 + kotlinx-coroutines-test + Robolectric)
@@ -528,7 +528,7 @@ persistence, and the pure logic seams (`MediaDay`, `AlbumGrouper`, `MapClusterer
 signed back in, that a rejected upload can be retried, that a cancelled item is never sent, that
 the empty state's two actions are two separately focusable nodes, and that a library-wide setting
 invalidates every view of the library. Device-bound paths (MediaStore write/delete, TDLib
-round-trips, ExoPlayer, osmdroid) are **not** covered.
+round-trips, ExoPlayer, MapLibre) are **not** covered.
 
 ---
 
@@ -583,7 +583,8 @@ Telepic stands on the shoulders of these projects:
 
 - [TDLib](https://github.com/tdlib/td) — the Telegram client library (via the
   `io.github.tdlib-android:core` packaging).
-- [osmdroid](https://github.com/osmdroid/osmdroid) and [OpenStreetMap](https://www.openstreetmap.org/) contributors — map tiles and rendering.
+- [MapLibre Native](https://github.com/maplibre/maplibre-native) — the map renderer.
+- [OpenFreeMap](https://openfreemap.org/), [OpenMapTiles](https://openmaptiles.org/) and [OpenStreetMap](https://www.openstreetmap.org/) contributors — vector tiles, the tile schema, and the map data.
 - [Jetpack Compose](https://developer.android.com/jetpack/compose), [Media3](https://developer.android.com/media/media3), [Room](https://developer.android.com/training/data-storage/room), [Paging](https://developer.android.com/topic/libraries/architecture/paging/v3-paged-data), [WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager), and [DataStore](https://developer.android.com/topic/libraries/architecture/datastore) — AndroidX.
 - [Coil](https://coil-kt.github.io/coil/) — image loading.
 - [Kotlin](https://kotlinlang.org/) and [Kotlin Coroutines](https://github.com/Kotlin/kotlinx.coroutines).

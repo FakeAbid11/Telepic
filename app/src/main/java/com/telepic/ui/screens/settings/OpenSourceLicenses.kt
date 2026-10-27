@@ -54,7 +54,7 @@ val TelepicOpenSourceLibraries: List<OpenSourceLibrary> = listOf(
     OpenSourceLibrary("AndroidX ExifInterface", "1.4.2", "Apache License 2.0"),
     OpenSourceLibrary("AndroidX Media3 / ExoPlayer", "1.4.1", "Apache License 2.0"),
     OpenSourceLibrary("Coil (image loading)", "2.7.0", "Apache License 2.0"),
-    OpenSourceLibrary("osmdroid", "6.1.20", "Apache License 2.0"),
+    OpenSourceLibrary("MapLibre Native (Android, OpenGL ES)", "13.7.1", "BSD 2-Clause License"),
     OpenSourceLibrary("TDLib (Telegram Database Library)", "tdlib-android 0.1.1", "Boost Software License 1.0"),
 )
 

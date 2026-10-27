@@ -158,7 +158,7 @@
     <string name="settings_about_licenses">Open source licenses</string>
     <string name="settings_about_licenses_summary">The libraries Telepic is built on.</string>
     <string name="settings_licenses_intro">Telepic is built with these open-source components:</string>
-    <string name="settings_licenses_map_data">Map data © OpenStreetMap contributors, available under the Open Database License (ODbL). Map tiles rendered by CARTO.</string>
+    <string name="settings_licenses_map_data">Map data © OpenStreetMap contributors, available under the Open Database License (ODbL). Vector tiles and styles by OpenFreeMap, built on the OpenMapTiles schema.</string>
 
     <!-- App lock -->
     <string name="app_lock_title">Telepic is locked</string>
@@ -595,11 +595,6 @@
     <string name="map_scanning">Scanning photo locations…</string>
     <string name="map_permission_title">See your photo locations</string>
     <string name="map_permission_description">Telepic needs photo &amp; video access to read the location data already stored in your media.</string>
-    <string name="map_marker_description">Photo taken at %1$s</string>
-    <plurals name="map_cluster_description">
-        <item quantity="one">Group of %1$d photo at this location</item>
-        <item quantity="other">Group of %1$d photos at this location</item>
-    </plurals>
     <plurals name="map_locations_count">
         <item quantity="one">%1$d location</item>
         <item quantity="other">%1$d locations</item>
@@ -608,7 +603,6 @@
         <item quantity="one">Map with %1$d photo location</item>
         <item quantity="other">Map with %1$d photo locations</item>
     </plurals>
-    <string name="map_attribution">© OpenStreetMap contributors © CARTO</string>
     <string name="map_selected_open">Open photo</string>
     <string name="map_recenter">Show all photo locations</string>
     <string name="map_selected_title">Photo at this location</string>

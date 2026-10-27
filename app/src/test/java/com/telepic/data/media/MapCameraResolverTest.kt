@@ -67,9 +67,21 @@ class MapCameraResolverTest {
     }
 
     @Test
-    fun `a remembered zoom outside the osmdroid range is clamped`() {
-        val decision = MapCameraResolver.resolve(focus = null, saved = SavedCamera(1.0, 2.0, 99.0), plan = null)
-        assertEquals(MapCameraResolver.Decision.Apply(1.0, 2.0, 21.0), decision)
+    fun `a remembered zoom outside the engine's range is clamped`() {
+        val tooFarIn = MapCameraResolver.resolve(
+            focus = null,
+            saved = SavedCamera(1.0, 2.0, 99.0),
+            plan = null,
+        )
+        assertEquals(MapCameraResolver.Decision.Apply(1.0, 2.0, 19.0), tooFarIn)
+        // MapLibre's floor is 0, so a negative value from a hand-edited preference clamps up to it
+        // rather than asking the camera for a zoom it will refuse.
+        val tooFarOut = MapCameraResolver.resolve(
+            focus = null,
+            saved = SavedCamera(1.0, 2.0, -5.0),
+            plan = null,
+        )
+        assertEquals(MapCameraResolver.Decision.Apply(1.0, 2.0, 0.0), tooFarOut)
     }
 
     @Test
