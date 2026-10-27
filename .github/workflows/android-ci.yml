@@ -134,7 +134,7 @@ jobs:
     env:
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-      ARTIFACT_PASSWORD: ${{ secrets.APK_ARTIFACT_PASSWORD }}
+      APK_ARTIFACT_PASSWORD: ${{ secrets.APK_ARTIFACT_PASSWORD }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -173,7 +173,7 @@ jobs:
           openssl enc -aes-256-cbc -pbkdf2 -salt \
             -in "$APK" \
             -out telepic-debug-login.apk.enc \
-            -pass env:ARTIFACT_PASSWORD
+            -pass env:APK_ARTIFACT_PASSWORD
           sha256sum telepic-debug-login.apk.enc > telepic-debug-login.apk.enc.sha256
           echo "::notice::Encrypted login APK ready. Decrypt it with the APK_ARTIFACT_PASSWORD secret."
 
