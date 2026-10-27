@@ -36,17 +36,19 @@
 <body>
   <a class="skip" href="#main">Skip to content</a>
 
-  <header class="site-header">
-    <div class="wrap nav">
+  <header class="top-app-bar">
+    <div class="wrap app-bar">
       <a class="brand" href="./" aria-label="Telepic home">
-        <img src="favicon.svg" alt="" width="30" height="30">
+        <img src="favicon.svg" alt="" width="32" height="32">
         <span>Telepic</span>
       </a>
-      <nav aria-label="Primary">
-        <a href="#features">Features</a>
-        <a href="#how">How it works</a>
-        <a href="#status">Status</a>
-        <a class="ghost" href="https://github.com/FakeAbid11/Telepic">GitHub</a>
+      <nav class="nav-links" aria-label="Primary">
+        <a class="nav-item" href="#features">Features</a>
+        <a class="nav-item" href="#how">How it works</a>
+        <a class="nav-item" href="#status">Status</a>
+        <a class="icon-button" href="https://github.com/FakeAbid11/Telepic" aria-label="Telepic on GitHub" title="GitHub">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+        </a>
       </nav>
     </div>
   </header>
@@ -54,12 +56,12 @@
   <main id="main">
     <section class="hero wrap" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow"><span class="eyebrow-dot"></span>Android · local-first · Telegram backup</p>
-        <h1 id="hero-title">Your photos.<br>Your Telegram.<br><span>Your backup.</span></h1>
+        <span class="assist-chip"><span class="status-dot" aria-hidden="true"></span>Android · local-first · Telegram backup</span>
+        <h1 id="hero-title">Your photos.<br>Your Telegram.<br><span class="accent">Your backup.</span></h1>
         <p class="lead">Telepic is a fast, private Android gallery for photos and videos. Your library stays on your device; a private Telegram channel you own becomes the backup layer — no proprietary cloud, no ads, no analytics.</p>
         <div class="actions">
-          <a class="button primary" href="https://github.com/FakeAbid11/Telepic">View on GitHub</a>
-          <a class="button secondary" href="#how">See how it works</a>
+          <a class="button filled" href="https://github.com/FakeAbid11/Telepic">View on GitHub</a>
+          <a class="button tonal" href="#how">See how it works</a>
         </div>
         <ul class="hero-points" aria-label="Key properties">
           <li>No Telepic account</li>
@@ -95,32 +97,44 @@
       </div>
       <div class="cards">
         <article class="card">
-          <span class="card-num">01</span>
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z"/></svg>
+          </span>
           <h3>Local-first library</h3>
           <p>Reads photos, videos and GIFs directly from MediaStore as one paged, newest-first timeline. Thumbnails load first; originals stay on the device unless you ask for a cloud copy.</p>
         </article>
         <article class="card">
-          <span class="card-num">02</span>
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+          </span>
           <h3>Telegram as backup</h3>
           <p>Backups go to a private channel you own, through TDLib. WorkManager runs uploads under a real network constraint and a foreground notification.</p>
         </article>
         <article class="card">
-          <span class="card-num">03</span>
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M23 12l-2.44-2.79.34-3.69-3.61-.82-1.89-3.2L12 2.96 8.6 1.5 6.71 4.69 3.1 5.5l.34 3.7L1 12l2.44 2.79-.34 3.7 3.61.82L8.6 22.5l3.4-1.47 3.4 1.46 1.89-3.19 3.61-.82-.34-3.69L23 12zm-12.91 4.72l-3.8-3.81 1.48-1.48 2.32 2.33 5.85-5.87 1.48 1.48-7.33 7.35z"/></svg>
+          </span>
           <h3>Content, not filenames</h3>
           <p>Streaming SHA-256 identity means the same bytes are never uploaded twice, even if they reach the library through different files or names.</p>
         </article>
         <article class="card">
-          <span class="card-num">04</span>
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 15l-4-4 1.41-1.41L11 13.17l5.59-5.59L18 9l-7 7z"/></svg>
+          </span>
           <h3>Private by design</h3>
           <p>No ads, analytics or account with Telepic. Photo GPS is read on-device for the map and is not uploaded. Optional app lock and screenshot protection are built in.</p>
         </article>
         <article class="card">
-          <span class="card-num">05</span>
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+          </span>
           <h3>Made for browsing</h3>
           <p>Day-grouped timeline, albums, a full-screen viewer, EXIF details, a map of geotagged media, and an explicit “Save to device” restore flow.</p>
         </article>
         <article class="card">
-          <span class="card-num">06</span>
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
+          </span>
           <h3>Open source</h3>
           <p>Kotlin and Jetpack Compose, with the backup state machine and cloud mapping covered by a JVM test suite. Apache-2.0 licensed.</p>
         </article>
@@ -133,16 +147,22 @@
         <h2 id="how-title">Three steps, one private channel.</h2>
       </div>
       <ol class="steps">
-        <li>
-          <span>1</span>
+        <li class="step">
+          <span class="step-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08s5.97 1.09 6 3.08c-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+          </span>
           <div><h3>Connect Telegram</h3><p>Sign in to your own account. Telepic discovers or creates a private backup channel and verifies your posting rights.</p></div>
         </li>
-        <li>
-          <span>2</span>
+        <li class="step">
+          <span class="step-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+          </span>
           <div><h3>Choose what to back up</h3><p>Back up the whole library or only selected folders. Hiding videos or GIFs in the grid never silently changes what gets backed up.</p></div>
         </li>
-        <li>
-          <span>3</span>
+        <li class="step">
+          <span class="step-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+          </span>
           <div><h3>Let it run</h3><p>The queue survives restarts, retries transient failures, and confirms every upload against Telegram before marking it backed up. Restore originals on demand.</p></div>
         </li>
       </ol>
@@ -165,7 +185,7 @@
           <h2>Debug milestone, honest about validation.</h2>
           <p>The app is code-complete and CI-tested, but live Telegram, MediaStore write/delete, video playback, map rendering and the device-credential prompt still need real-device validation. The README lists the exact gaps.</p>
         </div>
-        <a class="button secondary" href="https://github.com/FakeAbid11/Telepic#limitations">Read the limitations</a>
+        <a class="button filled" href="https://github.com/FakeAbid11/Telepic#limitations">Read the limitations</a>
       </div>
     </section>
   </main>
