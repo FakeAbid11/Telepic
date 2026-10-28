@@ -2,6 +2,8 @@ package com.telepic.ui.screens.settings
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -78,6 +81,7 @@ class SettingsUiTest {
         val gifs = MutableStateFlow(true)
         val startMuted = MutableStateFlow(true)
         val appLock = MutableStateFlow(false)
+        val biometric = MutableStateFlow(true)
         val backfillGranted = MutableStateFlow(false)
 
         override val themeMode: Flow<ThemeMode> get() = theme
@@ -97,6 +101,8 @@ class SettingsUiTest {
         override val appLockEnabled: Flow<Boolean> get() = appLock
         override val appLockPreference: Flow<AppLockPreference> get() = appLock.map { AppLockPreference.Known(it) }
         override suspend fun setAppLockEnabled(enabled: Boolean) { appLock.value = enabled }
+        override val appLockBiometricEnabled: Flow<Boolean> get() = biometric
+        override suspend fun setAppLockBiometricEnabled(enabled: Boolean) { biometric.value = enabled }
         override val mediaLocationBackfillGranted: Flow<Boolean> get() = backfillGranted
         override suspend fun setMediaLocationBackfillGranted(granted: Boolean) { backfillGranted.value = granted }
     }
@@ -104,11 +110,13 @@ class SettingsUiTest {
     private fun viewModel(
         auth: FakeAuthController = FakeAuthController(),
         settings: FakeSettings = FakeSettings(),
+        deviceSecureReader: () -> Boolean = { false },
     ) = SettingsViewModel(
         telegramAuthController = auth,
         onboardingRepository = FakeOnboarding(),
         settingsRepository = settings,
         appContext = ApplicationProvider.getApplicationContext<Context>(),
+        deviceSecureReader = deviceSecureReader,
     )
 
     private fun render(
@@ -117,11 +125,13 @@ class SettingsUiTest {
         onOpenBackupCenter: () -> Unit = {},
         onOpenTrash: () -> Unit = {},
         onOpenTelegramLogin: () -> Unit = {},
+        settings: FakeSettings = FakeSettings(),
+        deviceSecureReader: () -> Boolean = { false },
     ) {
         composeRule.setContent {
             TelepicTheme(darkTheme = true) {
                 SettingsScreen(
-                    viewModel = viewModel(),
+                    viewModel = viewModel(settings = settings, deviceSecureReader = deviceSecureReader),
                     themeMode = themeMode,
                     onThemeModeChange = onThemeModeChange,
                     onOpenBackupCenter = onOpenBackupCenter,
@@ -188,5 +198,29 @@ class SettingsUiTest {
         composeRule.onNodeWithText("Library").assertDoesNotExist()
         composeRule.onNodeWithText("Media").assertDoesNotExist()
         composeRule.onNodeWithText("Appearance").assertDoesNotExist()
+    }
+
+    // Fingerprint unlock sits under the lock it modifies, and is only unusable when there is nothing
+    // to authenticate against at all.
+    @Test
+    fun `the fingerprint row is unavailable without a device credential`() {
+        render()
+        composeRule.onNodeWithText("Fingerprint unlock").performScrollTo().assertIsNotEnabled()
+        composeRule
+            .onNodeWithText("Set a device PIN, pattern or password to use fingerprint unlock.")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `the fingerprint row is on by default and persists being switched off`() {
+        val settings = FakeSettings()
+        render(settings = settings, deviceSecureReader = { true })
+
+        composeRule.onNodeWithText("Fingerprint unlock").performScrollTo().assertIsOn()
+        composeRule.onNodeWithText("Fingerprint unlock").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        assertFalse(settings.biometric.value)
     }
 }

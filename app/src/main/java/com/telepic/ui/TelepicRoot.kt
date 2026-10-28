@@ -45,6 +45,9 @@ fun TelepicRoot(
     val themeMode by themeViewModel.themeMode.collectAsStateWithLifecycle()
     val onboarding by onboardingViewModel.uiState.collectAsStateWithLifecycle()
     val lockState by appLockViewModel.state.collectAsStateWithLifecycle()
+    // Read from the gate's own ViewModel, not from Settings: the Settings ViewModel is scoped to that
+    // destination and does not exist while the app is locked.
+    val biometricUnlockEnabled by appLockViewModel.biometricUnlockEnabled.collectAsStateWithLifecycle()
 
     // The grace window is measured from the activity lifecycle rather than from composition: leaving
     // the app does not dispose this composable, so ON_STOP is the only signal that the app really went
@@ -78,7 +81,10 @@ fun TelepicRoot(
             lockState == AppLockState.Loading -> LoadingState(message = stringResource(R.string.onboarding_loading))
             // Could not read the lock state: fail CLOSED (never assume "off") and offer a retry.
             lockState == AppLockState.RecoveryRequired -> AppLockRecoveryScreen(onRetry = appLockViewModel::retry)
-            lockState == AppLockState.Locked -> AppLockScreen(onUnlocked = appLockViewModel::unlock)
+            lockState == AppLockState.Locked -> AppLockScreen(
+                onUnlocked = appLockViewModel::unlock,
+                biometricUnlockEnabled = biometricUnlockEnabled,
+            )
             onboarding.isLoading -> LoadingState(message = stringResource(R.string.onboarding_loading))
             !onboarding.isCompleted -> {
                 val folders by onboardingViewModel.folders.collectAsStateWithLifecycle()

@@ -7,9 +7,11 @@ import com.telepic.diagnostics.TelepicLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -63,6 +65,20 @@ class AppLockViewModel(
      */
     private val _secureWindow = MutableStateFlow(false)
     val secureWindow: StateFlow<Boolean> = _secureWindow.asStateFlow()
+
+    /**
+     * Whether the lock screen may offer the device's biometric instead of asking for the credential
+     * first.
+     *
+     * Read here rather than in Settings because this is the object that *enforces* the lock — the
+     * Settings screen has its own ViewModel instance, scoped to the Settings destination, and it does
+     * not exist while the app is locked. The initial `true` matches the stored default; it can only
+     * ever add the biometric on top of a credential that is still required, so a one-frame stale read
+     * can never weaken the gate.
+     */
+    val biometricUnlockEnabled: StateFlow<Boolean> =
+        settingsRepository.appLockBiometricEnabled
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     /** The lock is armed for the grace timer only when it is genuinely on and enforceable. */
     private val _enabled = MutableStateFlow(false)

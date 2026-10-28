@@ -146,6 +146,13 @@
          fires on the next foregrounding, not now), so the row is the only place that says what happened. -->
     <string name="settings_security_app_lock_on">On — Telepic asks for your device PIN, pattern or password next time you open it.</string>
     <string name="settings_security_app_lock_unavailable">Set a device PIN, pattern or password to use app lock.</string>
+    <!-- Fingerprint unlock: an addition to the app lock, never a replacement. The summary is worded
+         so it is true whether or not a fingerprint is enrolled — it describes what the setting does,
+         not a claim about this device's hardware. -->
+    <string name="settings_security_fingerprint">Fingerprint unlock</string>
+    <string name="settings_security_fingerprint_summary">Use your fingerprint when your device has one. Your PIN, pattern or password always works.</string>
+    <string name="settings_security_fingerprint_on">On — Telepic asks for your fingerprint first; your PIN, pattern or password still works.</string>
+    <string name="settings_security_fingerprint_unavailable">Set a device PIN, pattern or password to use fingerprint unlock.</string>
 
     <!-- Settings — storage, image cache -->
     <string name="settings_storage_image_cache">Clear image cache</string>
@@ -163,9 +170,17 @@
     <!-- App lock -->
     <string name="app_lock_title">Telepic is locked</string>
     <string name="app_lock_body">Unlock with your device PIN, pattern or password to continue.</string>
+    <!-- Shown when the fingerprint preference is on: the credential is still the fallback, so the
+         copy promises the fingerprint first and never claims the PIN is gone. -->
+    <string name="app_lock_body_biometric">Unlock with your fingerprint, or with your device PIN, pattern or password.</string>
     <string name="app_lock_unlock">Unlock</string>
     <string name="app_lock_prompt_title">Unlock Telepic</string>
     <string name="app_lock_prompt_body">Confirm your device credential to open Telepic.</string>
+    <string name="app_lock_prompt_body_biometric">Use your fingerprint, or confirm your device PIN, pattern or password.</string>
+    <!-- Shown when the device credential could not be verified at all. The gate does NOT fail open,
+         so the copy names the two things the user can actually act on. -->
+    <string name="app_lock_verify_failed_body">Telepic couldn\'t confirm this device\'s screen lock, so it won\'t open. Check that a PIN, pattern or password is set, then try again.</string>
+    <string name="app_lock_verify_failed_retry">Try again</string>
 
     <!-- Theme options -->
     <string name="theme_system">System default</string>

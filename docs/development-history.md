@@ -276,3 +276,22 @@ Bulk select could back up a selection and move it into an album, but the two org
 - **Move to trash is confirmed first**, with the count, because it hides the photos from the library — and the single-item trash in the Viewer confirms too. It then offers an **Undo** that restores exactly the items it moved. A *partial* write is never reported as a success: the bar says it failed, and the items that did move are recovered from the Trash collection like any other.
 - Both actions live behind the selection bar's **overflow**, not as two more text buttons. The bar is already a scrolling row — two or three text actions come to roughly 335dp, which fits a 360dp phone but not a 320dp one — and two more would have pushed the app's headline action ("Back up", last in the row) off the screen first. One 48dp overflow costs an icon instead of ~230dp of text, and it is the idiom the Viewer's own action cluster already uses.
 - The behaviour lives in **one shared controller**, so the timeline and album contents cannot drift apart — and the selection clears when the write *lands*, not when it is asked for: a failed write leaves the selection standing so the user can simply tap again.
+
+## App lock — fingerprint unlock, and the two defects it exposed *(code complete; device validation still outstanding)*
+
+Asking for fingerprint unlock turned up two defects in the shipped lock, both on Android 8, 9 and 10 (minSdk 26), neither reachable by the test suite because every Robolectric case runs at sdk 33.
+
+- **The lock screen threw on API 26–29.** It built its `PromptInfo` with `setAllowedAuthenticators(DEVICE_CREDENTIAL)` unconditionally, during composition, and `androidx.biometric` rejects that combination below API 30 — so the first frame of the lock screen was an `IllegalArgumentException`. The inline comment ("minSdk 26: DEVICE_CREDENTIAL is the supported authenticator") had conflated `canAuthenticate(DEVICE_CREDENTIAL)`, which does work there through a Keyguard fallback, with the *prompt*, which does not.
+- **And the gate would have opened without authentication.** `canAuthenticate(DEVICE_CREDENTIAL)` answers `BIOMETRIC_ERROR_UNSUPPORTED` on those versions — the library short-circuits on the unsupported combination *before* it looks for a credential — so the capability check read "no credential" on every one of them and released the gate. Fixing only the crash would have shipped a lock that opens for anyone.
+
+Both are fixed by a pure decision table (`AppLockCredential`) rather than inline branching, so the matrix is unit-tested instead of argued about. Below API 30 the Keyguard answer is authoritative; at API 30+ a result that is neither a clean success nor a definite "nothing enrolled" is `Unknown`, which **keeps the gate closed** and offers a retry. That closes the fail-open the review had flagged: a transient `BIOMETRIC_ERROR_HW_UNAVAILABLE` is no longer indistinguishable from "this device has no lock".
+
+The feature itself is three mechanisms, dictated by what the library permits rather than by preference:
+
+- **API 30+**: one prompt allowing `BIOMETRIC_STRONG or DEVICE_CREDENTIAL`, which shows the fingerprint and offers the credential as its own fallback.
+- **API 26–29, fingerprint on**: the deprecated `setDeviceCredentialAllowed(true)` — the only builder that yields "fingerprint with a PIN fallback" in one prompt below API 30.
+- **API 26–29, fingerprint off**: `KeyguardManager.createConfirmDeviceCredentialIntent`. There is no credential-only `PromptInfo` below API 30 at all, so honouring "PIN only" requires the platform screen. That is the same call `androidx.biometric` already makes on those versions when no biometric is enrolled, so it adds no platform surface the shipped stack did not reach — but it does mean the KDoc's old claim that this API "was flagged for removal" had to be replaced with where it survives and why.
+
+The setting sits directly under App lock and is always visible, disabled only when the device has no credential at all — a device with no fingerprint *enrolled* is not disabled, because that can change while Telepic is open and the summary is worded so it never claims a fingerprint exists. The preference can only ever *add* the biometric on top of a credential that is still required, so it can never make the gate easier to pass, and its default is on.
+
+`AppLockPromptInfoTest` characterises the library's authenticator matrix at sdk 28, 29 and 33 — the only test that would catch an `androidx.biometric` bump quietly reintroducing the crash.

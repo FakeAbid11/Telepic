@@ -111,6 +111,7 @@ class SettingsViewModelTest {
         val gifs = MutableStateFlow(true)
         val startMuted = MutableStateFlow(true)
         val appLock = MutableStateFlow(false)
+        val biometric = MutableStateFlow(true)
         val backfillGranted = MutableStateFlow(false)
 
         override val themeMode: Flow<ThemeMode> get() = theme
@@ -130,6 +131,8 @@ class SettingsViewModelTest {
         override val appLockEnabled: Flow<Boolean> get() = appLock
         override val appLockPreference: Flow<AppLockPreference> get() = appLock.map { AppLockPreference.Known(it) }
         override suspend fun setAppLockEnabled(enabled: Boolean) { appLock.value = enabled }
+        override val appLockBiometricEnabled: Flow<Boolean> get() = biometric
+        override suspend fun setAppLockBiometricEnabled(enabled: Boolean) { biometric.value = enabled }
         override val mediaLocationBackfillGranted: Flow<Boolean> get() = backfillGranted
         override suspend fun setMediaLocationBackfillGranted(granted: Boolean) { backfillGranted.value = granted }
     }
@@ -421,6 +424,21 @@ class SettingsViewModelTest {
         vm.setAppLockEnabled(true)
         runCurrent()
         assertTrue(settings.appLock.value)
+    }
+
+    @Test
+    fun `fingerprint unlock defaults to on and persists being turned off`() = runTest {
+        val settings = FakeSettings()
+        val vm = viewModel(settings = settings)
+
+        // On by default: the setting only ever adds the biometric on top of a credential that is
+        // still required, so the default cannot weaken the gate.
+        assertTrue(vm.appLockBiometricEnabled.value)
+
+        vm.setAppLockBiometricEnabled(false)
+        runCurrent()
+        assertFalse(settings.biometric.value)
+        assertFalse(vm.appLockBiometricEnabled.value)
     }
 
     @Test

@@ -138,6 +138,22 @@ class SettingsRepositoryImpl(
         }
     }
 
+    override val appLockBiometricEnabled: Flow<Boolean> = dataStore.data
+        .map { preferences -> preferences[KEY_APP_LOCK_BIOMETRIC] ?: true }
+        .catch { throwable ->
+            // Default to on, matching the stored default. This preference only ever *adds* the
+            // biometric on top of a credential that is still required, so neither answer weakens the
+            // gate — and "on" is the answer that keeps the lock behaving the way it did yesterday.
+            TelepicLog.warn("SettingsRepository", "fingerprint-unlock preference could not be read; defaulting to on", throwable)
+            emit(true)
+        }
+
+    override suspend fun setAppLockBiometricEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_APP_LOCK_BIOMETRIC] = enabled
+        }
+    }
+
     override val mediaLocationBackfillGranted: Flow<Boolean> = dataStore.data
         .map { preferences -> preferences[KEY_MEDIA_LOCATION_BACKFILL_GRANTED] ?: false }
         .catch { throwable ->
@@ -163,6 +179,7 @@ class SettingsRepositoryImpl(
         val KEY_SHOW_GIFS = booleanPreferencesKey("timeline_show_gifs")
         val KEY_START_VIDEOS_MUTED = booleanPreferencesKey("viewer_start_videos_muted")
         val KEY_APP_LOCK = booleanPreferencesKey("app_lock_enabled")
+        val KEY_APP_LOCK_BIOMETRIC = booleanPreferencesKey("app_lock_biometric_enabled")
         val KEY_MEDIA_LOCATION_BACKFILL_GRANTED =
             booleanPreferencesKey("media_location_backfill_granted")
     }

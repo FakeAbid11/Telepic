@@ -33,14 +33,20 @@ class AppLockViewModelTest {
     private class FakeSettings(
         initial: AppLockPreference = AppLockPreference.Known(false),
         var throwOnRead: Boolean = false,
+        biometric: Boolean = true,
     ) : SettingsRepository {
         val lock = MutableStateFlow(initial)
 
         override val appLockPreference: Flow<AppLockPreference>
+            // Scoped to the preference deliberately: the biometric flow must stay collectable, or
+            // `stateIn` would cancel the ViewModel's scope and take every other test with it.
             get() = if (throwOnRead) flow { error("data store unavailable") } else lock
 
         override val appLockEnabled: Flow<Boolean> get() = lock.map { (it as? AppLockPreference.Known)?.enabled ?: false }
         override suspend fun setAppLockEnabled(enabled: Boolean) { lock.value = AppLockPreference.Known(enabled) }
+
+        override val appLockBiometricEnabled: Flow<Boolean> = flowOf(biometric)
+        override suspend fun setAppLockBiometricEnabled(enabled: Boolean) = Unit
 
         override val themeMode: Flow<ThemeMode> = flowOf(ThemeMode.Default)
         override suspend fun setThemeMode(mode: ThemeMode) = Unit
@@ -263,5 +269,24 @@ class AppLockViewModelTest {
 
         assertEquals(AppLockState.Unlocked, vm.state.value)
         assertFalse(vm.secureWindow.value)
+    }
+
+    @Test
+    fun `the fingerprint preference is exposed to the gate and defaults to on`() = runTest {
+        // The gate, not Settings, is what enforces this — the Settings ViewModel is scoped to that
+        // destination and does not exist while the app is locked.
+        assertTrue(viewModel(FakeSettings()).biometricUnlockEnabled.value)
+        assertFalse(viewModel(FakeSettings(biometric = false)).biometricUnlockEnabled.value)
+    }
+
+    @Test
+    fun `an unreadable lock preference still exposes the fingerprint setting`() = runTest {
+        // The two reads are independent: the preference being unreadable sends the gate to
+        // RecoveryRequired, and must not also cancel the biometric flow (which `stateIn` would do if
+        // the fake threw for both).
+        val vm = viewModel(FakeSettings(AppLockPreference.Known(true), throwOnRead = true))
+
+        assertEquals(AppLockState.RecoveryRequired, vm.state.value)
+        assertTrue(vm.biometricUnlockEnabled.value)
     }
 }

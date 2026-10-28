@@ -27,10 +27,16 @@ class AppLockUiTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun render(onUnlocked: () -> Unit = {}) {
+    private fun render(
+        onUnlocked: () -> Unit = {},
+        biometricUnlockEnabled: Boolean = true,
+    ) {
         composeRule.setContent {
             TelepicTheme(darkTheme = true) {
-                AppLockScreen(onUnlocked = onUnlocked)
+                AppLockScreen(
+                    onUnlocked = onUnlocked,
+                    biometricUnlockEnabled = biometricUnlockEnabled,
+                )
             }
         }
     }
@@ -52,6 +58,24 @@ class AppLockUiTest {
         assertEquals(1, unlocked)
         composeRule.onNodeWithText("Unlock").performClick()
         assertEquals(2, unlocked)
+    }
+
+    @Test
+    fun `the lock screen states which credential it will ask for`() {
+        // The copy has to match the policy the gate is applying, or the screen promises a fingerprint
+        // the prompt will not offer (or the reverse).
+        render(biometricUnlockEnabled = true)
+        composeRule
+            .onNodeWithText("Unlock with your fingerprint, or with your device PIN, pattern or password.")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `with the fingerprint turned off the lock screen asks for the credential alone`() {
+        render(biometricUnlockEnabled = false)
+        composeRule
+            .onNodeWithText("Unlock with your device PIN, pattern or password to continue.")
+            .assertIsDisplayed()
     }
 
     @Test

@@ -91,6 +91,17 @@ class SettingsRepositoryImplTest {
     }
 
     @Test
+    fun `fingerprint unlock defaults to on and persists once turned off`() = runTest {
+        val repository = newRepository("app_lock_biometric")
+        // On by default: it only ever adds the biometric on top of a credential that is still
+        // required, so the default cannot weaken the gate.
+        assertEquals(true, repository.appLockBiometricEnabled.first())
+
+        repository.setAppLockBiometricEnabled(false)
+        assertEquals(false, repository.appLockBiometricEnabled.first())
+    }
+
+    @Test
     fun `an unknown persisted network value falls back to the default`() = runTest {
         // A value written by a future build (or a corrupted file) must not throw on read.
         assertEquals(BackupNetworkPreference.Default, BackupNetworkPreference.fromKey("SOMETHING_ELSE"))

@@ -77,6 +77,19 @@ interface SettingsRepository {
     suspend fun setAppLockEnabled(enabled: Boolean)
 
     /**
+     * Whether the lock screen may offer the device's biometric (a fingerprint on every level Telepic
+     * supports) instead of asking for the PIN/pattern/password first.
+     *
+     * This can only ever *add* the biometric: the credential stays available as the fallback on every
+     * path, so turning it on cannot make the gate easier to pass, and turning it off cannot make the
+     * app unreachable. Enforced by `AppLockScreen`, which reads it through [AppLockViewModel] — the
+     * Settings screen only edits it.
+     */
+    val appLockBiometricEnabled: Flow<Boolean>
+
+    suspend fun setAppLockBiometricEnabled(enabled: Boolean)
+
+    /**
      * Whether the one-time map backfill has already run for the currently granted media permission.
      *
      * Before Telepic requested `ACCESS_MEDIA_LOCATION`, the map's scan tables recorded every file as

@@ -88,7 +88,7 @@ Telepic reads your device library through `MediaStore` and presents it as a fast
 - Backup transport controls — Wi-Fi only, charge only, battery-not-low — enforced as WorkManager constraints, so a run simply does not start until the condition holds rather than failing.
 - Media preferences — show/hide videos and GIFs in the library views (backups unaffected), and whether videos start muted.
 - Media Details for both local and cloud items: kind, format, dimensions, size, duration, folder/path, capture time, camera, the EXIF exposure set (ISO / aperture / shutter / focal length), GPS, backup status and remote identity — with every unavailable field omitted rather than guessed.
-- App lock behind your device PIN/pattern/password, with an honest "unavailable" state on a device that has no credential.
+- App lock behind your device PIN/pattern/password — with fingerprint unlock as an option, and the credential always kept as the fallback — plus an honest "unavailable" state on a device that has no credential.
 - Local and cloud library counts, measured cache sizes with safe cache clearing, and an open-source licence list.
 
 ---
@@ -174,7 +174,7 @@ In the viewer, mark items as **favorite**, **archive**, or move them to **trash*
 Open **Map** to see photos that carry EXIF GPS coordinates. Media without location data simply never gets a pin — nothing is guessed.
 
 **8. Settings**
-Tap the **gear in the top-right corner** — available on every tab — for account and connection state, backup preferences, transport and media options, the app lock, theme, storage usage, and sign-out.
+Tap the **gear in the top-right corner** — available on every tab — for account and connection state, backup preferences, transport and media options, the app lock (including fingerprint unlock), theme, storage usage, and sign-out.
 
 ---
 
@@ -447,7 +447,7 @@ device yet.
 | Settings | Complete *(app lock + cache clearing device-gated)* |
 | Media Details | Complete |
 | Search (file name & folder, in Photos) | Complete |
-| App lock | Complete *(device-credential prompt device-gated)* |
+| App lock | Complete *(device-credential and fingerprint prompts device-gated)* |
 
 <a id="device-validation-status"></a>
 ### Device validation status
@@ -465,7 +465,7 @@ never run against the real thing.
 | Backup upload (`SendMessage` + `InputFile`) | The upload path is implemented (`TdLibCloudDataSource.upload` sends the staged file and polls the sent message's sending state); a live send against a real session is what remains unverified. An item stays `QUEUED`/`WAITING` on a transient failure and is never marked `BACKED_UP` without a confirmed remote identity |
 | MediaStore write (restore) and delete consent | Provider behaviour and the system consent dialog are device-only |
 | ExoPlayer playback, MapLibre rendering, Coil GIF decode | Rendering is device-only |
-| App lock (`KeyguardManager` device-credential prompt) | The credential prompt and the activity `ON_STOP`/`ON_START` round trip are device-only |
+| App lock (biometric, `BiometricPrompt` device-credential, and the below-API-30 system credential screen) | Every path is device-only: the prompt sheet, the credential round trip, and the activity `ON_STOP`/`ON_START` cycle a system prompt causes |
 
 ### Roadmap
 

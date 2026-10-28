@@ -177,6 +177,18 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
             .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
+     * Whether the lock screen may offer the device's fingerprint instead of asking for the
+     * credential first.
+     *
+     * A display copy of the same preference the gate enforces — this screen only edits it. The
+     * default matches the stored one (`true`), because the setting can only ever *add* the biometric
+     * on top of a credential that is still required.
+     */
+    val appLockBiometricEnabled: StateFlow<Boolean> =
+        settingsRepository.appLockBiometricEnabled
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /**
      * Whether the device has a PIN, pattern or password configured.
      *
      * The app lock is enforced by the *device's* credential, so with none configured there is nothing
@@ -310,6 +322,9 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 
     fun setAppLockEnabled(enabled: Boolean) =
         persist { settingsRepository.setAppLockEnabled(enabled) }
+
+    fun setAppLockBiometricEnabled(enabled: Boolean) =
+        persist { settingsRepository.setAppLockBiometricEnabled(enabled) }
 
     fun logout() {
         if (_signOutState.value == SignOutState.Working) return

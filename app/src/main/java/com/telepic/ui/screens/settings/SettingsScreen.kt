@@ -149,6 +149,7 @@ fun SettingsScreen(
     val showGifs by viewModel.showGifsInTimeline.collectAsStateWithLifecycle()
     val startMuted by viewModel.startVideosMuted.collectAsStateWithLifecycle()
     val appLockEnabled by viewModel.appLockEnabled.collectAsStateWithLifecycle()
+    val appLockBiometricEnabled by viewModel.appLockBiometricEnabled.collectAsStateWithLifecycle()
     val isDeviceSecure by viewModel.isDeviceSecure.collectAsStateWithLifecycle()
     val localCount by viewModel.localLibraryCount.collectAsStateWithLifecycle()
     val localCountLoaded by viewModel.localLibraryCountLoaded.collectAsStateWithLifecycle()
@@ -357,6 +358,22 @@ fun SettingsScreen(
                         checked = appLockEnabled,
                         enabled = isDeviceSecure,
                         onCheckedChange = viewModel::setAppLockEnabled,
+                    )
+                    // Directly under the lock it modifies, and always visible: hiding it until the lock
+                    // was on would leave the option undiscoverable. It is disabled only when there is
+                    // no credential at all — a device that simply has no fingerprint enrolled is not
+                    // disabled, because that can change while Telepic is open and the summary is
+                    // worded so it never claims a fingerprint exists.
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_security_fingerprint),
+                        summary = when {
+                            !isDeviceSecure -> stringResource(R.string.settings_security_fingerprint_unavailable)
+                            appLockBiometricEnabled -> stringResource(R.string.settings_security_fingerprint_on)
+                            else -> stringResource(R.string.settings_security_fingerprint_summary)
+                        },
+                        checked = appLockBiometricEnabled,
+                        enabled = isDeviceSecure,
+                        onCheckedChange = viewModel::setAppLockBiometricEnabled,
                     )
                 }
 
