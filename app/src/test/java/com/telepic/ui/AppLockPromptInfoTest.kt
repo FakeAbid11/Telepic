@@ -94,9 +94,12 @@ class AppLockPromptInfoTest {
             .setTitle("Unlock Telepic")
             .setDeviceCredentialAllowed(true)
             .build()
+        // `allowedAuthenticators` is the *raw* mask and stays 0 for this setter — the library
+        // consolidates it to BIOMETRIC_WEAK or DEVICE_CREDENTIAL internally, and does not expose the
+        // result — so this flag is the observable evidence that the credential remains the fallback.
         assertTrue(
             "the credential must remain allowed as the fallback",
-            info.allowedAuthenticators and BiometricManager.Authenticators.DEVICE_CREDENTIAL != 0,
+            info.isDeviceCredentialAllowed,
         )
     }
 
