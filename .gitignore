@@ -21,6 +21,13 @@ build/
 telegram.properties
 secrets.properties
 
+# Release signing material. The keystore itself is NEVER committed: CI writes it from
+# RELEASE_KEYSTORE_BASE64 into app/build/release.keystore (already covered by app/build/), and a local
+# copy belongs outside the tree. These patterns exist so a stray key cannot be committed by accident.
+*.jks
+*.keystore
+*.b64
+
 # local dependency-inspection scratch (never committed)
 .tdlib-inspect/
 .ci-scratch/

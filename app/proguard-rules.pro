@@ -21,9 +21,9 @@
 # Room (generated code) and androidx Paging/DataStore/Media3/Coil ship their own consumer rules.
 # MapLibre's AAR ships consumer rules too, so the blanket keep below is belt-and-braces rather than a
 # requirement — it is here because the cost of being wrong is a release-only NoClassDefFoundError or
-# a JNI UnsatisfiedLinkError, and **nothing in CI compiles R8 at all**: there is no release job, so
-# this file has never been exercised by automation and cannot be. Remove the blanket keep once a
-# release build has been device-tested.
+# a JNI UnsatisfiedLinkError. The `release-smoke` CI job now compiles R8 on every push to main, so this
+# file is exercised by automation; the blanket keep can be removed once a release APK has been
+# device-tested.
 -keep class org.maplibre.android.** { *; }
 -dontwarn org.maplibre.**
 #

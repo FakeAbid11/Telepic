@@ -117,8 +117,8 @@ android {
             isMinifyEnabled = false
         }
         release {
-            // R8 shrinks + obfuscates the release artifact and is exercised by the manual
-            // `release-smoke` CI job (assembleRelease) — run it before any release attempt. Note what
+            // R8 shrinks + obfuscates the release artifact and is exercised by the `release-smoke` CI
+            // job (assembleRelease) on every push to main. Note what
             // R8 does NOT do: string literals are not obfuscated or encrypted, so the Telegram api_hash
             // below ships as a readable constant in the DEX. That is inherent to TDLib
             // (SetTdlibParameters takes it), not something R8 can fix.
