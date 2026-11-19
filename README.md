@@ -504,7 +504,7 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 <a id="testing"></a>
 ## 🧪 Testing
 
-The suite is **976 tests across 130 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
+The suite is **977 tests across 130 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
 
 ```bash
 # Unit tests (JUnit 4 + kotlinx-coroutines-test + Robolectric)
