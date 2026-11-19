@@ -59,6 +59,12 @@ jobs:
       - name: Detekt (static analysis)
         run: ./gradlew detekt --stacktrace
 
+      # Coverage is reported, not enforced: there is no threshold, because a number nobody has agreed
+      # to would fail the build for the wrong reason. The report is what makes the figure visible so a
+      # future `koverVerify` can be set from data rather than from a guess.
+      - name: Coverage report
+        run: ./gradlew :app:koverXmlReportDebug --stacktrace
+
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
 
@@ -84,6 +90,7 @@ jobs:
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
             app/build/reports/detekt/
+            app/build/reports/kover/
             app/build/compose-reports/
             app/build/compose-metrics/
           if-no-files-found: ignore

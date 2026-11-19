@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    // Coverage is a property of the tests, so it is applied to the module that owns them rather than
+    // the root (where the aggregating tasks exist but measure nothing). No threshold is configured:
+    // this makes the number visible in CI rather than gating on a figure nobody has agreed to.
+    alias(libs.plugins.kover)
 }
 
 // Telegram API credentials come from the environment (GitHub Actions Secrets in CI).
@@ -228,6 +232,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    testImplementation(libs.turbine)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.androidx.work.testing)

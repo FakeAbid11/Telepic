@@ -3,6 +3,7 @@ package com.telepic.ui.screens.settings
 import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import app.cash.turbine.test
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupRepository
 import com.telepic.data.backup.BulkBackupSummary
@@ -25,6 +26,7 @@ import com.telepic.telegram.TelegramUser
 import androidx.paging.PagingData
 import com.telepic.domain.media.PhotosItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,6 +110,15 @@ class SettingsViewModelTest {
 
     private class FakeAlbums(private val albums: List<Album>) : AlbumRepository {
         override suspend fun albums() = albums
+        override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
+        override fun refresh() = Unit
+    }
+
+    /** Holds [albums]() open until the test releases it, so the loading state is observable. */
+    private class GatedAlbums(
+        private val gate: CompletableDeferred<List<Album>>,
+    ) : AlbumRepository {
+        override suspend fun albums() = gate.await()
         override fun mediaInBucket(bucketId: Long): Flow<PagingData<PhotosItem>> = flowOf(PagingData.empty())
         override fun refresh() = Unit
     }
@@ -297,6 +308,41 @@ class SettingsViewModelTest {
         runCurrent()
 
         assertEquals(1, coordinator.syncCalls)
+    }
+
+    /**
+     * The folder picker's whole contract, asserted as a sequence: it must report *loading* while the
+     * bucket read is in flight, then report loaded exactly once.
+     *
+     * The read is gated rather than instantaneous on purpose. With an immediate fake the whole
+     * false→true pair lands before the collector subscribes and StateFlow conflates it, so the test
+     * would pass while proving nothing about the loading state.
+     */
+    @Test
+    fun `the folder list reports loading before it reports the folders`() = runTest {
+        val album = Album(
+            bucketId = 8L,
+            title = "Camera",
+            coverUri = Uri.parse("content://media/cover"),
+            coverIsVideo = false,
+            count = 5,
+            latestMillis = 1L,
+            relativePath = "DCIM/Camera/",
+        )
+        val gate = CompletableDeferred<List<Album>>()
+        val vm = viewModel(foldersRepository = GatedAlbums(gate))
+
+        assertTrue("no load is in flight before loadFolders is called", vm.foldersLoaded.value)
+        vm.foldersLoaded.test {
+            // StateFlow replays its current value to a new collector, so this is the pre-load state.
+            assertTrue("starts loaded", awaitItem())
+            vm.loadFolders()
+            assertFalse("the picker must show loading while the read is in flight", awaitItem())
+            gate.complete(listOf(album))
+            assertTrue("and stop loading exactly once, when it lands", awaitItem())
+            expectNoEvents()
+        }
+        assertEquals(listOf(album), vm.folders.value)
     }
 
     @Test
