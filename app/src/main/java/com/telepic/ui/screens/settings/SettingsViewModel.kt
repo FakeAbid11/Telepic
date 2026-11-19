@@ -238,7 +238,13 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val _folders = MutableStateFlow<List<Album>>(emptyList())
     val folders: StateFlow<List<Album>> = _folders.asStateFlow()
 
-    /** False until [loadFolders] finishes, so the picker shows loading — not a false "empty". */
+    /**
+     * Whether the folder list can be shown as final.
+     *
+     * Starts `true`, not `false`: no load is in flight until [loadFolders] is called, so "loaded" is
+     * the honest initial answer. It drops to `false` for the duration of a load so the picker shows
+     * loading instead of a false "empty".
+     */
     private val _foldersLoaded = MutableStateFlow(true)
     val foldersLoaded: StateFlow<Boolean> = _foldersLoaded.asStateFlow()
 
