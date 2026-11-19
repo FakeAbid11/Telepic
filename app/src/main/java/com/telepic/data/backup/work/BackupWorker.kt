@@ -188,6 +188,11 @@ class BackupWorker(
             // over. (A permanently failed row is terminal and is never re-fetched, so it does not
             // stop the drain.)
             if (summary.waiting > 0) break
+            // Telegram named an interval. Everything else in the queue would trip the same limit, so
+            // the whole run stops and the remainder waits out *Telegram's* figure — not the fixed
+            // backoff, which is shorter and would simply fail again. Checked after `waiting` so a
+            // genuine transient failure still ends the drain with normal backoff semantics.
+            summary.floodWaitSeconds?.let { return continueAfterFloodWait(it) }
             // This batch found nothing actionable: the drain is complete.
             if (summary.processed == 0) break
             batches++
@@ -227,6 +232,30 @@ class BackupWorker(
             throw cancellation
         } catch (throwable: Throwable) {
             TelepicLog.warn("BackupWorker", "could not schedule the next batch; asking WorkManager to retry", throwable)
+            Result.retry()
+        }
+    }
+
+    /**
+     * Stop the run for as long as Telegram asked, then continue.
+     *
+     * `Result.retry()` cannot express this: its backoff is WorkManager's own and starts well below a
+     * typical flood-wait figure, so retrying that way is guaranteed to trip the limit again. The
+     * delay therefore goes into the continuation's `initialDelay`, where it survives process death.
+     *
+     * Without a scheduler the fallback is `Result.retry()`, which is wrong-but-safe: the run will be
+     * re-tried too early and the row will be parked again by the next 420, so nothing is lost.
+     */
+    private suspend fun continueAfterFloodWait(seconds: Int): Result {
+        val scheduler = scheduler ?: return Result.retry()
+        return try {
+            TelepicLog.warn("BackupWorker", "Telegram flood wait: continuing in ${seconds}s")
+            scheduler.scheduleContinuation(seconds)
+            Result.success()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            TelepicLog.warn("BackupWorker", "could not schedule the flood-wait continuation", throwable)
             Result.retry()
         }
     }

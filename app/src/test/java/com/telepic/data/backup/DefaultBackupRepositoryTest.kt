@@ -237,9 +237,62 @@ class DefaultBackupRepositoryTest {
         assertEquals(1, row.retryCount)
     }
 
+    /**
+     * The defect this guards: a 420 used to be classified as an ordinary transient failure, so a
+     * 300s flood wait consumed the retry budget at the scheduler's 10s/20s/40s cadence and the item
+     * was marked FAILED for a condition that clears by itself.
+     */
     @Test
-    fun `permanent rejection fails without retry`() = runBlocking {
-        val cloud = FakeCloud(uploadError = CloudUploadRejectedException("Unsupported media"))
+    fun `flood wait parks without consuming a retry and reports the interval`() = runBlocking {
+        val cloud = FakeCloud(uploadError = CloudNetworkException("Too many requests", retryAfterSeconds = 300))
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        val summary = r.processPendingWork(maxItems = 1)
+
+        assertEquals(1, summary.floodWaited)
+        assertEquals(300, summary.floodWaitSeconds)
+        // Not ordinary waiting work: retrying after the scheduler's fixed backoff would re-trip it.
+        assertEquals(0, summary.waiting)
+        assertTrue(summary.hasFloodWait)
+        assertTrue(!summary.hasRetryableWork)
+
+        val row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(BackupState.WAITING_FOR_NETWORK.name, row.state)
+        assertEquals("a flood wait must not spend the retry budget", 0, row.retryCount)
+    }
+
+    @Test
+    fun `flood wait is floored so a near-zero interval cannot spin`() = runBlocking {
+        val cloud = FakeCloud(uploadError = CloudNetworkException("Too many requests", retryAfterSeconds = 1))
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        val summary = r.processPendingWork(maxItems = 1)
+        assertEquals(1, summary.floodWaited)
+        assertEquals(
+            DefaultBackupRepository.FLOOD_WAIT_FLOOR_SECONDS,
+            summary.floodWaitSeconds,
+        )
+    }
+
+    @Test
+    fun `an implausibly long flood wait is treated as an ordinary transient failure`() = runBlocking {
+        val tooLong = DefaultBackupRepository.FLOOD_WAIT_MAX_HONOURED_SECONDS + 1
+        val cloud = FakeCloud(uploadError = CloudNetworkException("Too many requests", retryAfterSeconds = tooLong))
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        val summary = r.processPendingWork(maxItems = 1)
+
+        assertEquals(0, summary.floodWaited)
+        assertNull(summary.floodWaitSeconds)
+        // Spending the budget is the point: the row exhausts into STALLED instead of silently
+        // disappearing for hours.
+        assertEquals(1, summary.waiting)
+        val row = db.backupQueueDao().observeAll().first().first()
+        assertEquals(1, row.retryCount)
+    }
+
+    @Test
+    fun `permanent rejection fails without retry`() = runBlocking {        val cloud = FakeCloud(uploadError = CloudUploadRejectedException("Unsupported media"))
         val r = repo(cloud)
         r.enqueue(media(1))
         val summary = r.processPendingWork(maxItems = 1)
