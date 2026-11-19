@@ -605,6 +605,7 @@ fun SettingsScreen(
 /** Wording lives with the screen, not the ViewModel. */
 private fun SettingsMessage.textRes(): Int = when (this) {
     SettingsMessage.CacheCleared -> R.string.settings_cache_cleared
+    SettingsMessage.BackupRunning -> R.string.settings_cache_kept_backup_running
     SettingsMessage.ActionFailed -> R.string.settings_action_failed
 }
 

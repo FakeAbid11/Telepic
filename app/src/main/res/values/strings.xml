@@ -375,6 +375,7 @@
     <string name="backup_action_start">Start backup</string>
     <string name="backup_action_failed">That didn\'t work. Try again.</string>
     <string name="settings_cache_cleared">Cache cleared</string>
+    <string name="settings_cache_kept_backup_running">Can\'t clear the cache while a backup is running</string>
     <string name="settings_action_failed">That didn\'t work. Try again.</string>
     <string name="cloud_connect_action">Connect Telegram</string>
     <!-- Stands in for a video's length until the player reports one. Deliberately not "0:00" — an

@@ -321,6 +321,9 @@ private fun TelepicNavGraph(
                             foldersRepository = container.backupAlbumRepository,
                             backupCoordinator = container.backupCoordinator,
                             cloudRepository = container.cloudRepository,
+                            // Only so "clear cache" can refuse while an upload is streaming the very
+                            // files it would delete.
+                            backupScheduler = container.backupWorkScheduler,
                             appContext = checkNotNull(
                                 this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY],
                             ),

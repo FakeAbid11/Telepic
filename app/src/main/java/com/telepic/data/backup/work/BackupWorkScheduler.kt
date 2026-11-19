@@ -62,6 +62,18 @@ interface BackupWorkScheduler {
      * scheduler that cannot delay will re-trip the flood limit rather than lose the work.
      */
     suspend fun scheduleContinuation(delaySeconds: Int) = scheduleContinuation()
+
+    /**
+     * Whether an upload run is executing right now.
+     *
+     * Read-only on purpose: there is still no cancel/isScheduled pair (see the type's KDoc), only a
+     * question a caller can ask before touching state a live upload depends on.
+     *
+     * Defaults to `true` — **fails closed** — so a scheduler that cannot answer makes the caller
+     * behave as if an upload is in flight and keep its hands off. The safe direction is always
+     * "assume something is uploading".
+     */
+    suspend fun isRunning(): Boolean = true
 }
 
 const val BACKUP_WORK_NAME = "telepic_backup"
@@ -192,6 +204,15 @@ class WorkManagerBackupScheduler(
         TelepicLog.warn("BackupScheduler", "WorkManager state unreadable; keeping the existing run", throwable)
         true
     }
+
+    /**
+     * The interface's [BackupWorkScheduler.isRunning], answering for the backup work by name.
+     *
+     * Deliberately not the same question as "is anything queued": only RUNNING counts, so a queued but
+     * not-yet-started run does not block a cache clear — and because [isRunning] fails closed, an
+     * unreadable WorkManager makes this report `true` and the caller keeps its hands off.
+     */
+    override suspend fun isRunning(): Boolean = isRunning(BACKUP_WORK_NAME)
 
     /**
      * Reads one preference, falling back to [fallback] when it cannot be read.

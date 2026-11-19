@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupRepository
 import com.telepic.data.backup.BulkBackupSummary
+import com.telepic.data.backup.work.BackupWorkScheduler
 import com.telepic.data.media.AlbumRepository
 import com.telepic.data.media.LocalMediaRepository
 import com.telepic.domain.backup.BackupItem
@@ -58,6 +59,19 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class SettingsViewModelTest {
+
+    /** A scheduler that answers the "is a run in flight" question the way a test needs it to. */
+    private class FakeScheduler(
+        private val running: Boolean = false,
+        private val error: Throwable? = null,
+    ) : BackupWorkScheduler {
+        override suspend fun schedule() = Unit
+        override suspend fun schedulePeriodic() = Unit
+        override suspend fun isRunning(): Boolean {
+            error?.let { throw it }
+            return running
+        }
+    }
 
     private class FakeAuthController : TelegramAuthController {
         private val _state = MutableStateFlow<TelegramAuthState>(TelegramAuthState.NotConnected)
@@ -193,6 +207,7 @@ class SettingsViewModelTest {
         // are separate; the picker tests below pass a different one on purpose.
         foldersRepository: AlbumRepository = albumRepository,
         deviceSecureReader: () -> Boolean = { false },
+        backupScheduler: BackupWorkScheduler? = null,
     ) = SettingsViewModel(
         telegramAuthController = auth,
         onboardingRepository = onboarding,
@@ -201,6 +216,7 @@ class SettingsViewModelTest {
         localMediaRepository = localMediaRepository,
         foldersRepository = foldersRepository,
         backupCoordinator = coordinator,
+        backupScheduler = backupScheduler,
         appContext = ApplicationProvider.getApplicationContext<Context>(),
         deviceSecureReader = deviceSecureReader,
         ioDispatcher = Dispatchers.Unconfined,
@@ -341,7 +357,11 @@ class SettingsViewModelTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val staging = File(context.cacheDir, "telepic_backup_staging").apply { mkdirs() }
         val otherCache = File(context.cacheDir, "coil_disk_cache").apply { mkdirs() }
-        File(staging, "staged_1.tmp").writeBytes(ByteArray(64))
+        val staged = File(staging, "staged_1.tmp")
+        staged.writeBytes(ByteArray(64))
+        // Backdated past the grace period: a copy this old cannot belong to an upload that just
+        // started, which is exactly the condition the guard exists to distinguish.
+        staged.setLastModified(System.currentTimeMillis() - 10L * 60 * 1000)
         File(otherCache, "keep.bin").writeBytes(ByteArray(32))
 
         val vm = viewModel()
@@ -356,6 +376,61 @@ class SettingsViewModelTest {
         assertEquals(0L, vm.storageSummary.value.stagingBytes)
         // Nothing outside staging is touched.
         assertTrue(File(otherCache, "keep.bin").exists())
+    }
+
+    /**
+     * The defect this guards: `clearBackupCache` used to delete every staged file unconditionally,
+     * including the one TDLib was streaming to Telegram at that moment — which `BackupStager.sweep`
+     * already refuses to do for anything younger than six hours.
+     */
+    @Test
+    fun `clearing the backup cache is refused while a backup run is in flight`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val staging = File(context.cacheDir, "telepic_backup_staging").apply { mkdirs() }
+        val staged = File(staging, "staging_42.tmp")
+        staged.writeBytes(ByteArray(64))
+        staged.setLastModified(System.currentTimeMillis() - 10L * 60 * 1000)
+
+        val vm = viewModel(backupScheduler = FakeScheduler(running = true))
+        vm.clearBackupCache()
+        runCurrent()
+
+        assertTrue("the file an upload is reading must survive", staged.exists())
+        assertEquals(SettingsMessage.BackupRunning, vm.message.value)
+    }
+
+    @Test
+    fun `a scheduler that cannot answer is treated as running`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val staging = File(context.cacheDir, "telepic_backup_staging").apply { mkdirs() }
+        val staged = File(staging, "staging_43.tmp")
+        staged.writeBytes(ByteArray(64))
+        staged.setLastModified(System.currentTimeMillis() - 10L * 60 * 1000)
+
+        val vm = viewModel(backupScheduler = FakeScheduler(error = IllegalStateException("workmanager is gone")))
+        vm.clearBackupCache()
+        runCurrent()
+
+        assertTrue("fail closed: keep the staging copy when the state is unknown", staged.exists())
+        assertEquals(SettingsMessage.BackupRunning, vm.message.value)
+    }
+
+    @Test
+    fun `a copy staged too recently is left alone even when no run is visible`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val staging = File(context.cacheDir, "telepic_backup_staging").apply { mkdirs() }
+        val fresh = File(staging, "staging_44.tmp")
+        fresh.writeBytes(ByteArray(64))
+
+        val vm = viewModel(backupScheduler = FakeScheduler(running = false))
+        vm.clearBackupCache()
+        runCurrent()
+
+        assertTrue(
+            "a file younger than the grace period may belong to a worker that has not reported RUNNING yet",
+            fresh.exists(),
+        )
+        assertEquals(SettingsMessage.CacheCleared, vm.message.value)
     }
 
     @Test
