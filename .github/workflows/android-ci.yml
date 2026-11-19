@@ -53,6 +53,12 @@ jobs:
       - name: Lint (static verification)
         run: ./gradlew lintDebug --stacktrace
 
+      # Fails on any issue not recorded in config/detekt/baseline.xml. The baseline holds the debt this
+      # tree already carried (mostly god-file size metrics); new code is held to the rules in
+      # config/detekt/detekt.yml from day one.
+      - name: Detekt (static analysis)
+        run: ./gradlew detekt --stacktrace
+
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
 
@@ -77,6 +83,7 @@ jobs:
           path: |
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
+            app/build/reports/detekt/
             app/build/compose-reports/
             app/build/compose-metrics/
           if-no-files-found: ignore

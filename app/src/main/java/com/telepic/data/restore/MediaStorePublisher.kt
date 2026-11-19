@@ -161,12 +161,15 @@ class AndroidMediaStorePublisher(context: Context) : MediaStorePublisher {
                     if (updated != 1) throw IOException("Provider did not finalize the media row")
                 }
                 PublishResult.Inserted(target.toString())
-            } catch (throwable: Throwable) {
-                // Abandon the partial entry; never report a half-written file as restored.
+            } catch (cancellation: CancellationException) {
+                // Abandon the partial entry too: a cancelled restore must not leave a half-written row.
                 runCatching { resolver.delete(target, null, null) }
                 // A cancelled restore is not a failed restore: the caller's scope is going away and
                 // must see the cancellation rather than a PUBLISH_FAILED it would retry.
-                if (throwable is CancellationException) throw throwable
+                throw cancellation
+            } catch (throwable: Throwable) {
+                // Abandon the partial entry; never report a half-written file as restored.
+                runCatching { resolver.delete(target, null, null) }
                 // This is the *likely* failure — a refused output stream, a short write, a provider
                 // that would not finalize the row — and it used to leave no trace at all, so "disk
                 // full", "provider refused" and "the copy was truncated" were indistinguishable

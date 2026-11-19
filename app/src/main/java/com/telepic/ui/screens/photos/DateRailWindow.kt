@@ -10,7 +10,7 @@ object DateRailWindow {
 
     /** Fully inclusive index range (`first`..`last`) into a newest-first [anchorCount] list. */
     fun window(anchorCount: Int, activeIndex: Int, windowSize: Int): IntRange {
-        if (anchorCount <= 0 || windowSize <= 0) return 0 until 0
+        if (anchorCount <= 0 || windowSize <= 0) return IntRange.EMPTY
         val size = minOf(windowSize, anchorCount)
         val active = activeIndex.coerceIn(0, anchorCount - 1)
         // Prefer the newest window; only slide down enough to include the active (older) day.
