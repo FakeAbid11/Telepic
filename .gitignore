@@ -23,10 +23,14 @@ secrets.properties
 
 # Release signing material. The keystore itself is NEVER committed: CI writes it from
 # RELEASE_KEYSTORE_BASE64 into app/build/release.keystore (already covered by app/build/), and a local
-# copy belongs outside the tree. These patterns exist so a stray key cannot be committed by accident.
+# copy lives beside it in the project folder. These patterns exist so a stray key cannot be committed
+# by accident — they are a backstop, not the primary defence.
 *.jks
 *.keystore
 *.b64
+# The keystore password, kept next to the key so signing can be repeated locally. Losing the keystore
+# means this app identity can never be updated again, so both files belong in a backup.
+release-password.txt
 
 # Build logs. `preflight.log` was captured during a local run and swept into a commit by `git add -A`;
 # this stops that happening again.
