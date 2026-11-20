@@ -54,9 +54,14 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         CustomAlbumMediaEntity::class,
     ],
     version = 12,
-    // Schema JSON is exported to app/schemas (see the `ksp` block in app/build.gradle.kts) and
-    // committed, so Room's migration checker can verify each migration against the real schema
-    // instead of trusting the hand-written SQL in this file.
+    // Schema JSON is exported to app/schemas (see the `ksp` block in app/build.gradle.kts). CI
+    // publishes the current version's JSON as an artifact and fails if it was not exported.
+    //
+    // Note what that does and does not guarantee: app/schemas currently holds versions 9 through 12
+    // only, so the committed baseline covers the recent end of the chain rather than all eleven
+    // migrations. The migration tests do not read these files at all — they build the previous version
+    // with raw SQL and open the real database, so Room's runtime validation compares the result against
+    // the compiled entity definitions. `MigrationTestHelper` is used nowhere in this project.
     exportSchema = true,
 )
 abstract class TelepicDatabase : RoomDatabase() {

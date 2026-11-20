@@ -49,6 +49,31 @@ interface BackupWorkScheduler {
      * that does not distinguish the two.
      */
     suspend fun scheduleContinuation() = schedule()
+
+    /**
+     * Continue a drain after [delaySeconds], because Telegram asked for that wait.
+     *
+     * Distinct from [scheduleContinuation] on purpose: that one exists to *escape* a growing backoff,
+     * while this one exists to *apply* a specific interval. The delay is expressed as WorkManager's
+     * `initialDelay`, so it survives process death — sleeping in the worker would not, and would also
+     * hold a foreground service open for the whole wait.
+     *
+     * The default ignores the delay and delegates to [schedule], which is correct-but-eager: a
+     * scheduler that cannot delay will re-trip the flood limit rather than lose the work.
+     */
+    suspend fun scheduleContinuation(delaySeconds: Int) = scheduleContinuation()
+
+    /**
+     * Whether an upload run is executing right now.
+     *
+     * Read-only on purpose: there is still no cancel/isScheduled pair (see the type's KDoc), only a
+     * question a caller can ask before touching state a live upload depends on.
+     *
+     * Defaults to `true` — **fails closed** — so a scheduler that cannot answer makes the caller
+     * behave as if an upload is in flight and keep its hands off. The safe direction is always
+     * "assume something is uploading".
+     */
+    suspend fun isRunning(): Boolean = true
 }
 
 const val BACKUP_WORK_NAME = "telepic_backup"
@@ -121,6 +146,26 @@ class WorkManagerBackupScheduler(
     }
 
     /**
+     * A continuation that waits out Telegram's own flood-wait interval.
+     *
+     * The delay is carried by `initialDelay` rather than by sleeping in the worker: WorkManager
+     * persists it across process death, and a sleeping worker would hold a `dataSync` foreground
+     * service open for the entire wait (which Android caps, and which shows the user a notification
+     * that says nothing is happening).
+     *
+     * The backoff criteria are left at [BACKOFF_MILLIS] because this run is not failing — the initial
+     * delay is the flood wait, and a *subsequent* transient failure should still get normal backoff.
+     */
+    override suspend fun scheduleContinuation(delaySeconds: Int) {
+        val request = OneTimeWorkRequestBuilder<BackupWorker>()
+            .setConstraints(transportConstraints())
+            .setInitialDelay(delaySeconds.toLong(), TimeUnit.SECONDS)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MILLIS, TimeUnit.MILLISECONDS)
+            .build()
+        workManager.enqueueUniqueWork(BACKUP_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+    }
+
+    /**
      * The user's transport preferences as WorkManager constraints.
      *
      * An unreadable preference falls back to the same defaults the repository declares (any network,
@@ -159,6 +204,15 @@ class WorkManagerBackupScheduler(
         TelepicLog.warn("BackupScheduler", "WorkManager state unreadable; keeping the existing run", throwable)
         true
     }
+
+    /**
+     * The interface's [BackupWorkScheduler.isRunning], answering for the backup work by name.
+     *
+     * Deliberately not the same question as "is anything queued": only RUNNING counts, so a queued but
+     * not-yet-started run does not block a cache clear — and because [isRunning] fails closed, an
+     * unreadable WorkManager makes this report `true` and the caller keeps its hands off.
+     */
+    override suspend fun isRunning(): Boolean = isRunning(BACKUP_WORK_NAME)
 
     /**
      * Reads one preference, falling back to [fallback] when it cannot be read.

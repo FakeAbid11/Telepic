@@ -7,8 +7,10 @@ import com.telepic.data.media.db.MediaLocationScanEntity
 import com.telepic.diagnostics.TelepicLog
 import com.telepic.domain.media.GeotaggedMedia
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 /**
  * Maintains the geotagged-location cache the map renders from. A [rescan] pages the library through
@@ -88,8 +90,13 @@ class DefaultMapLocationRepository(
      * Reconcile-prune still only runs on a sweep that covered the **whole** library — it reached the
      * end *and* started at offset 0. A truncated sweep, or one resumed part-way, has an incomplete
      * `present` set and would otherwise delete markers that still exist.
+     *
+     * Runs on [Dispatchers.IO] rather than the caller's dispatcher. The caller is
+     * `MapViewModel.refresh()`, which launches on `viewModelScope` — `Dispatchers.Main.immediate` — so
+     * every page of EXIF extraction, both bookkeeping sets and the prune's database writes used to run
+     * on the main thread. `present` alone can hold `maxPages × pageSize` ids on a large library.
      */
-    override suspend fun rescan() {
+    override suspend fun rescan() = withContext(Dispatchers.IO) {
         val startOffset = cursorStore.offset(CURSOR_KEY).coerceAtLeast(0)
         val scanned = dao.scannedIds().toHashSet()
         val present = HashSet<Long>()
@@ -150,9 +157,13 @@ class DefaultMapLocationRepository(
         if (reachedEnd && startOffset == 0) {
             val hidden = hiddenIdsProvider()
             val known = HashSet<Long>(scanned).apply { addAll(dao.cachedIds()) }
-            (known - present - hidden).forEach { id ->
-                dao.delete(id)
-                dao.deleteScanned(id)
+            // Batched rather than one delete per id: the prune used to issue two suspending DAO calls
+            // per vanished item, each its own statement, on a set that can be the size of the library.
+            // `CHUNK_SIZE` keeps the bindings well under SQLite's 999-variable ceiling — the same
+            // constraint `PermanentMediaCleanup` documents for the identical pair of deletes.
+            (known - present - hidden).chunked(CHUNK_SIZE).forEach { chunk ->
+                dao.deleteAll(chunk)
+                dao.deleteScannedAll(chunk)
             }
         }
     }
@@ -181,5 +192,8 @@ class DefaultMapLocationRepository(
     private companion object {
         /** One loader, so one key. */
         const val CURSOR_KEY = "map_scan"
+
+        /** Half of SQLite's classic 999-variable ceiling, with room for the other bindings. */
+        const val CHUNK_SIZE = 500
     }
 }

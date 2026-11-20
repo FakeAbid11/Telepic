@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,9 +63,15 @@ class BackupWorkerTest {
     /** Records how the worker hands the remainder of a long drain to a fresh run. */
     private class RecordingScheduler : BackupWorkScheduler {
         var continuations = 0
+        /** The flood-wait interval the worker asked to wait, or null when it used the plain path. */
+        var lastDelaySeconds: Int? = null
         override suspend fun schedule() = Unit
         override suspend fun schedulePeriodic() = Unit
         override suspend fun scheduleContinuation() { continuations++ }
+        override suspend fun scheduleContinuation(delaySeconds: Int) {
+            continuations++
+            lastDelaySeconds = delaySeconds
+        }
     }
 
     @Test
@@ -116,6 +123,42 @@ class BackupWorkerTest {
             mutableListOf(BackupProcessSummary(processed = 3, waiting = 1, waitingForAuth = 2)),
         )
         assertEquals(ListenableWorker.Result.retry(), worker(repo).doWork())
+    }
+
+    /**
+     * The regression this guards: a 420 flood wait used to reach `Result.retry()`, whose backoff is
+     * WorkManager's own and starts at ten seconds — far below the interval Telegram asked for, so the
+     * next run tripped the limit again and the item burned its budget.
+     */
+    @Test
+    fun `a flood-waited batch continues after Telegram's interval instead of retrying`() = runBlocking {
+        val repo = FakeRepo(
+            mutableListOf(
+                BackupProcessSummary(processed = 2, floodWaited = 2, floodWaitSeconds = 300),
+            ),
+        )
+        val scheduler = RecordingScheduler()
+        val result = worker(repo, scheduler).doWork()
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertEquals(1, scheduler.continuations)
+        assertEquals(300, scheduler.lastDelaySeconds)
+    }
+
+    @Test
+    fun `a flood wait is not confused with ordinary waiting work`() = runBlocking {
+        // A batch with both must still end the run on the *ordinary* path: `waiting` is checked
+        // first, so a genuine transient failure keeps its normal backoff semantics.
+        val repo = FakeRepo(
+            mutableListOf(
+                BackupProcessSummary(processed = 3, waiting = 1, floodWaited = 1, floodWaitSeconds = 120),
+            ),
+        )
+        val scheduler = RecordingScheduler()
+        val result = worker(repo, scheduler).doWork()
+
+        assertEquals(ListenableWorker.Result.retry(), result)
+        assertNull(scheduler.lastDelaySeconds)
     }
 
     @Test

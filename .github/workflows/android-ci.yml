@@ -3,6 +3,10 @@ name: Debug
 on:
   push:
     branches: [main]
+    # A tag push is how a release is cut: it is the only ref where `release-smoke` can resolve
+    # versionName from the tag itself (see the "Resolve version" step). Without this trigger the tag
+    # would never start a run, and every release would silently carry the 0.1.0-dev run-number version.
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -53,13 +57,25 @@ jobs:
       - name: Lint (static verification)
         run: ./gradlew lintDebug --stacktrace
 
+      # Fails on any issue not recorded in config/detekt/baseline.xml. The baseline holds the debt this
+      # tree already carried (mostly god-file size metrics); new code is held to the rules in
+      # config/detekt/detekt.yml from day one.
+      - name: Detekt (static analysis)
+        run: ./gradlew detekt --stacktrace
+
+      # Coverage is reported, not enforced: there is no threshold, because a number nobody has agreed
+      # to would fail the build for the wrong reason. The report is what makes the figure visible so a
+      # future `koverVerify` can be set from data rather than from a guess.
+      - name: Coverage report
+        run: ./gradlew :app:koverXmlReportDebug --stacktrace
+
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
 
       # Still no *publishing* step: nothing here reaches Play. The debug APK uploaded below is the
       # artifact this workflow exists to produce while the project is being tested. The
-      # `release-smoke` job that compiles the R8 configuration and builds an AAB also runs on every
-      # push to main (see its own note) — and its artifacts are for inspection rather than
+      # `release-smoke` job that compiles the R8 configuration and builds a release APK also runs on
+      # every push to main (see its own note) — and its artifacts are for inspection rather than
       # distribution anyway.
 
       - name: Upload debug APK
@@ -77,6 +93,8 @@ jobs:
           path: |
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
+            app/build/reports/detekt/
+            app/build/reports/kover/
             app/build/compose-reports/
             app/build/compose-metrics/
           if-no-files-found: ignore
@@ -119,3 +137,106 @@ jobs:
           name: telepic-room-schemas
           path: app/schemas/
           if-no-files-found: warn
+
+  # Compile the R8 configuration and produce a release APK.
+  #
+  # This job did not previously exist. `proguard-rules.pro` said so itself: "nothing in CI compiles R8
+  # at all: there is no release job, so this file has never been exercised by automation and cannot
+  # be." A missing keep rule therefore surfaced only on a manual release attempt, which is the worst
+  # possible time to discover it.
+  #
+  # Runs on main pushes and manual dispatches only, never on pull requests: it needs the Telegram
+  # credentials, and a PR build must not be able to carry them.
+  release-smoke:
+    name: Release smoke (R8 + signed APK)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    env:
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      # Signing is optional on purpose. With the four secrets present the APK is installable; without
+      # them the build still runs R8 and fails at the signing gate, which is a *loud* signal rather
+      # than a silent skip. The allowUnsignedRelease flag below is what lets the no-secret case still
+      # produce an artifact instead of stopping the whole job.
+      RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # Decide once whether this build can be signed, rather than repeating the test in every step.
+      # `set -euo pipefail` is not enough here because the empty case is expected, not an error.
+      - name: Decide signing mode
+        id: signing
+        run: |
+          if [ -n "${RELEASE_KEYSTORE_BASE64}" ] && [ -n "${RELEASE_KEYSTORE_PASSWORD}" ] \
+             && [ -n "${RELEASE_KEY_ALIAS}" ] && [ -n "${RELEASE_KEY_PASSWORD}" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets present: producing an installable APK."
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Release signing secrets are absent; building UNSIGNED. R8 and resource shrinking are still exercised, but the APK cannot be installed."
+          fi
+
+      # The version comes from the tag when one triggered this run, and from the run number otherwise.
+      # Without this the build silently shipped `versionName 0.1.0 / versionCode 1` (the defaults in
+      # app/build.gradle.kts) regardless of what was released.
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            NAME="${GITHUB_REF_NAME#v}"
+          else
+            NAME="0.1.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Resolved versionName=${NAME} versionCode=${GITHUB_RUN_NUMBER}"
+
+      - name: Assemble release (R8 + resource shrinking)
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            ./gradlew :app:assembleRelease --stacktrace
+          else
+            ./gradlew :app:assembleRelease -Ptelepic.allowUnsignedRelease=true --stacktrace
+          fi
+
+      # R8's mapping file is the only way to read a stack trace from this build, so it is published
+      # alongside the APK rather than left in the workspace.
+      - name: Upload release artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telepic-release-smoke
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/mapping/release/mapping.txt
+            app/build/outputs/mapping/release/configuration.txt
+          if-no-files-found: warn
+
+      - name: Upload R8 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telepic-r8-report
+          path: app/build/reports/
+          if-no-files-found: ignore

@@ -130,9 +130,31 @@ class MapLocationRepositoryTest {
         assertEquals(setOf(1L), reopened.locations.first().map { it.mediaId }.toSet())
     }
 
+    /**
+     * The prune now deletes in chunks instead of one statement per id. `CHUNK_SIZE` is 500, so a
+     * library of 1,200 vanished markers spans three chunks — past the SQLite 999-binding ceiling that
+     * makes a single `IN (...)` list impossible, which is why the chunking exists.
+     */
     @Test
-    fun `a scan that cannot reach the library end does not prune still-existing markers`() = runBlocking {
-        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), ScanCursorStore.NoOp, pageSize = 10, maxPages = 5)
+    fun `the prune deletes more vanished markers than one SQLite statement could bind`() = runBlocking {
+        val library = (1L..1_200L).map { media(it, "content://m/$it") }
+        val extractor = object : LocationExtractor {
+            override suspend fun extract(uri: Uri): GeoLocation? = GeoLocation(48.85, 2.35)
+        }
+        val full = DefaultMapLocationRepository(dao, FakeLoader(library), extractor, ScanCursorStore.NoOp, pageSize = 200, maxPages = 50)
+        full.rescan()
+        assertEquals(1_200, full.locations.first().size)
+
+        // Everything disappears from the device; a complete sweep of an empty library must prune all
+        // of it, in chunks, without a binding-limit failure.
+        val emptied = DefaultMapLocationRepository(dao, FakeLoader(emptyList()), extractor, ScanCursorStore.NoOp, pageSize = 200, maxPages = 50)
+        emptied.rescan()
+        assertEquals(emptyList<Long>(), emptied.locations.first().map { it.mediaId })
+        assertEquals(emptyList<Long>(), dao.scannedIds())
+    }
+
+    @Test
+    fun `a scan that cannot reach the library end does not prune still-existing markers`() = runBlocking {        val repository = DefaultMapLocationRepository(dao, FakeLoader(items), FakeExtractor(), ScanCursorStore.NoOp, pageSize = 10, maxPages = 5)
         repository.rescan() // caches 1 and 3
 
         // Only one page of size 2 is read, so id 3 is never seen this pass — but because the scan did

@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.imageLoader
 import com.telepic.data.backup.BackupCoordinator
+import com.telepic.data.backup.work.BackupWorkScheduler
 import com.telepic.data.cloud.CloudRepository
 import com.telepic.data.media.AlbumRepository
 import com.telepic.data.media.LocalMediaRepository
@@ -55,6 +56,14 @@ sealed interface SettingsMessage {
 
     /** An action did not complete. */
     data object ActionFailed : SettingsMessage
+
+    /**
+     * The staging cache was left alone because an upload is using it.
+     *
+     * Reaching this is not a failure — the upload is the thing that matters — so it must not be
+     * reported as "Action failed", which is what the user would have seen otherwise.
+     */
+    data object BackupRunning : SettingsMessage
 }
 
 /**
@@ -108,6 +117,13 @@ class SettingsViewModel(
     private val foldersRepository: AlbumRepository? = null,
     private val backupCoordinator: BackupCoordinator? = null,
     private val cloudRepository: CloudRepository? = null,
+    /**
+     * Asked before the staging cache is emptied. A live upload is streaming a file out of that
+     * directory, and deleting it underneath TDLib fails the upload for no reason the user can see.
+     * Optional so the tests can build the screen without WorkManager; absent means "assume no run",
+     * which is the pre-existing behaviour.
+     */
+    private val backupScheduler: BackupWorkScheduler? = null,
 private val appContext: Context,
 private val deviceSecureReader: () -> Boolean = {
     appContext.getSystemService(KeyguardManager::class.java)?.isDeviceSecure == true
@@ -222,7 +238,13 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val _folders = MutableStateFlow<List<Album>>(emptyList())
     val folders: StateFlow<List<Album>> = _folders.asStateFlow()
 
-    /** False until [loadFolders] finishes, so the picker shows loading — not a false "empty". */
+    /**
+     * Whether the folder list can be shown as final.
+     *
+     * Starts `true`, not `false`: no load is in flight until [loadFolders] is called, so "loaded" is
+     * the honest initial answer. It drops to `false` for the duration of a load so the picker shows
+     * loading instead of a false "empty".
+     */
     private val _foldersLoaded = MutableStateFlow(true)
     val foldersLoaded: StateFlow<Boolean> = _foldersLoaded.asStateFlow()
 
@@ -435,15 +457,44 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
      * The TDLib session/cache is never touched from here: deleting it could orphan the encrypted
      * database, and that is sign-out's (not this button's) semantic.
      *
+     * Two guards the first version lacked, both of which the stager's own sweep already applies
+     * (`BackupStager.sweep`, which refuses to delete anything younger than six hours):
+     *
+     * 1. **No run in flight.** An upload is streaming one of these files out of this directory right
+     *    now; deleting it fails the send for a reason that has nothing to do with the user's data.
+     * 2. **A grace period per file.** Staged copies are skipped until they are older than
+     *    [STAGING_CLEAR_GRACE_MILLIS], which covers a file staged by a worker that has not yet
+     *    reported itself RUNNING (the enqueue → start window).
+     *
      * Reported, not silent: clearing the image cache in particular has no other visible effect, so a
      * tap that failed (or simply did nothing) was indistinguishable from one that worked.
      */
     fun clearBackupCache() {
-        persistReported(SettingsMessage.CacheCleared) {
-            withContext(ioDispatcher) {
-                stagingDir.listFiles()?.forEach { child -> child.deleteRecursively() }
+        viewModelScope.launch {
+            val running = try {
+                backupScheduler?.isRunning() ?: false
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                // Cannot prove the directory is idle: refuse rather than delete under an upload.
+                TelepicLog.warn("SettingsViewModel", "could not tell whether a backup is running", throwable)
+                true
             }
-            refreshStorage()
+            if (running) {
+                TelepicLog.warn("SettingsViewModel", "staging cache kept: a backup run is in progress")
+                showMessage(SettingsMessage.BackupRunning)
+                return@launch
+            }
+            persistReported(SettingsMessage.CacheCleared) {
+                withContext(ioDispatcher) {
+                    val cutoff = System.currentTimeMillis() - STAGING_CLEAR_GRACE_MILLIS
+                    stagingDir.listFiles()?.forEach { child ->
+                        // Only files, and only cold ones: a directory is never staged here.
+                        if (child.isFile && child.lastModified() < cutoff) child.delete()
+                    }
+                }
+                refreshStorage()
+            }
         }
     }
 
@@ -536,5 +587,14 @@ private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
          * the underlying request has already had its full chance.
          */
         const val SIGN_OUT_TIMEOUT_MS = 40_000L
+
+        /**
+         * How old a staged copy must be before the cache button may delete it.
+         *
+         * Far shorter than `BackupStager`'s six-hour sweep threshold, because this is a user asking
+         * for the space back — but long enough to cover the window between a worker being enqueued
+         * and WorkManager reporting it RUNNING, during which a file can already be on disk.
+         */
+        const val STAGING_CLEAR_GRACE_MILLIS = 2L * 60 * 1000
     }
 }

@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    // Coverage is a property of the tests, so it is applied to the module that owns them rather than
+    // the root (where the aggregating tasks exist but measure nothing). No threshold is configured:
+    // this makes the number visible in CI rather than gating on a figure nobody has agreed to.
+    alias(libs.plugins.kover)
 }
 
 // Telegram API credentials come from the environment (GitHub Actions Secrets in CI).
@@ -117,8 +121,8 @@ android {
             isMinifyEnabled = false
         }
         release {
-            // R8 shrinks + obfuscates the release artifact and is exercised by the manual
-            // `release-smoke` CI job (assembleRelease) — run it before any release attempt. Note what
+            // R8 shrinks + obfuscates the release artifact and is exercised by the `release-smoke` CI
+            // job (assembleRelease) on every push to main. Note what
             // R8 does NOT do: string literals are not obfuscated or encrypted, so the Telegram api_hash
             // below ships as a readable constant in the DEX. That is inherent to TDLib
             // (SetTdlibParameters takes it), not something R8 can fix.
@@ -228,6 +232,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    testImplementation(libs.turbine)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.androidx.work.testing)

@@ -73,8 +73,35 @@ data class BackupProcessSummary(
      * [hasRetryableWork] nor [blockedOnAuth].
      */
     val recognized: Int = 0,
+    /**
+     * Rows parked because Telegram answered 420 FLOOD_WAIT and named the interval it wants.
+     *
+     * Counted apart from [waiting] because the two need different responses: a [waiting] row is
+     * retried after the scheduler's fixed exponential backoff, while a flood-wait row must not be
+     * retried until Telegram's own interval has elapsed. Folding them together was the original
+     * defect — a 300s flood wait was retried at 10s, 20s, 40s… and burned the whole retry budget
+     * ([com.telepic.data.backup.DefaultBackupRepository.DEFAULT_MAX_RETRIES]) on a condition that
+     * would have cleared on its own.
+     */
+    val floodWaited: Int = 0,
+    /**
+     * The longest flood-wait interval any row in this batch asked for, in seconds.
+     *
+     * Null when [floodWaited] is zero. The worker delays its continuation by this much; the wait is
+     * enforced by *not running* rather than by sleeping, so the process can die in between without
+     * losing the delay (WorkManager persists `initialDelay`).
+     */
+    val floodWaitSeconds: Int? = null,
 ) {
     val hasRetryableWork: Boolean get() = waiting > 0
+
+    /**
+     * Whether the batch left work that only the passage of time can unblock.
+     *
+     * Deliberately not folded into [hasRetryableWork]: `Result.retry()` inherits WorkManager's
+     * backoff, which is shorter than Telegram's interval and therefore guaranteed to fail again.
+     */
+    val hasFloodWait: Boolean get() = floodWaitSeconds != null
 
     /**
      * The batch's only outcome was "there is no session to upload to". Nothing here improves by running
@@ -100,5 +127,9 @@ data class BackupProcessSummary(
         waitingForAuth = waitingForAuth + other.waitingForAuth,
         superseded = superseded + other.superseded,
         recognized = recognized + other.recognized,
+        floodWaited = floodWaited + other.floodWaited,
+        // The *longest* wait wins, not the sum or the last: two rows parked by the same 420 share one
+        // account-wide interval, and adding them would delay the retry past what Telegram asked for.
+        floodWaitSeconds = maxOf(floodWaitSeconds ?: 0, other.floodWaitSeconds ?: 0).takeIf { it > 0 },
     )
 }

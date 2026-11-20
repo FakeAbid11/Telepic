@@ -21,6 +21,18 @@ build/
 telegram.properties
 secrets.properties
 
+# Release signing material. The keystore itself is NEVER committed: CI writes it from
+# RELEASE_KEYSTORE_BASE64 into app/build/release.keystore (already covered by app/build/), and a local
+# copy belongs outside the tree. These patterns exist so a stray key cannot be committed by accident.
+*.jks
+*.keystore
+*.b64
+
+# Build logs. `preflight.log` was captured during a local run and swept into a commit by `git add -A`;
+# this stops that happening again.
+preflight.log
+*.log
+
 # local dependency-inspection scratch (never committed)
 .tdlib-inspect/
 .ci-scratch/

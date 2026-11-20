@@ -122,6 +122,11 @@ Every push to `main` produces a debug APK as a CI artifact.
 > anyone who downloads that artifact can extract the `api_hash`; rotate the Telegram API credentials
 > if that becomes a problem. Pull-request artifacts are built without credentials.
 
+Main/manual runs also produce **`telepic-release-smoke`**, a release build that has been through R8 and
+resource shrinking, plus its `mapping.txt`. It is built to prove the ProGuard rules still compile, not
+to be distributed: it is signed only when the release signing secrets are configured, and an unsigned
+APK will not install.
+
 ### 🔨 Build it yourself through CI
 
 1. **Fork** the repository (or clone it and push to your own remote).
@@ -499,7 +504,7 @@ The chronological phase-by-phase log lives in [**docs/development-history.md**](
 <a id="testing"></a>
 ## 🧪 Testing
 
-The suite is **941 tests across 128 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
+The suite is **977 tests across 130 files** — all JVM-based, all run in CI; no instrumented tests exist yet.
 
 ```bash
 # Unit tests (JUnit 4 + kotlinx-coroutines-test + Robolectric)

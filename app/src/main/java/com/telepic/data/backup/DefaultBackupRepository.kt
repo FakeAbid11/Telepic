@@ -1,4 +1,4 @@
-package com.telepic.data.backup
+﻿package com.telepic.data.backup
 
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
@@ -132,6 +132,8 @@ class DefaultBackupRepository(
                 var waitingForAuth = 0
                 var superseded = 0
                 var recognized = 0
+                var floodWaited = 0
+                var floodWaitSeconds: Int? = null
                 // One fetch for the whole pass. The previous shape re-issued this query on every
                 // iteration — up to `maxItems` (100 at BackupWorker's batch size) identical SELECTs
                 // per run, each re-materialising up to 100 rows — even though the only rows that
@@ -142,13 +144,23 @@ class DefaultBackupRepository(
                 val batch = dao.fetchActionable(maxRetries, maxItems)
                 for (item in batch) {
                     processed++
-                    when (processOne(item)) {
+                    val outcome = processOne(item)
+                    when (outcome) {
                         ProcessOutcome.Uploaded -> uploaded++
                         ProcessOutcome.Waiting -> waiting++
                         ProcessOutcome.WaitingForAuth -> waitingForAuth++
                         ProcessOutcome.PermanentFailure -> failed++
                         ProcessOutcome.Superseded -> superseded++
                         ProcessOutcome.RecognizedRemote -> recognized++
+                        is ProcessOutcome.FloodWait -> {
+                            floodWaited++
+                            floodWaitSeconds = maxOf(floodWaitSeconds ?: 0, outcome.retryAfterSeconds)
+                            // Stop the pass. A flood wait is account-wide, so every remaining item in
+                            // this batch would be rejected for the same reason - up to 99 more calls
+                            // that cannot succeed, each pushing the wait further out. The row that hit
+                            // it is already parked; the untried rows stay actionable for the next pass.
+                            break
+                        }
                     }
                 }
                 BackupProcessSummary(
@@ -159,6 +171,8 @@ class DefaultBackupRepository(
                     waitingForAuth = waitingForAuth,
                     superseded = superseded,
                     recognized = recognized,
+                    floodWaited = floodWaited,
+                    floodWaitSeconds = floodWaitSeconds,
                 )
             }
         }
@@ -412,8 +426,26 @@ class DefaultBackupRepository(
             dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, clock())
             ProcessOutcome.Waiting
         } catch (network: CloudNetworkException) {
-            dao.recordTransientFailure(item.id, safeError(network), clock())
-            ProcessOutcome.Waiting
+            // A 420 FLOOD_WAIT is not a transient failure in the retry-budget sense: Telegram has told
+            // us exactly how long to wait, and retrying sooner cannot succeed. Recording it through
+            // `recordTransientFailure` (the old behaviour) incremented retryCount and parked the row
+            // for the scheduler's fixed 10s backoff, so a 300s wait burned all five attempts in under
+            // three minutes and the item was marked FAILED for a condition that clears by itself.
+            val wait = network.retryAfterSeconds
+            if (wait != null && wait in 1..FLOOD_WAIT_MAX_HONOURED_SECONDS) {
+                // `markWaiting` deliberately does not touch retryCount, so the row keeps its budget.
+                dao.markWaiting(item.id, BackupState.WAITING_FOR_NETWORK.name, clock())
+                TelepicLog.warn(
+                    "BackupRepository",
+                    "row ${item.id} parked: Telegram asked for a ${wait}s flood wait",
+                )
+                ProcessOutcome.FloodWait(wait.coerceAtLeast(FLOOD_WAIT_FLOOR_SECONDS))
+            } else {
+                // No interval, or one so long that honouring it silently would hide the problem for
+                // hours. Spend the budget instead, so the row surfaces as STALLED and the user sees it.
+                dao.recordTransientFailure(item.id, safeError(network), clock())
+                ProcessOutcome.Waiting
+            }
         } catch (invalid: CloudDestinationInvalidException) {
             // The upload was rejected as destination-invalid: surface the real reason and bump the retry
             // budget. Previously this re-marked WAITING_FOR_NETWORK without incrementing retryCount, so an
@@ -484,6 +516,12 @@ class DefaultBackupRepository(
          * is provably remote).
          */
         data object RecognizedRemote : ProcessOutcome
+
+        /**
+         * Telegram answered 420 and named how long to wait. The row stays queued and its retry budget
+         * is untouched; the *run* is what gets delayed, by [retryAfterSeconds].
+         */
+        data class FloodWait(val retryAfterSeconds: Int) : ProcessOutcome
     }
 
     companion object {
@@ -502,5 +540,24 @@ class DefaultBackupRepository(
          * Exactly this many parked waits are granted; the next one burns the retry budget.
          */
         const val MAX_PENDING_WAIT_ATTEMPTS = 20
+
+        /**
+         * The longest flood-wait interval honoured by parking the row.
+         *
+         * Above this the interval is treated as an ordinary transient failure instead, so the row
+         * exhausts its budget and surfaces as STALLED rather than silently disappearing for hours.
+         * Telegram's flood waits are normally seconds to minutes; a multi-hour figure means something
+         * other than a burst limit is wrong, and the user should see it.
+         */
+        const val FLOOD_WAIT_MAX_HONOURED_SECONDS = 3600
+
+        /**
+         * The shortest delay applied to a flood-wait continuation.
+         *
+         * Telegram occasionally answers 420 with a very small figure. WorkManager's minimum useful
+         * `initialDelay` is seconds anyway, but a floor keeps a burst of near-zero waits from turning
+         * the worker into a tight loop that re-trips the limit.
+         */
+        const val FLOOD_WAIT_FLOOR_SECONDS = 10
     }
 }
