@@ -1,4 +1,4 @@
-package com.telepic.data.backup
+﻿package com.telepic.data.backup
 
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
@@ -155,6 +155,11 @@ class DefaultBackupRepository(
                         is ProcessOutcome.FloodWait -> {
                             floodWaited++
                             floodWaitSeconds = maxOf(floodWaitSeconds ?: 0, outcome.retryAfterSeconds)
+                            // Stop the pass. A flood wait is account-wide, so every remaining item in
+                            // this batch would be rejected for the same reason - up to 99 more calls
+                            // that cannot succeed, each pushing the wait further out. The row that hit
+                            // it is already parked; the untried rows stay actionable for the next pass.
+                            break
                         }
                     }
                 }

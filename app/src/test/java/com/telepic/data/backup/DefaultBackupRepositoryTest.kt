@@ -262,6 +262,27 @@ class DefaultBackupRepositoryTest {
     }
 
     @Test
+    fun `a flood wait stops the pass instead of tripping on every remaining item`() = runBlocking {
+        // A flood wait is account-wide: once Telegram answers 420, every other item in the same batch
+        // would be rejected for the same reason. Continuing the loop sent up to `maxItems - 1` further
+        // calls that could not succeed, each tending to extend the wait. Exactly one call is correct.
+        val cloud = FakeCloud(uploadError = CloudNetworkException("Too many requests", retryAfterSeconds = 120))
+        val r = repo(cloud)
+        r.enqueue(media(1))
+        r.enqueue(media(2))
+        r.enqueue(media(3))
+        val summary = r.processPendingWork(maxItems = 3)
+
+        assertEquals("only the first item may reach Telegram", 1, cloud.uploadCalls)
+        assertEquals(1, summary.floodWaited)
+        // The untried rows were not consumed: they stay actionable for the pass after the wait.
+        assertEquals(1, summary.processed)
+        val rows = db.backupQueueDao().observeAll().first()
+        assertEquals(3, rows.size)
+        assertEquals(0, rows.count { it.retryCount > 0 })
+    }
+
+    @Test
     fun `flood wait is floored so a near-zero interval cannot spin`() = runBlocking {
         val cloud = FakeCloud(uploadError = CloudNetworkException("Too many requests", retryAfterSeconds = 1))
         val r = repo(cloud)
