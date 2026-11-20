@@ -3,6 +3,10 @@ name: Debug
 on:
   push:
     branches: [main]
+    # A tag push is how a release is cut: it is the only ref where `release-smoke` can resolve
+    # versionName from the tag itself (see the "Resolve version" step). Without this trigger the tag
+    # would never start a run, and every release would silently carry the 0.1.0-dev run-number version.
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
