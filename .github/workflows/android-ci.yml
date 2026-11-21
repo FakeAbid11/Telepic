@@ -57,6 +57,34 @@ jobs:
       - name: Lint (static verification)
         run: ./gradlew lintDebug --stacktrace
 
+      # The committed model files are the source for the `models-v1` release assets, and the app pins
+      # their SHA-256 in FaceModels.kt. A mismatch is not a runtime error the user can see: the
+      # download verifies before installing, so every client retries forever instead of loading a
+      # wrong model. Checking the two here costs a hash and turns a silent drift between the file,
+      # the digest and the release asset into a failed build.
+      - name: Verify face model digests match the pinned values
+        run: |
+          set -euo pipefail
+          PINNED=app/src/main/java/com/telepic/data/face/FaceModels.kt
+          for NAME in yunet.tflite ghostfacenet.tflite; do
+            FILE="models/v1/${NAME}"
+            if [ ! -f "$FILE" ]; then
+              echo "::error::missing $FILE"
+              exit 1
+            fi
+            ACTUAL=$(sha256sum "$FILE" | cut -d' ' -f1)
+            EXPECTED=$(grep -A2 "name = \"${NAME}\"" "$PINNED" | grep -oE '[0-9a-f]{64}' | head -1)
+            if [ -z "$EXPECTED" ]; then
+              echo "::error::no pinned digest for $NAME in $PINNED"
+              exit 1
+            fi
+            if [ "$ACTUAL" != "$EXPECTED" ]; then
+              echo "::error::$NAME sha256 $ACTUAL does not match pinned $EXPECTED"
+              exit 1
+            fi
+            echo "$NAME: $ACTUAL matches the pinned digest"
+          done
+
       # Fails on any issue not recorded in config/detekt/baseline.xml. The baseline holds the debt this
       # tree already carried (mostly god-file size metrics); new code is held to the rules in
       # config/detekt/detekt.yml from day one.
