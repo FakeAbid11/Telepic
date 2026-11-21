@@ -3,7 +3,13 @@
     <!-- Adaptive launcher icon background: Telepic blue. -->
     <color name="ic_launcher_background">#2F6BF0</color>
 
-    <!-- Pre-Compose window backgrounds (day / night). -->
-    <color name="telepic_window_light">#FFFFFF</color>
+    <!--
+      Pre-Compose window background.
+
+      Only the dark colour exists: Telepic's default ThemeMode is DARK, so a white day background
+      flashed on every cold start (and sat as a white strip above the edge-to-edge Scaffold) for
+      light-system users who never opted into the light theme. Users who explicitly pick LIGHT
+      tolerate a brief dark frame instead — see values/themes.xml.
+    -->
     <color name="telepic_window_dark">#0B0D10</color>
 </resources>

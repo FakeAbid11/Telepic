@@ -99,6 +99,19 @@ class SettingsRepositoryImpl(
         }
     }
 
+    override val faceSimilarityPreset: Flow<String> = dataStore.data
+        .map { preferences -> preferences[KEY_FACE_SIMILARITY_PRESET] ?: DEFAULT_FACE_PRESET }
+        .catch { throwable ->
+            TelepicLog.warn("SettingsRepository", "face preset could not be read; using the default", throwable)
+            emit(DEFAULT_FACE_PRESET)
+        }
+
+    override suspend fun setFaceSimilarityPreset(preset: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_FACE_SIMILARITY_PRESET] = preset
+        }
+    }
+
     override val startVideosMuted: Flow<Boolean> = dataStore.data
         .map { preferences -> preferences[KEY_START_VIDEOS_MUTED] ?: true }
         .catch { throwable ->
@@ -177,6 +190,16 @@ class SettingsRepositoryImpl(
         val KEY_BACKUP_REQUIRES_BATTERY_NOT_LOW = booleanPreferencesKey("backup_requires_battery_not_low")
         val KEY_SHOW_VIDEOS = booleanPreferencesKey("timeline_show_videos")
         val KEY_SHOW_GIFS = booleanPreferencesKey("timeline_show_gifs")
+        val KEY_FACE_SIMILARITY_PRESET = stringPreferencesKey("face_similarity_preset")
+
+        /**
+         * Mirrors `FaceSimilarityPreset.DEFAULT.name`.
+         *
+         * Duplicated as a literal rather than referenced, because the settings layer must not depend
+         * on the face package: a preference store that cannot be read without the ML code loaded is a
+         * dependency in the wrong direction. `SettingsRepositoryTest` pins the two together.
+         */
+        const val DEFAULT_FACE_PRESET = "STRICT"
         val KEY_START_VIDEOS_MUTED = booleanPreferencesKey("viewer_start_videos_muted")
         val KEY_APP_LOCK = booleanPreferencesKey("app_lock_enabled")
         val KEY_APP_LOCK_BIOMETRIC = booleanPreferencesKey("app_lock_biometric_enabled")

@@ -80,6 +80,7 @@ class SettingsUiTest {
         val videos = MutableStateFlow(true)
         val gifs = MutableStateFlow(true)
         val startMuted = MutableStateFlow(true)
+        val facePreset = MutableStateFlow("STRICT")
         val appLock = MutableStateFlow(false)
         val biometric = MutableStateFlow(true)
         val backfillGranted = MutableStateFlow(false)
@@ -96,6 +97,8 @@ class SettingsUiTest {
         override suspend fun setShowVideosInTimeline(show: Boolean) { videos.value = show }
         override val showGifsInTimeline: Flow<Boolean> get() = gifs
         override suspend fun setShowGifsInTimeline(show: Boolean) { gifs.value = show }
+        override val faceSimilarityPreset: Flow<String> get() = facePreset
+        override suspend fun setFaceSimilarityPreset(preset: String) { facePreset.value = preset }
         override val startVideosMuted: Flow<Boolean> get() = startMuted
         override suspend fun setStartVideosMuted(muted: Boolean) { startMuted.value = muted }
         override val appLockEnabled: Flow<Boolean> get() = appLock

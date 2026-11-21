@@ -64,3 +64,7 @@ preflight.log
 
 # Product requirements doc — local working copy only, never committed
 /PRD.md
+
+# Python bytecode from tools/face_models (regenerated on every run)
+__pycache__/
+*.pyc

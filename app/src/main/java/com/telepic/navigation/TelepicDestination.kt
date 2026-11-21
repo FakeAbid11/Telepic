@@ -5,11 +5,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -36,6 +38,7 @@ enum class TelepicDestination(
     Cloud("cloud", R.string.nav_cloud),
     Albums("albums", R.string.nav_albums),
     Map("map", R.string.nav_map),
+    People("people", R.string.nav_people),
     Settings("settings", R.string.nav_settings),
     ;
 
@@ -82,6 +85,7 @@ val TelepicDestination.icon: ImageVector
         TelepicDestination.Cloud -> Icons.Outlined.CloudQueue
         TelepicDestination.Albums -> Icons.Outlined.Collections
         TelepicDestination.Map -> Icons.Outlined.Map
+        TelepicDestination.People -> Icons.Outlined.People
         TelepicDestination.Settings -> Icons.Outlined.Settings
     }
 
@@ -92,5 +96,6 @@ val TelepicDestination.selectedIcon: ImageVector
         TelepicDestination.Cloud -> Icons.Filled.Cloud
         TelepicDestination.Albums -> Icons.Filled.Collections
         TelepicDestination.Map -> Icons.Filled.Map
+        TelepicDestination.People -> Icons.Filled.People
         TelepicDestination.Settings -> Icons.Filled.Settings
     }

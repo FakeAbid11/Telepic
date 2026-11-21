@@ -8,9 +8,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Verifies the primary navigation set is represented correctly: exactly the five PRD destinations,
- * each with a unique, non-blank route and a label, and a stable start destination — plus the
- * destination/tab split.
+ * Verifies the primary navigation set is represented correctly: exactly the six destinations (five in
+ * the bottom bar, plus Settings), each with a unique, non-blank route and a label, and a stable start
+ * destination — plus the destination/tab split.
  *
  * Both halves of that split matter. Settings must stay in [TelepicDestination.entries], because its
  * route is still a real destination the nav graph declares and `navigateToTopLevel` navigates to; and
@@ -21,8 +21,8 @@ import org.junit.Test
 class TelepicDestinationTest {
 
     @Test
-    fun `contains exactly the five primary destinations`() {
-        val expected = setOf("Photos", "Cloud", "Albums", "Map", "Settings")
+    fun `contains exactly the six destinations`() {
+        val expected = setOf("Photos", "Cloud", "Albums", "Map", "People", "Settings")
         val actual = TelepicDestination.entries.map { it.name }.toSet()
         assertEquals(expected, actual)
     }
@@ -65,6 +65,7 @@ class TelepicDestinationTest {
                 TelepicDestination.Cloud,
                 TelepicDestination.Albums,
                 TelepicDestination.Map,
+                TelepicDestination.People,
             ),
             TelepicDestination.tabs,
         )

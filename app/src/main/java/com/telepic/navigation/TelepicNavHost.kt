@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -46,6 +47,10 @@ import com.telepic.ui.screens.map.MapScreen
 import com.telepic.ui.screens.map.MapViewModel
 import com.telepic.ui.screens.organization.OrganizationScreen
 import com.telepic.ui.screens.organization.OrganizationViewModel
+import com.telepic.ui.screens.people.PeopleScreen
+import com.telepic.ui.screens.people.PeopleViewModel
+import com.telepic.ui.screens.people.PersonScreen
+import com.telepic.ui.screens.people.PersonViewModel
 import com.telepic.ui.screens.photos.PhotosScreen
 import com.telepic.ui.screens.photos.PhotosViewModel
 import com.telepic.ui.screens.settings.SettingsScreen
@@ -304,8 +309,59 @@ private fun TelepicNavGraph(
                 onOpenSettings = { navController.navigateToSettings() },
             )
         }
-        composable(TelepicDestination.Settings.route) {
-            val settingsFactory = remember(container) {
+        composable(TelepicDestination.People.route) {
+            val peopleFactory = remember(container) {
+                viewModelFactory {
+                    initializer {
+                        PeopleViewModel(
+                            repository = container.faceRepository,
+                            modelStore = container.faceModelStore,
+                            scheduler = container.faceWorkScheduler,
+                            grouping = container.faceGroupingSettings,
+                        )
+                    }
+                }
+            }
+            val peopleViewModel: PeopleViewModel = viewModel(factory = peopleFactory)
+            // The models are downloaded by a worker, so a file appearing on disk is not something an
+            // in-process observer sees. Re-checking on every return to the tab is what turns a finished
+            // download into "ready to scan" without a restart.
+            LifecycleResumeEffect(Unit) {
+                peopleViewModel.refreshModelState()
+                onPauseOrDispose { }
+            }
+            PeopleScreen(
+                viewModel = peopleViewModel,
+                onOpenPerson = { person -> navController.navigate(PersonRoute.create(person.personId)) },
+                onOpenSettings = { navController.navigateToSettings() },
+            )
+        }
+        composable(
+            route = PersonRoute.PATTERN,
+            arguments = listOf(navArgument(PersonRoute.ARG_PERSON_ID) { type = NavType.LongType }),
+        ) { backStackEntry ->
+            val personId = backStackEntry.arguments?.getLong(PersonRoute.ARG_PERSON_ID)
+            if (personId == null) {
+                // Never fabricate id 0: a missing required arg degrades to the same honest fallback the
+                // other typed routes use.
+                InvalidRouteFallback(onBack = { navController.popBackStack() })
+                return@composable
+            }
+            val personFactory = remember(container, personId) {
+                viewModelFactory {
+                    initializer { PersonViewModel(personId, container.faceRepository) }
+                }
+            }
+            val personViewModel: PersonViewModel = viewModel(factory = personFactory)
+            PersonScreen(
+                viewModel = personViewModel,
+                onBack = { navController.popBackStack() },
+                // Opens the underlying photo, unscoped: a person's photos are not a browsable sequence
+                // in the Viewer's sense, so swiping from one would walk the whole timeline.
+                onOpenFace = { face -> navController.navigate(ViewerRoute.local(face.localMediaId)) },
+            )
+        }
+        composable(TelepicDestination.Settings.route) {            val settingsFactory = remember(container) {
                 viewModelFactory {
                     initializer {
                         SettingsViewModel(

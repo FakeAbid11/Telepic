@@ -7,6 +7,7 @@
     <string name="nav_cloud">Cloud</string>
     <string name="nav_albums">Albums</string>
     <string name="nav_map">Map</string>
+    <string name="nav_people">People</string>
     <string name="nav_settings">Settings</string>
     <!-- Neutral label for a pushed screen's back affordance: the shared ScreenHeader serves
          Settings, Map, Cloud, Backup Center and the album screens alike, so anything more specific
@@ -355,6 +356,67 @@
     <string name="backup_notification_starting">Preparing your backup…</string>
     <string name="backup_notification_progress">Uploading %1$d of %2$d</string>
     <string name="backup_channel_name">Backup</string>
+
+    <!-- ============================ People tab (face index) ============================ -->
+    <string name="face_models_notification_title">Preparing People</string>
+    <string name="face_models_notification_starting">Downloading face models…</string>
+    <string name="face_models_notification_progress">Downloading face models… %1$d%%</string>
+    <string name="face_models_channel_name">Face models</string>
+
+    <string name="face_index_notification_title">Finding people</string>
+    <string name="face_index_notification_starting">Looking through your photos…</string>
+    <string name="face_index_notification_progress">%1$d photos scanned · %2$d faces found</string>
+    <string name="face_index_channel_name">People scan</string>
+
+    <string name="people_title">People</string>
+    <string name="people_intro_title">Find the people in your photos</string>
+    <string name="people_intro_body">Telepic can group the faces it finds, on this device only. Nothing is uploaded, and the face data is never backed up.</string>
+    <string name="people_intro_models_size">Needs a one-time download of about 5 MB.</string>
+    <string name="people_download_models">Download models</string>
+    <string name="people_downloading">Downloading models…</string>
+    <string name="people_download_failed">The models could not be downloaded. Check your connection and try again.</string>
+    <string name="people_download_failed_title">Download failed</string>
+    <string name="people_scan_title">Ready to look for faces</string>
+    <string name="people_scan_body">This runs in the background and can be stopped at any time. Only photos are scanned, never videos.</string>
+    <string name="people_start_scan">Scan photos</string>
+    <string name="people_scanning_title">Finding people…</string>
+    <string name="people_scanning_body">%1$d photos scanned · %2$d faces found</string>
+    <string name="people_empty_title">No people found yet</string>
+    <string name="people_empty_body">Some faces were found but not enough of the same person to make a group. Try a looser grouping.</string>
+    <string name="people_no_faces_title">No faces found</string>
+    <string name="people_no_faces_body">Telepic could not find any faces in your photos. If you expected some, try scanning again.</string>
+    <string name="people_rescan">Scan for new photos</string>
+    <string name="people_open_person">Open %1$s</string>
+    <string name="people_unnamed">Person %1$d</string>
+    <string name="people_face_count">%1$d photos</string>
+    <string name="people_settings_title">Grouping</string>
+    <string name="people_settings_strict">Strict</string>
+    <string name="people_settings_balanced">Balanced</string>
+    <string name="people_settings_loose">Loose</string>
+    <string name="people_settings_strict_description">Keeps different people apart. You can merge anyone the app split.</string>
+    <string name="people_settings_balanced_description">A middle setting. Try this if Strict split one person into several.</string>
+    <string name="people_settings_loose_description">Groups similar-looking people together. Best for a library of one face.</string>
+    <string name="people_rebuild_grouping">Apply and regroup</string>
+    <string name="people_remove_data">Remove face data</string>
+    <string name="people_remove_data_title">Remove all face data?</string>
+    <string name="people_remove_data_body">This deletes every face and group Telepic found, and the downloaded models. Your photos are not touched.</string>
+    <string name="people_remove_data_confirm">Remove</string>
+    <string name="people_rename_title">Name this person</string>
+    <string name="people_rename_hint">Name</string>
+    <string name="people_rename_clear">Clear name</string>
+    <string name="people_set_cover">Use as cover</string>
+    <string name="people_cover_badge">Cover photo</string>
+    <string name="people_face_actions">Face actions</string>
+    <string name="people_hide">Hide from People</string>
+    <string name="people_unhide">Show in People</string>
+    <string name="people_person_empty_title">This person has no photos</string>
+    <string name="people_person_empty_body">Their faces may have been removed by a rescan.</string>
+    <string name="people_person_missing_title">Person not found</string>
+    <string name="people_person_missing_body">This group no longer exists. It was probably rebuilt after a rescan.</string>
+    <string name="people_person_photos">Photos of this person</string>
+    <string name="people_face_tile">Photo of %1$s</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_save">Save</string>
 
     <string name="backup_center_title">Backup</string>
     <string name="backup_center_status_ready">Backup is ready</string>

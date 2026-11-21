@@ -1,6 +1,7 @@
 package com.telepic.settings
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import com.telepic.data.face.FaceSimilarityPreset
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -107,5 +108,30 @@ class SettingsRepositoryImplTest {
         assertEquals(BackupNetworkPreference.Default, BackupNetworkPreference.fromKey("SOMETHING_ELSE"))
         assertEquals(BackupNetworkPreference.Default, BackupNetworkPreference.fromKey(null))
         assertEquals(BackupNetworkPreference.WIFI_ONLY, BackupNetworkPreference.fromKey("wifi_only"))
+    }
+
+    @Test
+    fun `the face grouping preset defaults to strict and persists`() = runTest {
+        val repository = newRepository("face_preset")
+
+        // Pinned to the enum rather than to the literal "STRICT": if the default preset is ever
+        // changed, the two must move together, and a test comparing to a string would let them drift.
+        assertEquals(FaceSimilarityPreset.DEFAULT.name, repository.faceSimilarityPreset.first())
+
+        repository.setFaceSimilarityPreset(FaceSimilarityPreset.LOOSE.name)
+        assertEquals(FaceSimilarityPreset.LOOSE.name, repository.faceSimilarityPreset.first())
+    }
+
+    @Test
+    fun `an unset or unrecognised face preset resolves to the default preset`() = runTest {
+        val repository = newRepository("face_preset_unknown")
+
+        // Storage keeps a string so a re-calibration can change the numbers without a migration, so
+        // the read path is what guarantees an unknown value still produces a usable threshold.
+        repository.setFaceSimilarityPreset("SOME_FUTURE_PRESET")
+        assertEquals(
+            FaceSimilarityPreset.DEFAULT,
+            FaceSimilarityPreset.fromName(repository.faceSimilarityPreset.first()),
+        )
     }
 }

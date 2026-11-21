@@ -71,8 +71,11 @@
     <ID>TooManyFunctions:CloudDaos.kt$CloudMediaManifestDao</ID>
     <ID>TooManyFunctions:CloudRepository.kt$CloudRepository</ID>
     <ID>TooManyFunctions:CustomAlbumDao.kt$CustomAlbumDao</ID>
+    <ID>TooManyFunctions:FaceDao.kt$FaceDao</ID>
+    <ID>TooManyFunctions:FaceRepository.kt$FaceRepository</ID>
     <ID>TooManyFunctions:MediaDay.kt$MediaDay</ID>
     <ID>TooManyFunctions:MediaLocationDao.kt$MediaLocationDao</ID>
+    <ID>TooManyFunctions:SettingsRepository.kt$SettingsRepository</ID>
     <ID>TooManyFunctions:TdApiCloudMapper.kt$TdApiCloudMapper</ID>
     <ID>TooManyFunctions:TelegramCloudRepository.kt$TelegramCloudRepository : CloudRepository</ID>
     <ID>TooManyFunctions:ViewerViewModel.kt$ViewerViewModel : ViewModel</ID>

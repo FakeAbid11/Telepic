@@ -140,6 +140,7 @@ class BackupMigration10To11Test {
                 // The upgrade under test: a real v10 file walking exactly one step to 11.
                 TelepicDatabase.MIGRATION_10_11,
                 TelepicDatabase.MIGRATION_11_12,
+                TelepicDatabase.MIGRATION_12_13,
             )
             .allowMainThreadQueries()
             .build()
