@@ -151,6 +151,15 @@ class TelepicApplication : Application(), ImageLoaderFactory, Configuration.Prov
                     // big library is not throttled by WorkManager's exponential backoff between
                     // batches.
                     backupScheduler = { container.backupWorkScheduler },
+                    // People tab. All lazy so a user who never opens the tab never pays for the model
+                    // directory, the interpreters, or the DAOs behind them.
+                    faceModelStore = { container.faceModelStore },
+                    faceIndexer = { container.createFaceIndexer() },
+                    faceRepository = { container.faceRepository },
+                    faceWorkScheduler = { container.faceWorkScheduler },
+                    // Read per scan rather than captured: the user can change the strictness between
+                    // runs, and the next run must honour it.
+                    facePreset = { container.faceSimilarityPreset() },
                 ),
             )
             .build()

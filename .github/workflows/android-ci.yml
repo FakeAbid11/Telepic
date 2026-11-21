@@ -202,7 +202,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             NAME="${GITHUB_REF_NAME#v}"
           else
-            NAME="0.1.0-dev.${GITHUB_RUN_NUMBER}"
+            NAME="0.3.0-dev.${GITHUB_RUN_NUMBER}"
           fi
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"

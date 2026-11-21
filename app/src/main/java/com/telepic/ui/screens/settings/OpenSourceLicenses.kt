@@ -55,6 +55,9 @@ val TelepicOpenSourceLibraries: List<OpenSourceLibrary> = listOf(
     OpenSourceLibrary("AndroidX Media3 / ExoPlayer", "1.4.1", "Apache License 2.0"),
     OpenSourceLibrary("Coil (image loading)", "2.7.0", "Apache License 2.0"),
     OpenSourceLibrary("MapLibre Native (Android, OpenGL ES)", "13.7.1", "BSD 2-Clause License"),
+    OpenSourceLibrary("TensorFlow Lite (on-device inference)", "2.16.1", "Apache License 2.0"),
+    OpenSourceLibrary("YuNet face detector (OpenCV Zoo)", "2023mar", "MIT License"),
+    OpenSourceLibrary("GhostFaceNet V1 W1.3-S1 (MS1MV3)", "v1", "MIT License"),
     OpenSourceLibrary("TDLib (Telegram Database Library)", "tdlib-android 0.1.1", "Boost Software License 1.0"),
 )
 

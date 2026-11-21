@@ -6,6 +6,13 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import com.telepic.data.backup.BackupCoordinator
 import com.telepic.data.backup.BackupRepository
+import com.telepic.data.face.FaceIndexer
+import com.telepic.data.face.FaceModelStore
+import com.telepic.data.face.FaceRepository
+import com.telepic.data.face.FaceSimilarityPreset
+import com.telepic.data.face.work.FaceIndexWorker
+import com.telepic.data.face.work.FaceWorkScheduler
+import com.telepic.data.face.work.ModelDownloadWorker
 
 /**
  * Supplies [BackupWorker] its [BackupRepository] and [BackupDiscoveryWorker] its
@@ -24,6 +31,25 @@ class TelepicWorkerFactory(
      * but it inherits the exponential backoff the continuation exists to avoid.
      */
     private val backupScheduler: () -> BackupWorkScheduler? = { null },
+    /**
+     * The People tab's collaborators.
+     *
+     * All optional for the same reason [backupScheduler] is: a build or a test that does not wire the
+     * People tab must still be able to construct this factory, and the workers then fail loudly if
+     * WorkManager ever reaches them (which it cannot, because nothing schedules them).
+     */
+    private val faceModelStore: () -> FaceModelStore? = { null },
+    private val faceIndexer: () -> FaceIndexer? = { null },
+    private val faceRepository: () -> FaceRepository? = { null },
+    private val faceWorkScheduler: () -> FaceWorkScheduler? = { null },
+    /**
+     * The similarity preset, read per run.
+     *
+     * Suspend because it reads a DataStore preference, and the worker calls it from its own coroutine.
+     * Read per run rather than captured once, so a strictness change applies to the next scan instead
+     * of the next app launch.
+     */
+    private val facePreset: suspend () -> FaceSimilarityPreset = { FaceSimilarityPreset.DEFAULT },
 ) : WorkerFactory() {
 
     override fun createWorker(
@@ -36,6 +62,22 @@ class TelepicWorkerFactory(
                 BackupWorker(appContext, workerParameters, backupRepository(), backupScheduler())
             BackupDiscoveryWorker::class.java.name ->
                 BackupDiscoveryWorker(appContext, workerParameters, backupCoordinator())
+            ModelDownloadWorker::class.java.name ->
+                ModelDownloadWorker(
+                    appContext,
+                    workerParameters,
+                    faceModelStore() ?: error("the face model store is not wired"),
+                )
+            FaceIndexWorker::class.java.name ->
+                FaceIndexWorker(
+                    appContext,
+                    workerParameters,
+                    faceIndexer() ?: error("the face indexer is not wired"),
+                    faceRepository() ?: error("the face repository is not wired"),
+                    faceModelStore() ?: error("the face model store is not wired"),
+                    faceWorkScheduler() ?: error("the face work scheduler is not wired"),
+                    facePreset,
+                )
             else -> null
         }
     }

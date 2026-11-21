@@ -47,6 +47,17 @@ interface SettingsRepository {
     suspend fun setShowGifsInTimeline(show: Boolean)
 
     /**
+     * How similar two faces must be to be grouped as one person, as a preset name.
+     *
+     * Stored as a string rather than a float so the value survives a re-calibration: the underlying
+     * numbers are tied to one embedder, and a stored `0.6f` would silently mean something different
+     * after a model change. An unknown name falls back to the default rather than throwing.
+     */
+    val faceSimilarityPreset: Flow<String>
+
+    suspend fun setFaceSimilarityPreset(preset: String)
+
+    /**
      * Whether a video starts with sound. Defaults to muted: autoplaying with sound hijacks whatever
      * the user was already listening to, and media3 offers no middle ground while it holds audio focus.
      */

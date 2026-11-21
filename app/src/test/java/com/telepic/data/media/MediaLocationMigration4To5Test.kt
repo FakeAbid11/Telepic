@@ -102,6 +102,7 @@ class MediaLocationMigration4To5Test {
                 TelepicDatabase.MIGRATION_9_10,
                 TelepicDatabase.MIGRATION_10_11,
                 TelepicDatabase.MIGRATION_11_12,
+                TelepicDatabase.MIGRATION_12_13,
             )
             .allowMainThreadQueries()
             .build()

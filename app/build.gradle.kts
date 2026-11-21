@@ -74,7 +74,7 @@ android {
         targetSdk = 36
         // Release CI can supply an explicit version; local/debug builds keep the milestone default.
         versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "0.1.0"
+        versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "0.3.0"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -222,6 +222,8 @@ dependencies {
     implementation(libs.androidx.exifinterface)
     implementation(libs.maplibre.android)
     implementation(libs.androidx.work.runtime.ktx)
+    // People tab: on-device face detection + embedding. No Play Services, no network at inference.
+    implementation(libs.tensorflow.lite)
     ksp(libs.androidx.room.compiler)
     // Compile Room in the test sources too, so the Phase 6 migration test can build a real
     // version-1 database (TelepicDatabaseV1) and verify the explicit 1 -> 2 migration.

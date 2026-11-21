@@ -60,6 +60,8 @@ class AppLockViewModelTest {
         override suspend fun setShowVideosInTimeline(show: Boolean) = Unit
         override val showGifsInTimeline: Flow<Boolean> = flowOf(true)
         override suspend fun setShowGifsInTimeline(show: Boolean) = Unit
+        override val faceSimilarityPreset: Flow<String> = flowOf("STRICT")
+        override suspend fun setFaceSimilarityPreset(preset: String) = Unit
         override val startVideosMuted: Flow<Boolean> = flowOf(true)
         override suspend fun setStartVideosMuted(muted: Boolean) = Unit
         override val mediaLocationBackfillGranted: Flow<Boolean> = flowOf(false)

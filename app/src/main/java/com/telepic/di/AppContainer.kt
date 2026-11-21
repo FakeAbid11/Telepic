@@ -32,6 +32,22 @@ import com.telepic.data.cloud.TelegramCloudRepository
 import com.telepic.data.cloud.db.CloudMediaManifestDao
 import com.telepic.data.cloud.db.CloudDestinationDao
 import com.telepic.data.cloud.db.TelepicDatabase
+import com.telepic.data.face.DefaultFaceIndexer
+import com.telepic.data.face.DefaultFaceRepository
+import com.telepic.data.face.FaceGroupingSettings
+import com.telepic.data.face.FaceIndexer
+import com.telepic.data.face.FaceModelStore
+import com.telepic.data.face.FaceRepository
+import com.telepic.data.face.FaceSimilarityPreset
+import com.telepic.data.face.FaceTransaction
+import com.telepic.data.face.GhostFaceNetEmbedder
+import com.telepic.data.face.HttpFaceModelStore
+import com.telepic.data.face.PreferencesFaceGroupingSettings
+import com.telepic.data.face.YuNetFaceDetector
+import com.telepic.data.face.db.FaceDao
+import com.telepic.data.face.db.PersonDao
+import com.telepic.data.face.work.FaceWorkScheduler
+import com.telepic.data.face.work.WorkManagerFaceWorkScheduler
 import com.telepic.data.media.AndroidMediaChangeWatcher
 import com.telepic.data.media.AndroidLocationExtractor
 import com.telepic.data.media.AlbumRepository
@@ -138,6 +154,30 @@ interface AppContainer {
     val backupStatusRepository: BackupStatusRepository
     val backupCoordinator: BackupCoordinator
     val backupWorkScheduler: BackupWorkScheduler
+
+    /** The People tab's model files: presence, download and deletion. */
+    val faceModelStore: FaceModelStore
+
+    /** The People tab's data layer: clustering, curation and read models. */
+    val faceRepository: FaceRepository
+
+    /** Schedules the People tab's download and indexing jobs. */
+    val faceWorkScheduler: FaceWorkScheduler
+
+    /**
+     * Builds the indexer for one run.
+     *
+     * A factory rather than a shared instance because the models are large native resources: an
+     * indexer held for the container's lifetime would keep two TFLite interpreters and their buffers
+     * resident between scans. Each run opens them and closes them in a `finally`.
+     */
+    fun createFaceIndexer(): FaceIndexer
+
+    /** The similarity preset the user chose, read per scan. */
+    suspend fun faceSimilarityPreset(): FaceSimilarityPreset
+
+    /** The grouping strictness: read by the tab and the workers, written by the grouping dialog. */
+    val faceGroupingSettings: FaceGroupingSettings
 
     /**
      * Delete the staged copies a killed upload left behind.
@@ -468,4 +508,55 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             cloudRepository = cloudRepository,
         )
     }
+
+    // ------------------------------------------------------------------ People tab
+
+    override val faceModelStore: FaceModelStore by lazy {
+        HttpFaceModelStore(directory = File(appContext.filesDir, "face_models"))
+    }
+
+    private val faceDao: FaceDao by lazy { database.faceDao() }
+    private val personDao: PersonDao by lazy { database.personDao() }
+
+    override val faceGroupingSettings: FaceGroupingSettings by lazy {
+        PreferencesFaceGroupingSettings(settingsRepository)
+    }
+
+    override val faceRepository: FaceRepository by lazy {
+        DefaultFaceRepository(
+            faceDao = faceDao,
+            personDao = personDao,
+            lookup = localMediaLookup,
+            // Room emits per transaction, so the rebuild has to be one: otherwise the grid observes
+            // the empty table between the clear and the inserts and blinks on every rescan.
+            transaction = FaceTransaction.room(database),
+        )
+    }
+
+    override val faceWorkScheduler: FaceWorkScheduler by lazy {
+        WorkManagerFaceWorkScheduler(appContext)
+    }
+
+    /**
+     * The scan reads the library through the *timeline* loader.
+     *
+     * Deliberately the same projection the user sees: a face the app would not show in the grid has no
+     * business appearing in the People tab. Trashed media is already excluded by that loader, which is
+     * what stops a deleted photo from leaving a face behind.
+     *
+     * The one filter that must *not* apply is the hide-videos preference. It is a display choice, and
+     * this scan skips videos by media type anyway (see `FaceIndexer`) — routing it through the filter
+     * would make the scan's photo set depend on a preference that has nothing to do with it.
+     */
+    override fun createFaceIndexer(): FaceIndexer = DefaultFaceIndexer(
+        contentResolver = appContext.contentResolver,
+        pageLoader = mediaLoader,
+        faceDao = faceDao,
+        cursorStore = PreferencesScanCursorStore(appContext.telepicDataStore),
+        detectorFactory = { YuNetFaceDetector(faceModelStore.detectorPath()) },
+        embedderFactory = { GhostFaceNetEmbedder(faceModelStore.embedderPath()) },
+    )
+
+    override suspend fun faceSimilarityPreset(): FaceSimilarityPreset =
+        faceGroupingSettings.current()
 }

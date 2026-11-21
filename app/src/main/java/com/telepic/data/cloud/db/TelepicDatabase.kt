@@ -6,6 +6,11 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.telepic.data.backup.db.BackupQueueDao
 import com.telepic.data.backup.db.BackupQueueEntity
+import com.telepic.data.face.db.FaceDao
+import com.telepic.data.face.db.FaceEntity
+import com.telepic.data.face.db.FaceScanEntity
+import com.telepic.data.face.db.PersonDao
+import com.telepic.data.face.db.PersonEntity
 import com.telepic.data.media.db.CustomAlbumDao
 import com.telepic.data.media.db.CustomAlbumEntity
 import com.telepic.data.media.db.CustomAlbumMediaEntity
@@ -41,6 +46,8 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
  * - `11 → 12` ([MIGRATION_11_12]): adds the nullable `cloud_destination.accountId` so a persisted
  *   channel can never be reused by a different Telegram account. Existing rows are adopted by the
  *   first authenticated account; the column is nullable so an upgrade never guesses ownership.
+ * - `12 → 13` ([MIGRATION_12_13]): introduces `person`, `face` and `face_scan` (the People tab's
+ *   on-device face index). New tables only — every existing table and row survives verbatim.
  */
 @Database(
     entities = [
@@ -52,8 +59,11 @@ import com.telepic.data.organization.db.MediaOrganizationEntity
         MediaLocationScanEntity::class,
         CustomAlbumEntity::class,
         CustomAlbumMediaEntity::class,
+        PersonEntity::class,
+        FaceEntity::class,
+        FaceScanEntity::class,
     ],
-    version = 12,
+    version = 13,
     // Schema JSON is exported to app/schemas (see the `ksp` block in app/build.gradle.kts). CI
     // publishes the current version's JSON as an artifact and fails if it was not exported.
     //
@@ -71,6 +81,8 @@ abstract class TelepicDatabase : RoomDatabase() {
     abstract fun mediaOrganizationDao(): MediaOrganizationDao
     abstract fun mediaLocationDao(): MediaLocationDao
     abstract fun customAlbumDao(): CustomAlbumDao
+    abstract fun personDao(): PersonDao
+    abstract fun faceDao(): FaceDao
 
     companion object {
         const val NAME = "telepic.db"
@@ -300,6 +312,57 @@ abstract class TelepicDatabase : RoomDatabase() {
         val MIGRATION_11_12: Migration = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `cloud_destination` ADD COLUMN `accountId` INTEGER")
+            }
+        }
+
+        /**
+         * People tab: introduces `person`, `face` and `face_scan`, the on-device face index.
+         *
+         * Three brand-new tables, so every existing table and row survives verbatim — the destination,
+         * manifest, queue (with hashes), organization flags, location cache, albums and scan memory are
+         * all untouched. That is the whole reason the face index gets its own tables rather than
+         * columns on an existing one: it is derived, disposable data that must never risk the backup
+         * pipeline's state.
+         *
+         * The three tables start empty, which is correct: nothing has been indexed until the user opts
+         * in, downloads the models and starts a scan. An upgraded install therefore shows the People
+         * tab in its "not set up" state rather than pretending it has scanned anything.
+         *
+         * Note the absence of a foreign key from `face.personId` to `person.personId`, matching the
+         * entity definitions. The clusterer merges and reassigns people constantly, and a cascading
+         * delete would destroy the very embeddings a merge exists to preserve.
+         */
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `person` (" +
+                        "`personId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT, " +
+                        "`coverFaceId` INTEGER, " +
+                        "`isHidden` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `face` (" +
+                        "`faceId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`localMediaId` INTEGER NOT NULL, " +
+                        "`left` REAL NOT NULL, " +
+                        "`top` REAL NOT NULL, " +
+                        "`right` REAL NOT NULL, " +
+                        "`bottom` REAL NOT NULL, " +
+                        "`embedding` BLOB NOT NULL, " +
+                        "`personId` INTEGER, " +
+                        "`confidence` REAL NOT NULL, " +
+                        "`detectedAt` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_face_localMediaId` ON `face` (`localMediaId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_face_personId` ON `face` (`personId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `face_scan` (" +
+                        "`localMediaId` INTEGER NOT NULL, " +
+                        "`scannedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`localMediaId`))",
+                )
             }
         }
     }
